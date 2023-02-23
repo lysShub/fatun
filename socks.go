@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// 返回conn是agent到server之间的连接, 如果返回nil表示拒绝此次代理请求
+// 返回conn是agent到server之间的连接, 如果返回nil表示拒绝此次代理请求(即使不经过代理也会返回代理conn)
 //  参数other为账号密码, 仅socks5支持
 type doFunc func(raddr string) net.Conn
 
@@ -139,8 +139,10 @@ func Socks(ctx context.Context, conn net.Conn, do doFunc) (sconn net.Conn, err e
 				}
 			case 0x02:
 				respCode = 0x07
+				fmt.Println("不支持BIND请求")
 			case 0x03:
 				respCode = 0x07
+				fmt.Println("不支持UDP请求")
 			default:
 				respCode = 0x07
 			}
