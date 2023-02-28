@@ -1,4 +1,4 @@
-package proxy
+package client
 
 import (
 	"crypto/rand"
@@ -40,7 +40,7 @@ func getLocalIP() net.IP {
 }
 
 // remotePort:remoteIP
-func (p *Proxy) setMap(e dialEvent) (err error) {
+func (p *Client) setMap(e dialEvent) (err error) {
 	p.m.Lock()
 	if p.setMapHandle == 0 {
 		f := fmt.Sprintf("!loopback and icmp and remoteAddr=%s", p.serverIP)

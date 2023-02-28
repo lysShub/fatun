@@ -1,4 +1,4 @@
-package proxy
+package client
 
 import (
 	"crypto/rand"
@@ -36,7 +36,7 @@ func TestSetMap(t *testing.T) {
 		raddr: netip.AddrPortFrom(netip.AddrFrom4([4]byte{114, 21, 8, 11}), 3241),
 	}
 
-	var p = &Proxy{
+	var p = &Client{
 		serverIP: net.IPv4(114, 114, 114, 114),
 
 		setedCh: make(chan [6]byte, 8),
