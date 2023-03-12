@@ -32,10 +32,11 @@ func (p *Proxy) inject() {
 			return
 		} else {
 			if n > 40+pack.W {
-				srcIP, localPort = pack.Parse(b[:n])
+				srcIP = pack.Parse(b[:n])
 
 				ipHdrLen := int((b[0] >> 4) * 5)
 
+				// TODO: 错误的, 这还是网络层代理
 				p.ipHdr.SetTotalLen(uint16(n - ipHdrLen + 20 - pack.W))
 				p.ipHdr.SetID(ipId)
 				ipId++

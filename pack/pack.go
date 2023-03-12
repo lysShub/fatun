@@ -7,9 +7,9 @@ package pack
 
 import "unsafe"
 
-const W = 6
+const W = 4
 
-func Packe(b []byte, dstIP [4]byte, localPort uint16) []byte {
+func Packe(b []byte, dstIP [4]byte) []byte {
 	n := len(b)
 	if n+W < cap(b) {
 		tb := make([]byte, n+W)
@@ -20,17 +20,14 @@ func Packe(b []byte, dstIP [4]byte, localPort uint16) []byte {
 	}
 
 	*(*[4]byte)(unsafe.Pointer(&b[n])) = dstIP
-	*(*uint16)(unsafe.Pointer(&b[n+4])) = localPort
 	return b
 }
 
-func Parse(b []byte) (ip [4]byte, localPort uint16) {
+func Parse(b []byte) (ip [4]byte) {
 	var _ = b[5]
 
 	n := len(b) - W
-	ip = *(*[4]byte)(unsafe.Pointer(&b[n]))
-	localPort = *(*uint16)(unsafe.Pointer(&b[n+4]))
-	return
+	return *(*[4]byte)(unsafe.Pointer(&b[n]))
 }
 
 func Checksum(d [20]byte) uint16 {
