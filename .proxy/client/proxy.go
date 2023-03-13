@@ -2,12 +2,13 @@ package client
 
 import (
 	"fmt"
-	"itun/divert"
 	"net"
 	"net/netip"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/lysShub/go-divert"
 
 	"golang.org/x/net/ipv4"
 )

@@ -34,7 +34,6 @@ func (p *proxy) proxy() {
 			p.ipHdr.SetChecksum(pack.Checksum(*p.ipHdr))
 
 			copy(b[0:], (*p.ipHdr)[:])
-
 		}
 	}
 }

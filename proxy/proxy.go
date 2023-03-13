@@ -3,11 +3,12 @@ package proxy
 import (
 	"context"
 	"fmt"
-	"itun/divert"
 	"itun/pack"
 	"net"
 	"sync"
 	"unsafe"
+
+	"github.com/lysShub/go-divert"
 )
 
 /*

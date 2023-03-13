@@ -1,9 +1,10 @@
 package proxy
 
 import (
-	"itun/divert"
 	"itun/pack"
 	"math/rand"
+
+	"github.com/lysShub/go-divert"
 )
 
 /*

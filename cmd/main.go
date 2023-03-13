@@ -2,10 +2,11 @@ package main
 
 import (
 	"fmt"
-	"itun/divert"
 	"net/netip"
 	"strings"
 	"time"
+
+	"github.com/lysShub/go-divert"
 
 	"github.com/shirou/gopsutil/process"
 )

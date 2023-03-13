@@ -4,12 +4,13 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
-	"itun/divert"
 	"net"
 	"net/netip"
 	"strings"
 	"time"
 	"unsafe"
+
+	"github.com/lysShub/go-divert"
 
 	"github.com/shirou/gopsutil/process"
 	"golang.org/x/net/icmp"

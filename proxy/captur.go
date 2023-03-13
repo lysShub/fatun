@@ -2,9 +2,10 @@ package proxy
 
 import (
 	"fmt"
-	"itun/divert"
 	"itun/pack"
 	"net"
+
+	"github.com/lysShub/go-divert"
 )
 
 type state uint8

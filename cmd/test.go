@@ -2,7 +2,8 @@ package main
 
 import (
 	"fmt"
-	"itun/divert"
+
+	"github.com/lysShub/go-divert"
 )
 
 // 分叉DNS数据包到  8.8.8.8

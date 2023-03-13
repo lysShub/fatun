@@ -3,7 +3,7 @@ package client
 import (
 	"crypto/rand"
 	"fmt"
-	"itun/divert"
+	"github.com/lysShub/go-divert"
 	"net"
 	"net/netip"
 	"sync"

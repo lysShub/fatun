@@ -2,8 +2,9 @@ package main
 
 import (
 	"fmt"
-	"itun/divert"
 	"net"
+
+	"github.com/lysShub/go-divert"
 
 	"golang.org/x/net/dns/dnsmessage"
 )
