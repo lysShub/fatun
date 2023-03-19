@@ -13,8 +13,8 @@ type state uint8
 const (
 	idle state = iota
 	once
-	work
-	clog // proxy ing
+	work // proxy ing
+	clog
 )
 
 type captur struct {
