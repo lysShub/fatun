@@ -1,10 +1,5 @@
 package pack
 
-/*
-	代理的是应用层数据包, 是无连接代理, 所以在
-	每个数据包后附加上dstIP.
-*/
-
 import "unsafe"
 
 const W = 4
