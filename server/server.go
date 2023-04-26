@@ -1,30 +1,13 @@
 package server
 
 import (
-	"fmt"
-	"net"
+	"itun/pack"
+	"itun/server/ports"
+	"net/netip"
 )
 
-type Server struct {
-	listener net.Listener
-}
+type Server interface {
+	ports.PortMgr
 
-func (s *Server) Do() {
-	conn, err := s.listener.Accept()
-	if err != nil {
-		panic(err)
-	} else {
-		go s.handle(conn)
-	}
-}
-
-func (s *Server) handle(conn net.Conn) error {
-	raddr, err := toNetIP(conn.RemoteAddr())
-	// TODO: resolve IP conn port
-	if err != nil {
-		return err
-	}
-
-	fmt.Println(raddr)
-	return nil
+	WriteTo(prot pack.Proto, b []byte, dst netip.Addr) (int, error)
 }

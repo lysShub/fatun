@@ -33,7 +33,7 @@ func (p *Proxy) inject() {
 			return
 		} else {
 			if n > 40+pack.W {
-				srcIP = pack.Parse(b[:n])
+				// srcIP = pack.Parse(b[:n])
 
 				ipHdrLen := int((b[0] >> 4) * 5)
 

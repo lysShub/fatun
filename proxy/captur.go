@@ -26,7 +26,7 @@ type captur struct {
 }
 
 func (p *captur) proxy(secSyn []byte) {
-	_, err := p.proxyConn.Write(pack.Packe(secSyn, p.dstIP))
+	_, err := p.proxyConn.Write(pack.Packe(secSyn, pack.TCP /*p.dstIP*/, nil))
 	if err != nil {
 		return
 	}
@@ -45,7 +45,7 @@ func (p *captur) proxy(secSyn []byte) {
 		} else {
 			ipHdrLen := int(b[0]>>4) * 4
 
-			if _, err = p.proxyConn.Write(pack.Packe(b[ipHdrLen:n], p.dstIP)); err != nil {
+			if _, err = p.proxyConn.Write(pack.Packe(b[ipHdrLen:n], pack.TCP /*p.dstIP*/, nil)); err != nil {
 				return
 			}
 		}
