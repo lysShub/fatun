@@ -187,7 +187,7 @@ func (p *ports) bindUDP() (uint16, int, error) {
 		if err = syscall.Bind(fd, laddr); err != nil {
 			return 0, 0, err
 		}
-		return uint16(a.Port), fd, nil
+		return uint16(a.Port), int(fd), nil
 	case *syscall.SockaddrInet6:
 		fd, err := syscall.Socket(syscall.AF_INET6, syscall.SOCK_DGRAM, syscall.IPPROTO_UDP)
 		if err != nil {
@@ -196,7 +196,7 @@ func (p *ports) bindUDP() (uint16, int, error) {
 		if err = syscall.Bind(fd, laddr); err != nil {
 			return 0, 0, err
 		}
-		return uint16(a.Port), fd, nil
+		return uint16(a.Port), int(fd), nil
 	default:
 		panic("")
 	}
@@ -214,7 +214,7 @@ func (p *ports) bindTCP() (uint16, int, error) {
 		if err = syscall.Bind(fd, laddr); err != nil {
 			return 0, 0, err
 		}
-		return uint16(a.Port), fd, nil
+		return uint16(a.Port), int(fd), nil
 	case *syscall.SockaddrInet6:
 		fd, err := syscall.Socket(syscall.AF_INET6, syscall.SOCK_STREAM, syscall.IPPROTO_TCP)
 		if err != nil {
@@ -223,7 +223,7 @@ func (p *ports) bindTCP() (uint16, int, error) {
 		if err = syscall.Bind(fd, laddr); err != nil {
 			return 0, 0, err
 		}
-		return uint16(a.Port), fd, nil
+		return uint16(a.Port), int(fd), nil
 	default:
 		panic("")
 	}
@@ -301,7 +301,7 @@ func (e *port) Close() error {
 	if len(e.dstAddrs) > 0 {
 		return errors.New("can not close not null port")
 	}
-	if err := syscall.Close(e.fd); err != nil {
+	if err := syscall.Close(syscall.Handle(e.fd)); err != nil {
 		return err
 	}
 	e.port, e.fd = 0, 0
