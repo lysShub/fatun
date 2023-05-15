@@ -45,12 +45,12 @@ func Connect(svc *serverMux, conn net.Conn) *connect {
 		m: &sync.RWMutex{},
 	}
 
-	go u.do()
+	go u.process()
 	go u.monitor()
 	return u
 }
 
-func (c *connect) do() {
+func (c *connect) process() {
 	var (
 		b       []byte
 		n       int
@@ -76,7 +76,7 @@ func (c *connect) do() {
 				if err != nil {
 					c.Close(err)
 				} else {
-					go c.ses[idx].do(c.proxyConn, c.svc.localIP.AsSlice())
+					go c.ses[idx].Capture(c.proxyConn, c.svc.localIP.AsSlice())
 				}
 			}
 			*srcPort = toBig(c.ses[idx].locPort)

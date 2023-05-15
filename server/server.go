@@ -38,10 +38,10 @@ func ListenAndServe(listener net.Listener) error {
 		return err
 	}
 
-	return mux.do()
+	return mux.handle()
 }
 
-func (s *serverMux) do() error {
+func (s *serverMux) handle() error {
 	for {
 		conn, err := s.listener.Accept()
 		if err != nil {

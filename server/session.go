@@ -24,7 +24,7 @@ type session struct {
 	capture          *ipv4.PacketConn
 }
 
-func (s *session) do(sendto net.Conn, locIP net.IP) {
+func (s *session) Capture(sendto net.Conn, locIP net.IP) {
 	s.working.Store(true)
 	defer func() { s.working.Store(false) }()
 

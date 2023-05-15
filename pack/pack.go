@@ -15,7 +15,7 @@ const (
 	UDP        = 17
 )
 
-func Packe(b []byte, proto Proto, ip netip.Addr) []byte {
+func Packe(b []byte, proto Proto, remoteAddr netip.Addr) []byte {
 	n := len(b)
 	if n+W < cap(b) {
 		tb := make([]byte, n+W)
@@ -25,22 +25,22 @@ func Packe(b []byte, proto Proto, ip netip.Addr) []byte {
 		b = b[:n+W]
 	}
 
-	*(*[4]byte)(unsafe.Pointer(&b[n])) = netip.MustParseAddr(ip.String()).As4()
+	*(*[4]byte)(unsafe.Pointer(&b[n])) = netip.MustParseAddr(remoteAddr.String()).As4()
 	b[n+4] = byte(proto)
 	return b
 }
 
-func Parse(b []byte) (n int, proto Proto, ip netip.Addr) {
+func Parse(b []byte) (n int, proto Proto, remoteAddr netip.Addr) {
 	n = len(b)
 	if n < W {
 		return
 	}
 
 	proto = Proto(b[n-1])
-	ip = netip.AddrFrom4([4]byte(b[n-W : n-1]))
+	remoteAddr = netip.AddrFrom4([4]byte(b[n-W : n-1]))
 	n = n - W
 
-	return n, proto, ip
+	return n, proto, remoteAddr
 }
 
 func Checksum(d [20]byte) uint16 {
