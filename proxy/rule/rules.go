@@ -13,58 +13,70 @@ type Rule interface {
 	// TODO:
 }
 
+type rule string
+
+func (r rule) Format() (string, error) {
+	if r == "" || strings.ToLower(string(r)) == BuiltinRule {
+		return BuiltinRule, nil
+	} else {
+		r, err := divert.HelperFormatFilter(string(r), divert.LAYER_SOCKET)
+		if err != nil {
+			return "", err
+		}
+		return r, nil
+	}
+}
+
+func (r rule) IsBuiltin() bool {
+	return strings.ToLower(string(r)) == BuiltinRule
+}
+
 type rules struct {
-	baseRule string
-	ruleMap  map[string]Rule
+	ruleMap map[string]Rule
 
 	ch chan string
 
 	m *sync.RWMutex
 }
 
-func NewRules(baseRule string) *rules {
-	if baseRule == "" {
-		baseRule = "!loopback"
-	}
-
+func NewRules() *rules {
 	return &rules{
-		baseRule: baseRule,
-		ruleMap:  map[string]Rule{},
-		ch:       make(chan string, 16),
-		m:        &sync.RWMutex{},
+		ruleMap: map[string]Rule{},
+		ch:      make(chan string, 16),
+		m:       &sync.RWMutex{},
 	}
 }
 
-func (r *rules) Proxyer() <-chan string {
-	return r.ch
+func (rs *rules) Proxyer() <-chan string {
+	return rs.ch
 }
 
-func (r *rules) AddRule(rule string) (err error) {
-	if rule, err = r.formatRule(rule); err != nil {
+func (rs *rules) AddRule(r string) (err error) {
+	if r, err = rule(r).Format(); err != nil {
 		return err
 	}
 
-	r.m.RLock()
-	if _, has := r.ruleMap[rule]; has {
-		r.m.RUnlock()
+	rs.m.RLock()
+	if _, has := rs.ruleMap[r]; has {
+		rs.m.RUnlock()
 		return nil
 	}
-	r.m.RUnlock()
+	rs.m.RUnlock()
 
-	r.m.Lock()
-	defer r.m.Unlock()
-	if rule == BuiltinRule {
-		rr, err := newBuiltinRule(r.baseRule, r.ch)
+	rs.m.Lock()
+	defer rs.m.Unlock()
+	if r == BuiltinRule {
+		rr, err := newBuiltinRule(rs.ch)
 		if err != nil {
 			return err
 		}
-		r.ruleMap[rule] = rr
+		rs.ruleMap[r] = rr
 	} else {
-		rr, err := newRule(r.baseRule, rule, r.ch)
+		rr, err := newRule(r, rs.ch)
 		if err != nil {
 			return err
 		}
-		r.ruleMap[rule] = rr
+		rs.ruleMap[r] = rr
 	}
 	return nil
 }
@@ -72,46 +84,34 @@ func (r *rules) AddRule(rule string) (err error) {
 // AddBuiltinRule add the builtin rule
 //
 //	builtin rule:  monitor tcp conn, will be proxy when resend SYN packet
-func (r *rules) AddBuiltinRule() error { return r.AddRule(BuiltinRule) }
+func (rs *rules) AddBuiltinRule() error { return rs.AddRule(BuiltinRule) }
 
-func (r *rules) DelRule(rule string) error {
+func (rs *rules) DelRule(rule1 string) error {
 	var err error
-	if rule, err = r.formatRule(rule); err != nil {
+	if rule1, err = rule(rule1).Format(); err != nil {
 		return err
 	}
 
-	r.m.Lock()
-	rr, has := r.ruleMap[rule]
-	r.m.Unlock()
+	rs.m.Lock()
+	rr, has := rs.ruleMap[rule1]
+	rs.m.Unlock()
 	if !has {
 		return errors.New("rule not found")
 	} else {
 		if err := rr.Close(); err != nil {
 			return err
 		}
-		delete(r.ruleMap, rule)
+		delete(rs.ruleMap, rule1)
 	}
 	return nil
 }
 
-func (r *rules) List() []string {
+func (rs *rules) List() []string {
 	var rules []string
-	r.m.RLock()
-	for f := range r.ruleMap {
+	rs.m.RLock()
+	for f := range rs.ruleMap {
 		rules = append(rules, f)
 	}
-	r.m.Unlock()
+	rs.m.Unlock()
 	return rules
-}
-
-func (r *rules) formatRule(rule string) (string, error) {
-	if rule == "" || strings.ToLower(rule) == BuiltinRule {
-		return BuiltinRule, nil
-	} else {
-		r, err := divert.WinDivertHelperFormatFilter(rule, divert.LAYER_FLOW)
-		if err != nil {
-			return "", err
-		}
-		return r, nil
-	}
 }

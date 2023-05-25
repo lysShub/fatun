@@ -5,6 +5,11 @@ import (
 	"unsafe"
 )
 
+type Pack interface {
+	Packe(b []byte, proto Proto, remoteAddr netip.Addr) []byte
+	Parse(b []byte) (n int, proto Proto, remoteAddr netip.Addr)
+}
+
 const W = 4 + 1 // only ipv4
 
 type Proto = uint8

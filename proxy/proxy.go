@@ -18,18 +18,9 @@ func ListenAndProxy(ctx context.Context, pxyConn net.Conn, cfg *Config) *Proxy {
 		cfg = &Config{Ipv6: true}
 	}
 
-	// baseRule
-	var baseRule string
-	// if !cfg.Ipv6 {
-	// 	baseRule = "!ipv6 and " + baseRule
-	// }
-	// if len(cfg.IfIdxs) != 0 {
-	// 	baseRule = ""
-	// }
-
 	var p = &Proxy{
 		proxyConn: pxyConn,
-		Rules:     rule.NewRules(baseRule),
+		Rules:     rule.NewRules(),
 	}
 
 	go func() {

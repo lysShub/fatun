@@ -12,7 +12,7 @@ import (
 var _ = divert.SetPath(`D:\OneDrive\code\go\go-divert\WinDivert.dll`)
 
 func TestXxx(t *testing.T) {
-	rs := rule.NewRules("")
+	rs := rule.NewRules()
 	err := rs.AddBuiltinRule()
 	require.NoError(t, err)
 
@@ -24,7 +24,7 @@ func TestXxx(t *testing.T) {
 
 func TestSocket(t *testing.T) {
 
-	var f = "tcp and remoteAddr=142.251.43.14 and remotePort=80"
+	var f = "!loopback and tcp and remoteAddr=142.251.43.14 and remotePort=80"
 
 	h, err := divert.Open(f, divert.LAYER_SOCKET, 0, divert.FLAG_READ_ONLY|divert.FLAG_SNIFF) // |divert.FLAG_SNIFF
 	require.NoError(t, err)
@@ -58,4 +58,16 @@ func TestNetwork(t *testing.T) {
 		n := addr.Network()
 		println(n)
 	}
+}
+
+func TestCompile(t *testing.T) {
+
+	// var f = "!loopback and ifIdx=58 and remoteAddr=142.251.43.14 and remotePort=80"
+	var f = "remoteAddr=142.251.43.14 and remotePort=80"
+	// "@WinDiv_WY_1+WW27FMAOk1VV=WWLXX_2WWW2mAX"
+	// "@WinDiv_WY_1+WW27FMAOk1VV=WWLXX_2WWW2nAX"
+
+	s, err := divert.HelperCompileFilter(f, divert.LAYER_NETWORK)
+
+	t.Log(s, err)
 }

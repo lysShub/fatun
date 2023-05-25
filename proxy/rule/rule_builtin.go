@@ -11,14 +11,10 @@ import (
 
 const BuiltinRule string = "builtin"
 
-// 内置计划：代理重发了SYN数据包的TCP链接。
-// TODO: 这只代理了本机的, 需要增加FORWARD层代理
-// 内置代理的语法是：add rule default [ifIdx]
-// 通过判断ifIdx确定是哪一层的代理。
 type builtinRuler struct {
 	baseRuler
 
-	m         map[synId]rec
+	m         map[tcpId]rec
 	eventTime time.Time
 }
 
@@ -28,14 +24,14 @@ type rec struct {
 	proxy   bool
 }
 
-func newBuiltinRule(baseRule string, ch chan string) (Rule, error) {
+func newBuiltinRule(ch chan string) (Rule, error) {
 	var err error
 	var r = &builtinRuler{eventTime: time.Now()}
 	r.ch = ch
-	r.m = make(map[synId]rec, 8)
+	r.m = make(map[tcpId]rec, 8)
 
-	var filter = baseRule + " and tcp.Syn"
-	// filter = "tcp.Syn and ifIdx=58"
+	var filter = "!loopback and tcp.Syn"
+	// TODO: LAYER_NETWORK_FORWARDED with ifIdx
 	r.listener, err = divert.Open(filter, divert.LAYER_NETWORK, priority.DefaultBuiltinRulePriority, divert.FLAG_READ_ONLY|divert.FLAG_SNIFF)
 	if err != nil {
 		return nil, err
@@ -47,14 +43,14 @@ func newBuiltinRule(baseRule string, ch chan string) (Rule, error) {
 
 var _ Rule = &builtinRuler{}
 
-type synId struct {
+type tcpId struct {
 	// proto is tcp
 	laddr, raddr string
 	lport, rport uint16
 	seq          uint32
 }
 
-func (id synId) proxy() string {
+func (id tcpId) proxy() string {
 	var f = fmt.Sprintf("!loopback and tcp and localAddr=%s and remoteAddr=%s and localPort=%d and remotePort=%d", id.laddr, id.raddr, id.lport, id.rport)
 	return f
 }
@@ -64,7 +60,7 @@ func (r *builtinRuler) do() {
 	var b = make([]byte, 1536)
 	var n int
 	var addr divert.Address
-	var id synId
+	var id tcpId
 	for !r.done.Load() {
 		b = b[:cap(b)]
 		n, addr, err = r.listener.Recv(b)
@@ -77,7 +73,7 @@ func (r *builtinRuler) do() {
 			const ipv6HdrLen = 40
 			ipHdr := header.IPv6(b)
 			tcpHdr := header.TCP(b[ipv6HdrLen:])
-			id = synId{
+			id = tcpId{
 				laddr: ipHdr.SourceAddress().String(),
 				lport: tcpHdr.SourcePort(),
 				raddr: ipHdr.DestinationAddress().String(),
@@ -87,7 +83,7 @@ func (r *builtinRuler) do() {
 		} else {
 			ipHdr := header.IPv4(b)
 			tcpHdr := header.TCP(b[ipHdr.HeaderLength():])
-			id = synId{
+			id = tcpId{
 				laddr: ipHdr.SourceAddress().String(),
 				lport: tcpHdr.SourcePort(),
 				raddr: ipHdr.DestinationAddress().String(),

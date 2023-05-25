@@ -1,7 +1,6 @@
 package ports
 
 import (
-	"errors"
 	"itun/pack"
 	"net"
 	"net/netip"
@@ -292,20 +291,6 @@ func (e *port) Len() (n int) {
 	n = len(e.dstAddrs)
 	e.m.RUnlock()
 	return n
-}
-
-func (e *port) Close() error {
-	e.m.Lock()
-	defer e.m.Unlock()
-
-	if len(e.dstAddrs) > 0 {
-		return errors.New("can not close not null port")
-	}
-	if err := syscall.Close(syscall.Handle(e.fd)); err != nil {
-		return err
-	}
-	e.port, e.fd = 0, 0
-	return nil
 }
 
 func (e *port) LocPort() uint16 {

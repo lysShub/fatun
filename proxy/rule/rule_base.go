@@ -14,12 +14,12 @@ type baseRuler struct {
 	done     atomic.Bool
 }
 
-func newRule(baseRule, rule string, ch chan string) (Rule, error) {
+func newRule(rule string, ch chan string) (Rule, error) {
 	var err error
 	var p = &baseRuler{ch: ch}
 
-	var f = baseRule + " and " + rule
-	p.listener, err = divert.Open(f, divert.LAYER_FLOW, priority.DefaultRulePriority, divert.FLAG_READ_ONLY|divert.FLAG_SNIFF)
+	// LAYER_SOCKET 和 LAYER_FLOW 有区别, 如TCP, 只有在握手完成后才有LAYER_FLOW事件。
+	p.listener, err = divert.Open(rule, divert.LAYER_SOCKET, priority.DefaultRulePriority, divert.FLAG_READ_ONLY|divert.FLAG_SNIFF)
 	if err != nil {
 		return nil, err
 	}
