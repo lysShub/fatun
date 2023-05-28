@@ -15,6 +15,8 @@ import (
 )
 
 type session struct {
+	pack pack.Pack
+
 	working          atomic.Bool
 	oldInc, inc, cyc uint8
 	proto            uint8
@@ -52,7 +54,7 @@ func (s *session) Capture(sendto net.Conn, locIP net.IP) {
 
 		srcAddr, _ := netip.AddrFromSlice(cm.Src)
 
-		_, err = sendto.Write(pack.Packe(b[:n], s.proto, srcAddr))
+		_, err = sendto.Write(s.pack.Encode(b[:n], s.proto, srcAddr))
 		if err != nil {
 			s.close(err)
 		}

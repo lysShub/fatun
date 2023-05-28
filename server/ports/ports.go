@@ -161,7 +161,7 @@ func (p *ports) locSockaddr() syscall.Sockaddr {
 		p.m.RUnlock()
 		return p._locSockaddr
 	}
-	p.m.Unlock()
+	p.m.RUnlock()
 
 	p.m.Lock()
 	if p.locIP.Is6() {

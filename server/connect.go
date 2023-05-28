@@ -19,6 +19,8 @@ type connect struct {
 	srcMap  map[src]int32 // src:idx, idx is ses's index
 	srcLock *sync.RWMutex
 
+	pack pack.Pack
+
 	ses []session
 
 	mgrTimer *time.Timer
@@ -52,7 +54,7 @@ func Connect(svc *serverMux, conn net.Conn) *connect {
 
 func (c *connect) process() {
 	var (
-		b       []byte
+		b       []byte = make([]byte, 1536)
 		n       int
 		err     error
 		proto   uint8
@@ -68,7 +70,7 @@ func (c *connect) process() {
 			c.Close(err)
 		} else {
 
-			n, proto, dstIP = pack.Parse(b[:n])
+			n, proto, dstIP = c.pack.Decode(b[:n])
 
 			idx = c.getIdx(src{proto, toLittle(*srcPort)})
 			if idx < 0 || c.ses[idx].idle() {
@@ -103,6 +105,7 @@ func (c *connect) newSession(proto uint8, srcPort, dstPort uint16, dstIP netip.A
 	}
 	if idx == -1 {
 		c.ses = append(c.ses, session{})
+		idx = 0
 	}
 
 	c.ses[idx].proto = proto

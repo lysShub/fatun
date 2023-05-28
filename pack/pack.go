@@ -5,13 +5,6 @@ import (
 	"unsafe"
 )
 
-type Pack interface {
-	Packe(b []byte, proto Proto, remoteAddr netip.Addr) []byte
-	Parse(b []byte) (n int, proto Proto, remoteAddr netip.Addr)
-}
-
-const W = 4 + 1 // only ipv4
-
 type Proto = uint8
 
 const (
@@ -20,7 +13,16 @@ const (
 	UDP        = 17
 )
 
-func Packe(b []byte, proto Proto, remoteAddr netip.Addr) []byte {
+type Pack interface {
+	Encode(b []byte, proto Proto, remoteAddr netip.Addr) []byte
+	Decode(b []byte) (n int, proto Proto, remoteAddr netip.Addr)
+}
+
+const W = 4 + 1 // only ipv4
+
+type pack struct{}
+
+func (p *pack) Encode(b []byte, proto Proto, remoteAddr netip.Addr) []byte {
 	n := len(b)
 	if n+W < cap(b) {
 		tb := make([]byte, n+W)
@@ -35,7 +37,7 @@ func Packe(b []byte, proto Proto, remoteAddr netip.Addr) []byte {
 	return b
 }
 
-func Parse(b []byte) (n int, proto Proto, remoteAddr netip.Addr) {
+func (p *pack) Decode(b []byte) (n int, proto Proto, remoteAddr netip.Addr) {
 	n = len(b)
 	if n < W {
 		return
