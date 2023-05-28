@@ -39,10 +39,12 @@ func (p *baseRuler) do() {
 		}
 
 		a := addr.Flow()
-		var f = fmt.Sprintf("outbound and %s and localAddr=%s and remoteAddr=%s and localPort=%d and remotePort=%d", a.Protocol, a.LocalAddr(), a.RemoteAddr(), a.LocalPort, a.RemotePort)
+		// var f = fmt.Sprintf("%s and localAddr=%s and remoteAddr=%s and localPort=%d and remotePort=%d", a.Protocol, a.LocalAddr(), a.RemoteAddr(), a.LocalPort, a.RemotePort)
+		var f = fmt.Sprintf("tcp and localAddr=%s and remoteAddr=%s and localPort=%d and remotePort=%d", a.LocalAddr(), a.RemoteAddr(), a.LocalPort, a.RemotePort)
 
 		select {
 		case p.ch <- f:
+			fmt.Println(f)
 		default:
 			fmt.Println("rules channel is full")
 		}

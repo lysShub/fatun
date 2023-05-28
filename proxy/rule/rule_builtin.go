@@ -51,7 +51,7 @@ type tcpId struct {
 }
 
 func (id tcpId) proxy() string {
-	var f = fmt.Sprintf("!loopback and tcp and localAddr=%s and remoteAddr=%s and localPort=%d and remotePort=%d", id.laddr, id.raddr, id.lport, id.rport)
+	var f = fmt.Sprintf("tcp and localAddr=%s and remoteAddr=%s and localPort=%d and remotePort=%d", id.laddr, id.raddr, id.lport, id.rport)
 	return f
 }
 

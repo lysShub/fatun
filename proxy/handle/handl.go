@@ -1,6 +1,7 @@
 package handle
 
 import (
+	"fmt"
 	"itun/pack"
 	"itun/proxy/priority"
 	"net"
@@ -22,10 +23,13 @@ type Handler interface {
 }
 
 func Handle(pxyConn net.Conn, filter string) (Handler, error) {
+	fmt.Println("handle", filter)
+
 	var h = &handler{proxyConn: pxyConn, filter: filter}
 	var err error
-	h.hdl, err = divert.Open(filter, divert.LAYER_NETWORK, priority.HandlePriority, divert.FLAG_READ_ONLY)
+	h.hdl, err = divert.Open(filter, divert.LAYER_NETWORK, priority.HandlePriority, 0) // divert.FLAG_READ_ONLY
 	if err != nil {
+		panic(err)
 		return nil, err
 	}
 
@@ -49,9 +53,10 @@ func (h *handler) handle() {
 		if n, addr, err = h.hdl.Recv(b); err != nil {
 			panic(err)
 		}
+		fmt.Println("handle recv")
 
 		b = b[:n]
-		if !addr.IPv6() {
+		if addr.IPv6() {
 			const ipv6HdrLen = 40
 			ipHdr := header.IPv6(b)
 			ipHdrLen = ipv6HdrLen

@@ -3,7 +3,8 @@ module itun
 go 1.20
 
 require (
-	github.com/lysShub/go-divert v0.0.0-20230524174453-0ef53eec9492
+	github.com/lysShub/accept v0.0.0-20230528082414-509c4964da7c
+	github.com/lysShub/go-divert v0.0.0-20230525170717-31a5d070233e
 	github.com/shirou/gopsutil v2.21.11+incompatible
 	github.com/stretchr/testify v1.8.3
 	go.uber.org/zap v1.24.0
