@@ -73,12 +73,12 @@ func (c *connect) process() {
 			n, proto, dstIP = c.pack.Decode(b[:n])
 
 			idx = c.getIdx(src{proto, toLittle(*srcPort)})
-			if idx < 0 || c.ses[idx].idle() {
+			if idx < 0 || !c.ses[idx].idle() {
 				idx, err = c.newSession(proto, toLittle(*srcPort), toLittle(*dstPort), dstIP)
 				if err != nil {
 					c.Close(err)
 				} else {
-					go c.ses[idx].Capture(c.proxyConn, c.svc.localIP.AsSlice())
+					go c.ses[idx].Capture()
 				}
 			}
 			*srcPort = toBig(c.ses[idx].locPort)
@@ -123,6 +123,7 @@ func (c *connect) newSession(proto uint8, srcPort, dstPort uint16, dstIP netip.A
 	return idx, nil
 }
 
+// getIdx 获取session, 只要
 func (c *connect) getIdx(s src) (idx int32) {
 	has := false
 	c.srcLock.RLock()

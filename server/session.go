@@ -3,7 +3,6 @@ package server
 import (
 	"encoding/binary"
 	"fmt"
-	"itun/pack"
 	"net"
 	"net/netip"
 	"strconv"
@@ -15,23 +14,26 @@ import (
 )
 
 type session struct {
-	pack pack.Pack
-
+	conn             *connect
 	working          atomic.Bool
 	oldInc, inc, cyc uint8
-	proto            uint8
-	srcPort          uint16
-	locPort          uint16
-	dstAddr          netip.AddrPort
-	capture          *ipv4.PacketConn
+
+	proto   uint8
+	srcPort uint16
+	locPort uint16
+	dstAddr netip.AddrPort
+	capture *ipv4.PacketConn
 }
 
-func (s *session) Capture(sendto net.Conn, locIP net.IP) {
+func NewSession() {}
+
+// Capture 捕获服务器发送到代理服务器的数据包
+func (s *session) Capture() {
 	s.working.Store(true)
 	defer func() { s.working.Store(false) }()
 
 	var err error
-	s.capture, err = s.getCapture(locIP)
+	s.capture, err = s.getCapture(s.conn.svc.localIP)
 	if err != nil {
 		s.close(err)
 	}
@@ -54,7 +56,7 @@ func (s *session) Capture(sendto net.Conn, locIP net.IP) {
 
 		srcAddr, _ := netip.AddrFromSlice(cm.Src)
 
-		_, err = sendto.Write(s.pack.Encode(b[:n], s.proto, srcAddr))
+		_, err = s.conn.proxyConn.Write(s.conn.svc.Encode(b[:n], s.proto, srcAddr))
 		if err != nil {
 			s.close(err)
 		}
@@ -63,8 +65,8 @@ func (s *session) Capture(sendto net.Conn, locIP net.IP) {
 	}
 }
 
-func (s *session) getCapture(locIP net.IP) (*ipv4.PacketConn, error) {
-	conn, err := net.ListenIP("ip4:"+strconv.Itoa(int(s.proto)), &net.IPAddr{IP: locIP})
+func (s *session) getCapture(locIP netip.Addr) (*ipv4.PacketConn, error) {
+	conn, err := net.ListenIP("ip4:"+strconv.Itoa(int(s.proto)), &net.IPAddr{IP: locIP.AsSlice()})
 	if err != nil {
 		return nil, err
 	}

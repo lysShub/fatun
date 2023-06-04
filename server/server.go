@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"itun/pack"
 	"itun/server/ports"
 	"itun/server/raw"
 	"net"
@@ -12,6 +13,7 @@ import (
 type serverMux struct {
 	context.Context
 	raw.RawConn
+	pack.Pack
 
 	ports.PortMgr
 
