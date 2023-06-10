@@ -1,17 +1,31 @@
 package pack
 
 import (
+	"fmt"
 	"net/netip"
 	"unsafe"
 )
 
-type Proto = uint8
+type Proto uint8
 
 const (
 	ICMP Proto = 1
-	TCP        = 6
-	UDP        = 17
+	TCP  Proto = 6
+	UDP  Proto = 17
 )
+
+func (p Proto) String() string {
+	switch p {
+	case ICMP:
+		return "icmp"
+	case TCP:
+		return "tcp"
+	case UDP:
+		return "udp"
+	default:
+		return fmt.Sprintf("unknown %d", p)
+	}
+}
 
 type Pack interface {
 	Encode(b []byte, proto Proto, remoteAddr netip.Addr) []byte
@@ -25,6 +39,8 @@ type pack struct{}
 func (p *pack) Encode(b []byte, proto Proto, remoteAddr netip.Addr) []byte {
 	n := len(b)
 	if n+W < cap(b) {
+		panic("low efficiency")
+
 		tb := make([]byte, n+W)
 		copy(tb[0:], b[0:])
 		b = tb

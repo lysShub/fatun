@@ -75,7 +75,7 @@ func (h *handler) handle() {
 			dstAddr = netip.AddrFrom4([4]byte(a))
 		}
 
-		_, err = h.proxyConn.Write(h.pack.Encode(b[ipHdrLen:], uint8(proto), dstAddr))
+		_, err = h.proxyConn.Write(h.pack.Encode(b[ipHdrLen:], pack.Proto(proto), dstAddr))
 		if err != nil {
 			panic(err)
 		}
