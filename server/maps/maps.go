@@ -24,6 +24,9 @@ import (
 
 		由于本机IP是固定，所以可以locAddr用locPort代替。
 
+		由于是传输层代理, 本可以不用关心端口的, 但是由于一个server代理多client, 所以需要
+		端口来解决冲突。
+
 */
 
 type Map struct {
