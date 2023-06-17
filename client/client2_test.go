@@ -1,4 +1,4 @@
-package proxy_test
+package client_test
 
 import (
 	"fmt"
@@ -11,11 +11,11 @@ import (
 )
 
 type connect struct {
-	src, dst netip.AddrPort
+	cAddr, sAddr netip.AddrPort
 }
 
 func (c *connect) String() string {
-	return fmt.Sprintf("%s->%s", c.src, c.dst)
+	return fmt.Sprintf("%s->%s", c.cAddr, c.sAddr)
 }
 
 func TestXxx(t *testing.T) {

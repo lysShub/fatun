@@ -2,7 +2,7 @@ package rule
 
 import (
 	"fmt"
-	"itun/proxy/priority"
+	"itun/client/priority"
 	"time"
 
 	"github.com/lysShub/go-divert"

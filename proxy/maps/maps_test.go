@@ -3,7 +3,7 @@ package maps_test
 import (
 	"crypto/rand"
 	"fmt"
-	"itun/server/maps"
+	"itun/proxy/maps"
 	"math/big"
 	"net"
 	"net/netip"

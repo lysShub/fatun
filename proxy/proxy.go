@@ -1,46 +1,63 @@
 package proxy
 
 import (
-	"context"
-	"itun/proxy/handle"
-	"itun/proxy/rule"
+	"itun/pack"
+	"itun/proxy/maps"
 	"net"
+	"net/netip"
 )
 
-type Proxy struct {
-	proxyConn net.Conn
+type Server struct{}
 
-	Rules
-}
-
-func ListenAndProxy(ctx context.Context, pxyConn net.Conn, cfg *Config) *Proxy {
-	if cfg == nil {
-		cfg = &Config{Ipv6: true}
+func ListenUDPServer(laddr *net.UDPAddr) (*mux, error) {
+	pxyConn, err := net.ListenUDP("udp", laddr)
+	if err != nil {
+		return nil, err
 	}
 
-	var p = &Proxy{
-		proxyConn: pxyConn,
-		Rules:     rule.NewRules(),
+	if laddr.IP == nil {
+		laddr.IP = net.IPv4(127, 0, 0, 1)
+	}
+	locIP := netip.MustParseAddr(laddr.IP.String())
+	var mux = &mux{
+		Pack:      pack.New(),
+		ProxyConn: newUDPConn(pxyConn),
+
+		locIP: locIP,
+	}
+	mux.pxyMap, err = maps.NewMap(locIP)
+	if err != nil {
+		return nil, err
+	}
+	mux.rawTCP, err = net.ListenIP("ip4:tcp", &net.IPAddr{IP: laddr.IP})
+	if err != nil {
+		return nil, err
+	}
+	mux.rawUDP, err = net.ListenIP("ip4:udp", &net.IPAddr{IP: laddr.IP})
+	if err != nil {
+		return nil, err
 	}
 
 	go func() {
-		pch := p.Proxyer()
-		for f := range pch {
-			handle.Handle(p.proxyConn, f)
-		}
+		mux.ListenAndServer()
 	}()
-	return p
+
+	return mux, nil
 }
 
-type Config struct {
-	IfIdxs []int
-	Ipv6   bool // support ipv6
+type udpConn struct {
+	*net.UDPConn
 }
 
-type Rules interface {
-	Proxyer() <-chan string
-	AddRule(rule string) error
-	AddBuiltinRule() error
-	DelRule(rule string) error
-	List() []string
+var _ ProxyConn = (*udpConn)(nil)
+
+func newUDPConn(c *net.UDPConn) *udpConn {
+	return &udpConn{c}
+}
+
+func (c *udpConn) ReadFrom(b []byte) (int, netip.AddrPort, error) {
+	return c.ReadFromUDPAddrPort(b)
+}
+func (c *udpConn) WriteTo(b []byte, addr netip.AddrPort) (int, error) {
+	return c.WriteToUDPAddrPort(b, addr)
 }

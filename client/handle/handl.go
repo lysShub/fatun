@@ -2,8 +2,8 @@ package handle
 
 import (
 	"fmt"
+	"itun/client/priority"
 	"itun/pack"
-	"itun/proxy/priority"
 	"net"
 	"net/netip"
 
@@ -47,7 +47,7 @@ func (h *handler) handle() {
 		err      error
 		ipHdrLen uint8
 		proto    divert.Proto
-		dstAddr  netip.Addr
+		sAddr    netip.Addr
 	)
 
 	for {
@@ -65,17 +65,17 @@ func (h *handler) handle() {
 			proto = divert.Proto(ipHdr.NextHeader())
 
 			a := []byte(ipHdr.DestinationAddress())
-			dstAddr = netip.AddrFrom16(([16]byte)(a))
+			sAddr = netip.AddrFrom16(([16]byte)(a))
 		} else {
 			ipHdr := header.IPv4(b)
 			ipHdrLen = ipHdr.HeaderLength()
 			proto = divert.Proto(ipHdr.Protocol())
 
 			a := []byte(ipHdr.DestinationAddress())
-			dstAddr = netip.AddrFrom4([4]byte(a))
+			sAddr = netip.AddrFrom4([4]byte(a))
 		}
 
-		_, err = h.proxyConn.Write(h.pack.Encode(b[ipHdrLen:], pack.Proto(proto), dstAddr))
+		_, err = h.proxyConn.Write(h.pack.Encode(b[ipHdrLen:], pack.Proto(proto), sAddr))
 		if err != nil {
 			panic(err)
 		}

@@ -3,7 +3,7 @@ package maps
 import (
 	"fmt"
 	"itun/pack"
-	"itun/server/ports"
+	"itun/proxy/ports"
 	"net/netip"
 	"sync"
 	"sync/atomic"

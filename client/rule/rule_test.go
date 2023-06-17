@@ -2,7 +2,7 @@ package rule_test
 
 import (
 	"fmt"
-	"itun/proxy/rule"
+	"itun/client/rule"
 	"testing"
 
 	"github.com/lysShub/go-divert"

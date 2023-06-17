@@ -1,35 +1,41 @@
-package server
+package proxy
 
 import (
 	"encoding/binary"
 	"fmt"
 	"itun/pack"
-	"itun/server/maps"
+	"itun/proxy/maps"
 	"net"
 	"net/netip"
-	"unsafe"
+	"time"
 
 	"golang.org/x/net/bpf"
 	"golang.org/x/net/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
+type ProxyConn interface {
+	ReadFrom([]byte) (int, netip.AddrPort, error)
+	WriteTo([]byte, netip.AddrPort) (int, error)
+	SetDeadline(t time.Time) error
+	SetReadDeadline(t time.Time) error
+	SetWriteDeadline(t time.Time) error
+	Close() error
+}
+
 type mux struct {
 	// encode/decode pack
 	Pack pack.Pack
 
 	// proxy conn, used to send/recv client data
-	PxyConn interface {
-		ReadFrom([]byte) (int, netip.AddrPort, error)
-		WriteTo([]byte, netip.AddrPort) (int, error)
-	}
+	ProxyConn
 
 	locIP          netip.Addr
 	pxyMap         *maps.Map
 	rawTCP, rawUDP *net.IPConn // write only
 }
 
-func (s *mux) listenUP() {
+func (s *mux) ListenAndServer() {
 	var (
 		b = make([]byte, 1532)
 
@@ -37,16 +43,17 @@ func (s *mux) listenUP() {
 		src     netip.AddrPort
 		dst     netip.Addr // transport-layer proxy
 		dstPort uint16
+		udpHdr  header.UDP
+		tcpHdr  header.TCP
 		err     error
 		proto   pack.Proto
 		locPort uint16
 	)
 
-	srcPortPtr := (*uint16)(unsafe.Pointer(&b[0]))
 	newPort := false
 	for {
 		b = b[:cap(b)]
-		n, src, err = s.PxyConn.ReadFrom(b)
+		n, src, err = s.ProxyConn.ReadFrom(b)
 		if err != nil {
 			panic(err)
 		}
@@ -67,7 +74,8 @@ func (s *mux) listenUP() {
 				go s.recvTCP(locPort)
 			}
 
-			*srcPortPtr = toBig(locPort)
+			tcpHdr = header.TCP(b)
+			tcpHdr.SetSourcePortWithChecksumUpdate(locPort)
 			_, err = s.rawTCP.WriteToIP(b, &net.IPAddr{IP: dst.AsSlice(), Zone: dst.Zone()})
 			if err != nil {
 				panic(err)
@@ -80,7 +88,8 @@ func (s *mux) listenUP() {
 				go s.recvUDP(locPort)
 			}
 
-			*srcPortPtr = toBig(locPort)
+			udpHdr = header.UDP(b)
+			udpHdr.SetSourcePortWithChecksumUpdate(locPort)
 			_, err = s.rawUDP.WriteToIP(b, &net.IPAddr{IP: dst.AsSlice(), Zone: dst.Zone()})
 			if err != nil {
 				panic(err)
@@ -130,7 +139,7 @@ func (s *mux) recvTCP(locPort uint16) {
 		hdrLen  int
 		has     bool
 		src     netip.AddrPort
-		dstAddr netip.Addr
+		sAddr   netip.Addr
 		dstPort uint16
 		err     error
 	)
@@ -144,16 +153,16 @@ func (s *mux) recvTCP(locPort uint16) {
 
 		hdr = header.IPv4(b)
 		hdrLen = int(hdr.HeaderLength())
-		dstAddr = netip.AddrFrom4([4]byte([]byte(hdr.SourceAddress())))
+		sAddr = netip.AddrFrom4([4]byte([]byte(hdr.SourceAddress())))
 
-		src, has = s.pxyMap.DownGetTCP(netip.AddrPortFrom(dstAddr, dstPort), locPort)
+		src, has = s.pxyMap.DownGetTCP(netip.AddrPortFrom(sAddr, dstPort), locPort)
 		if !has {
 			panic("not found")
 		}
 
-		b = s.Pack.Encode(b[hdrLen:], pack.TCP, dstAddr)
+		b = s.Pack.Encode(b[hdrLen:], pack.TCP, sAddr)
 
-		_, err = s.PxyConn.WriteTo(b, src)
+		_, err = s.ProxyConn.WriteTo(b, src)
 		if err != nil {
 			panic(err)
 		}
@@ -192,15 +201,15 @@ func (s *mux) recvUDP(locPort uint16) {
 	}
 
 	var (
-		b       = make([]byte, 1532)
-		n       int
-		hdr     header.IPv4
-		hdrLen  int
-		has     bool
-		src     netip.AddrPort
-		dstAddr netip.Addr
-		dstPort uint16
-		err     error
+		b      = make([]byte, 1532)
+		n      int
+		ipHdr  header.IPv4
+		hdrLen int
+		has    bool
+		cAddr  netip.AddrPort
+		sAddr  netip.Addr
+		sPort  uint16
+		err    error
 	)
 	for {
 		b = b[:cap(b)]
@@ -210,22 +219,44 @@ func (s *mux) recvUDP(locPort uint16) {
 		}
 		b = b[:n]
 
-		hdr = header.IPv4(b)
-		hdrLen = int(hdr.HeaderLength())
-		dstAddr = netip.AddrFrom4([4]byte([]byte(hdr.SourceAddress())))
+		ipHdr = header.IPv4(b)
+		hdrLen = int(ipHdr.HeaderLength())
+		sAddr = netip.AddrFrom4([4]byte([]byte(ipHdr.SourceAddress())))
+		sPort = header.UDP(b[hdrLen:]).SourcePort()
 
-		src, has = s.pxyMap.DownGetTCP(netip.AddrPortFrom(dstAddr, dstPort), locPort)
+		cAddr, has = s.pxyMap.DownGetUDP(netip.AddrPortFrom(sAddr, sPort), locPort)
 		if !has {
 			panic("not found")
 		}
 
-		b = s.Pack.Encode(b[hdrLen:], pack.TCP, dstAddr)
+		b = s.Pack.Encode(b[hdrLen:], pack.UDP, sAddr)
 
-		_, err = s.PxyConn.WriteTo(b, src)
+		_, err = s.ProxyConn.WriteTo(b, cAddr)
 		if err != nil {
 			panic(err)
 		}
 	}
+}
+
+func (s *mux) Close() (err error) {
+	err = s.ProxyConn.Close()
+
+	e := s.pxyMap.Clsoe()
+	if e != nil && err == nil {
+		err = e
+	}
+
+	e = s.rawTCP.Close()
+	if e != nil && err == nil {
+		err = e
+	}
+
+	e = s.rawUDP.Close()
+	if e != nil && err == nil {
+		err = e
+	}
+
+	return err
 }
 
 func toLittle(v uint16) uint16 {

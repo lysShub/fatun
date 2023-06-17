@@ -36,9 +36,13 @@ const W = 4 + 1 // only ipv4
 
 type pack struct{}
 
+func New() Pack {
+	return &pack{}
+}
+
 func (p *pack) Encode(b []byte, proto Proto, remoteAddr netip.Addr) []byte {
 	n := len(b)
-	if n+W < cap(b) {
+	if n+W > cap(b) {
 		panic("low efficiency")
 
 		tb := make([]byte, n+W)

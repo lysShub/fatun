@@ -1,10 +1,10 @@
-package server
+package proxy
 
 import (
 	"context"
 	"itun/pack"
-	"itun/server/ports"
-	"itun/server/raw"
+	"itun/proxy/ports"
+	"itun/proxy/raw"
 	"net"
 	"net/netip"
 	"sync"

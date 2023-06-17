@@ -1,7 +1,6 @@
-package server_test
+package proxy_test
 
 import (
-	"itun/server"
 	"net"
 	"testing"
 
