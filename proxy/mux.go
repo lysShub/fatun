@@ -2,13 +2,14 @@ package proxy
 
 import (
 	"encoding/binary"
-	"fmt"
 	"itun/pack"
 	"itun/proxy/maps"
 	"net"
 	"net/netip"
+	"sync/atomic"
 	"time"
 
+	"go.uber.org/zap"
 	"golang.org/x/net/bpf"
 	"golang.org/x/net/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -20,27 +21,36 @@ type ProxyConn interface {
 	SetDeadline(t time.Time) error
 	SetReadDeadline(t time.Time) error
 	SetWriteDeadline(t time.Time) error
+	LocalAddr() net.Addr
 	Close() error
 }
 
 type mux struct {
 	// encode/decode pack
-	Pack pack.Pack
+	pack.Pack
 
 	// proxy conn, used to send/recv client data
 	ProxyConn
 
+	logger *zap.Logger
+
 	locIP          netip.Addr
 	pxyMap         *maps.Map
 	rawTCP, rawUDP *net.IPConn // write only
+	closed         atomic.Bool
 }
 
-func (s *mux) ListenAndServer() {
+func (s *mux) Prxoy() {
+	s.logger.Info("proxy",
+		zap.String("proxy proto", s.ProxyConn.LocalAddr().Network()),
+		zap.String("listen ip", s.locIP.String()),
+	)
+
 	var (
 		b = make([]byte, 1532)
 
 		n       int
-		src     netip.AddrPort
+		cAddr   netip.AddrPort
 		dst     netip.Addr // transport-layer proxy
 		dstPort uint16
 		udpHdr  header.UDP
@@ -53,9 +63,12 @@ func (s *mux) ListenAndServer() {
 	newPort := false
 	for {
 		b = b[:cap(b)]
-		n, src, err = s.ProxyConn.ReadFrom(b)
+		n, cAddr, err = s.ProxyConn.ReadFrom(b)
 		if err != nil {
-			panic(err)
+			if s.closed.Load() {
+				return
+			}
+			s.logger.Panic("read from proxy conn", zap.Error(err))
 		}
 
 		n, proto, dst = s.Pack.Decode(b[:n])
@@ -67,10 +80,11 @@ func (s *mux) ListenAndServer() {
 
 		switch proto {
 		case pack.TCP:
-			locPort, newPort, err = s.pxyMap.UpGetTCP(src, netip.AddrPortFrom(dst, dstPort))
+			locPort, newPort, err = s.pxyMap.UpGetTCP(cAddr, netip.AddrPortFrom(dst, dstPort))
 			if err != nil {
-				panic(err)
+				s.logger.Panic("get tcp port", zap.Error(err))
 			} else if newPort {
+				s.logger.Info("new tcp port", zap.Uint16("port", locPort))
 				go s.recvTCP(locPort)
 			}
 
@@ -78,13 +92,14 @@ func (s *mux) ListenAndServer() {
 			tcpHdr.SetSourcePortWithChecksumUpdate(locPort)
 			_, err = s.rawTCP.WriteToIP(b, &net.IPAddr{IP: dst.AsSlice(), Zone: dst.Zone()})
 			if err != nil {
-				panic(err)
+				s.logger.Panic("write to raw tcp", zap.Error(err))
 			}
 		case pack.UDP:
-			locPort, newPort, err = s.pxyMap.UpGetUDP(src, netip.AddrPortFrom(dst, dstPort))
+			locPort, newPort, err = s.pxyMap.UpGetUDP(cAddr, netip.AddrPortFrom(dst, dstPort))
 			if err != nil {
-				panic(err)
+				s.logger.Panic("get udp port", zap.Error(err))
 			} else if newPort {
+				s.logger.Info("new udp port", zap.Uint16("port", locPort))
 				go s.recvUDP(locPort)
 			}
 
@@ -92,25 +107,33 @@ func (s *mux) ListenAndServer() {
 			udpHdr.SetSourcePortWithChecksumUpdate(locPort)
 			_, err = s.rawUDP.WriteToIP(b, &net.IPAddr{IP: dst.AsSlice(), Zone: dst.Zone()})
 			if err != nil {
-				panic(err)
+				s.logger.Panic("write to raw udp", zap.Error(err))
 			}
 		case pack.ICMP:
-			panic("icmp not support yet") // icmp need record sequence number
+			// icmp need record sequence number
+			s.logger.Warn("icmp not support yet", zap.String("client addr", cAddr.String()))
 		default:
-			panic(fmt.Sprintf("unknown proto %d", proto))
+			s.logger.Warn("unknown proto",
+				zap.Uint8("proto number", uint8(proto)),
+				zap.String("client addr", cAddr.String()),
+			)
 		}
 	}
 }
 
 func (s *mux) recvTCP(locPort uint16) {
+	logger := s.logger.With(zap.Uint16("recv tcp", locPort))
+
 	var rc *ipv4.RawConn
 	{ // TODO: use std IPConn and by SyscallConn to set BPF filter
 		conn, err := net.ListenIP("ip4:"+pack.TCP.String(), &net.IPAddr{IP: s.locIP.AsSlice()})
 		if err != nil {
-			panic(err)
+			logger.Error("listen ip", zap.Error(err))
+			return
 		}
 		if rc, err = ipv4.NewRawConn(conn); err != nil {
-			panic(err)
+			logger.Error("new raw conn", zap.Error(err))
+			return
 		}
 		var locPortFilter = []bpf.Instruction{
 			bpf.LoadMemShift{Off: 0},
@@ -125,29 +148,32 @@ func (s *mux) recvTCP(locPort uint16) {
 		}
 		filter, err := bpf.Assemble(locPortFilter)
 		if err != nil {
-			panic(err)
+			logger.Error("build bpf assemble", zap.Error(err))
+			return
 		}
 		if err = rc.SetBPF(filter); err != nil {
-			panic(err)
+			logger.Error("set bpf", zap.Error(err))
+			return
 		}
 	}
 
 	var (
-		b       = make([]byte, 1532)
-		n       int
-		hdr     header.IPv4
-		hdrLen  int
-		has     bool
-		src     netip.AddrPort
-		sAddr   netip.Addr
-		dstPort uint16
-		err     error
+		b      = make([]byte, 1532)
+		n      int
+		hdr    header.IPv4
+		hdrLen int
+		has    bool
+		src    netip.AddrPort
+		sAddr  netip.Addr
+		sPort  uint16
+		err    error
 	)
 	for {
 		b = b[:cap(b)]
 		n, err = rc.Read(b)
 		if err != nil {
-			panic(err)
+			logger.Error("read from raw conn", zap.Error(err))
+			return
 		}
 		b = b[:n]
 
@@ -155,29 +181,37 @@ func (s *mux) recvTCP(locPort uint16) {
 		hdrLen = int(hdr.HeaderLength())
 		sAddr = netip.AddrFrom4([4]byte([]byte(hdr.SourceAddress())))
 
-		src, has = s.pxyMap.DownGetTCP(netip.AddrPortFrom(sAddr, dstPort), locPort)
+		src, has = s.pxyMap.DownGetTCP(netip.AddrPortFrom(sAddr, sPort), locPort)
 		if !has {
-			panic("not found")
+			logger.Info("can't get client addr from proxy-map",
+				zap.Stringer("server addr", netip.AddrPortFrom(sAddr, sPort)),
+			)
+			continue
 		}
 
 		b = s.Pack.Encode(b[hdrLen:], pack.TCP, sAddr)
 
 		_, err = s.ProxyConn.WriteTo(b, src)
 		if err != nil {
-			panic(err)
+			logger.Error("write to proxy conn", zap.Error(err))
+			return
 		}
 	}
 }
 
 func (s *mux) recvUDP(locPort uint16) {
+	logger := s.logger.With(zap.Uint16("recv udp", locPort))
+
 	var rc *ipv4.RawConn
 	{
 		conn, err := net.ListenIP("ip4:"+pack.UDP.String(), &net.IPAddr{IP: s.locIP.AsSlice()})
 		if err != nil {
-			panic(err)
+			logger.Error("listen ip", zap.Error(err))
+			return
 		}
 		if rc, err = ipv4.NewRawConn(conn); err != nil {
-			panic(err)
+			logger.Error("new raw conn", zap.Error(err))
+			return
 		}
 
 		var locPortFilter = []bpf.Instruction{
@@ -193,10 +227,12 @@ func (s *mux) recvUDP(locPort uint16) {
 		}
 		filter, err := bpf.Assemble(locPortFilter)
 		if err != nil {
-			panic(err)
+			logger.Error("build bpf assemble", zap.Error(err))
+			return
 		}
 		if err = rc.SetBPF(filter); err != nil {
-			panic(err)
+			logger.Error("set bpf", zap.Error(err))
+			return
 		}
 	}
 
@@ -215,7 +251,8 @@ func (s *mux) recvUDP(locPort uint16) {
 		b = b[:cap(b)]
 		n, err = rc.Read(b)
 		if err != nil {
-			panic(err)
+			logger.Error("read from raw conn", zap.Error(err))
+			return
 		}
 		b = b[:n]
 
@@ -226,19 +263,25 @@ func (s *mux) recvUDP(locPort uint16) {
 
 		cAddr, has = s.pxyMap.DownGetUDP(netip.AddrPortFrom(sAddr, sPort), locPort)
 		if !has {
-			panic("not found")
+			logger.Info("can't get client addr from proxy-map",
+				zap.Stringer("server addr", netip.AddrPortFrom(sAddr, sPort)),
+			)
+			continue
 		}
 
 		b = s.Pack.Encode(b[hdrLen:], pack.UDP, sAddr)
 
 		_, err = s.ProxyConn.WriteTo(b, cAddr)
 		if err != nil {
-			panic(err)
+			logger.Error("write to proxy conn", zap.Error(err))
+			return
 		}
 	}
 }
 
 func (s *mux) Close() (err error) {
+	s.closed.Store(true)
+
 	err = s.ProxyConn.Close()
 
 	e := s.pxyMap.Clsoe()
@@ -257,12 +300,4 @@ func (s *mux) Close() (err error) {
 	}
 
 	return err
-}
-
-func toLittle(v uint16) uint16 {
-	return (v >> 8) | (v << 8)
-}
-
-func toBig(v uint16) uint16 {
-	return (v >> 8) | (v << 8)
 }

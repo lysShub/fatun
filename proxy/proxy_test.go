@@ -14,45 +14,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
-var sAddr = &net.UDPAddr{IP: net.IPv4(8, 137, 99, 65), Port: 19986}
-
-func TestS(t *testing.T) {
-	conn, err := net.ListenUDP("udp", sAddr)
-	require.NoError(t, err)
-	defer conn.Close()
-
-	var buf = make([]byte, 1024)
-	for {
-		n, addr, err := conn.ReadFromUDP(buf)
-		require.NoError(t, err)
-
-		fmt.Println(string(buf[:n]))
-
-		_, err = conn.WriteToUDP(buf[:n], addr)
-		require.NoError(t, err)
-	}
-}
-
-func TestC(t *testing.T) {
-
-	conn, err := net.DialIP("ip4:udp", nil, &net.IPAddr{IP: sAddr.IP})
-
-	// conn, err := net.ListenIP("ip4:udp", &net.IPAddr{})
-	require.NoError(t, err)
-
-	var b []byte
-	// b := genUDP(uint16(59528), uint16(sAddr.Port), []byte("hello"))
-
-	// n, err := conn.WriteToIP(b, &net.IPAddr{IP: sAddr.IP})
-	n, err := conn.Write(b)
-	require.NoError(t, err)
-	require.Equal(t, len(b), n)
-
-	time.Sleep(time.Second * 2)
-
-}
-
-func TestServer(t *testing.T) {
+func TestProxy(t *testing.T) {
 	var saddr = &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 19986}
 	var paddr = &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 9721}
 	var caddr = &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 34459}
@@ -79,8 +41,9 @@ func TestServer(t *testing.T) {
 
 	// proxyer
 	{
-		_, err := proxy.ListenUDPServer(paddr)
+		mux, err := proxy.ListenAndProxyWithUDP(paddr)
 		require.NoError(t, err)
+		defer mux.Close()
 	}
 
 	// client
@@ -99,6 +62,74 @@ func TestServer(t *testing.T) {
 
 		n, _, _ = packer.Decode(buf[:n])
 		require.Equal(t, "hello", string(buf[8:n]))
+	}
+}
+
+func TestProxy1(t *testing.T) {
+	var saddr = &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 19986}
+	var paddr = &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 9721}
+	var caddr1 = &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 34459}
+	var caddr2 = &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 34460}
+	var packer = pack.New()
+
+	// ping-pong server
+	go func() {
+		conn, err := net.ListenUDP("udp", saddr)
+		require.NoError(t, err)
+		defer conn.Close()
+
+		var buf = make([]byte, 1024)
+		for {
+			n, addr, err := conn.ReadFromUDP(buf)
+			require.NoError(t, err)
+
+			_, err = conn.WriteToUDP(buf[:n], addr)
+			require.NoError(t, err)
+		}
+	}()
+	time.Sleep(time.Millisecond * 100)
+
+	// proxyer
+	{
+		mux, err := proxy.ListenAndProxyWithUDP(paddr)
+		require.NoError(t, err)
+		defer mux.Close()
+	}
+
+	// client1
+	{
+		c, err := net.DialUDP("udp", nil, paddr)
+		require.NoError(t, err)
+
+		d := genUDP(caddr1, saddr, []byte("hello"))
+		d = packer.Encode(d, pack.UDP, saddr.AddrPort().Addr())
+		_, err = c.Write(d)
+		require.NoError(t, err)
+
+		var buf = make([]byte, 1024)
+		n, err := c.Read(buf)
+		require.NoError(t, err)
+
+		n, _, _ = packer.Decode(buf[:n])
+		require.Equal(t, "hello", string(buf[8:n]))
+	}
+
+	// client2
+	{
+		c, err := net.DialUDP("udp", nil, paddr)
+		require.NoError(t, err)
+
+		d := genUDP(caddr2, saddr, []byte("world"))
+		d = packer.Encode(d, pack.UDP, saddr.AddrPort().Addr())
+		_, err = c.Write(d)
+		require.NoError(t, err)
+
+		var buf = make([]byte, 1024)
+		n, err := c.Read(buf)
+		require.NoError(t, err)
+
+		n, _, _ = packer.Decode(buf[:n])
+		require.Equal(t, "world", string(buf[8:n]))
 	}
 }
 
