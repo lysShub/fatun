@@ -9,24 +9,6 @@ import (
 	"go.uber.org/zap"
 )
 
-// type Proxy interface {
-// 	WithProxyConn(ProxyConn) error
-// 	WithLogPath(...string) error // zap.Config.OutputPaths
-// 	WithProtos(...pack.Proto) error
-
-// 	Prxoy()
-// }
-
-type Config struct {
-	ListenAddr net.Addr
-
-	// see zap.Open
-	LogPath []string
-
-	// proxy transport protocol: TCP, UDP
-	Protos []pack.Proto
-}
-
 type proxy struct {
 	*mux
 }

@@ -1,46 +1,33 @@
 package client
 
 import (
-	"context"
 	"itun/client/handle"
 	"itun/client/rule"
 	"net"
+
+	"go.uber.org/zap"
 )
 
-type Proxy struct {
+type Client struct {
 	proxyConn net.Conn
 
-	Rules
+	rule.Rules
+
+	logger *zap.Logger
 }
 
-func ListenAndProxy(ctx context.Context, pxyConn net.Conn, cfg *Config) *Proxy {
-	if cfg == nil {
-		cfg = &Config{Ipv6: true}
-	}
+func NewClient(pxyConn net.Conn) *Client {
 
-	var p = &Proxy{
+	var p = &Client{
 		proxyConn: pxyConn,
 		Rules:     rule.NewRules(),
 	}
 
 	go func() {
-		pch := p.Proxyer()
+		pch := p.Capture()
 		for f := range pch {
 			handle.Handle(p.proxyConn, f)
 		}
 	}()
 	return p
-}
-
-type Config struct {
-	IfIdxs []int
-	Ipv6   bool // support ipv6
-}
-
-type Rules interface {
-	Proxyer() <-chan string
-	AddRule(rule string) error
-	AddBuiltinRule() error
-	DelRule(rule string) error
-	List() []string
 }

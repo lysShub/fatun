@@ -1,7 +1,6 @@
 package client_test
 
 import (
-	"context"
 	proxy "itun/client"
 	"net"
 	"testing"
@@ -19,7 +18,7 @@ func TestProxy(t *testing.T) {
 	pxyConn, err := net.DialUDP("udp", nil, saddr)
 	require.NoError(t, err)
 
-	pxy := proxy.ListenAndProxy(context.Background(), pxyConn, &proxy.Config{})
+	pxy := proxy.NewClient(pxyConn)
 
 	// telnet 142.251.43.14 80
 

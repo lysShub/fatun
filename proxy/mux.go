@@ -30,6 +30,7 @@ type mux struct {
 	pack.Pack
 
 	// proxy conn, used to send/recv client data
+	// must datagram conn
 	ProxyConn
 
 	logger *zap.Logger

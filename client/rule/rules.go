@@ -2,33 +2,17 @@ package rule
 
 import (
 	"errors"
-	"strings"
 	"sync"
-
-	"github.com/lysShub/go-divert"
 )
 
-type Rule interface {
-	Close() error
-	// TODO:
-}
+// rule 表示一个捕获filter language
 
-type rule string
-
-func (r rule) Format() (string, error) {
-	if r == "" || strings.ToLower(string(r)) == BuiltinRule {
-		return BuiltinRule, nil
-	} else {
-		r, err := divert.HelperFormatFilter(string(r), divert.LAYER_SOCKET)
-		if err != nil {
-			return "", err
-		}
-		return r, nil
-	}
-}
-
-func (r rule) IsBuiltin() bool {
-	return strings.ToLower(string(r)) == BuiltinRule
+type Rules interface {
+	Capture() <-chan string
+	AddRule(rule string) error
+	AddBuiltinRule() error
+	DelRule(rule string) error
+	List() []string
 }
 
 type rules struct {
@@ -47,7 +31,7 @@ func NewRules() *rules {
 	}
 }
 
-func (rs *rules) Proxyer() <-chan string {
+func (rs *rules) Capture() <-chan string {
 	return rs.ch
 }
 
