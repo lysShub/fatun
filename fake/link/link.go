@@ -18,7 +18,8 @@ type Endpoint struct {
 
 var _ stack.LinkEndpoint = (*Endpoint)(nil)
 
-// implemente stack.LinkEndpoint, must work for one tcp connection
+// implemente stack.LinkEndpoint, only bear one tcp connection,
+// and the tcp can Close implicit.
 func New(size int, mtu uint32) *Endpoint {
 	return &Endpoint{
 		Endpoint: channel.New(size, mtu, ""),
@@ -41,19 +42,19 @@ func (e *Endpoint) SeqAck() (seq, ack uint32) {
 func (e *Endpoint) ReadContext(ctx context.Context) stack.PacketBufferPtr {
 	pkt := e.Endpoint.ReadContext(ctx)
 
-	if pkt.TransportProtocolNumber == header.TCPProtocolNumber {
+	if pkt != nil && pkt.TransportProtocolNumber == header.TCPProtocolNumber {
 		tcphdr := header.TCP(pkt.TransportHeader().Slice())
 
 		e.setSeq(tcphdr.SequenceNumber())
-		EnCustomFIN(tcphdr)
+		EncodeCustomFIN(tcphdr)
 	}
 
 	return pkt
 }
 
-// Inject inject ip packet to gvistor stack.
+// Inject inject tcp packet to gvistor stack.
 func (e *Endpoint) InjectInbound(protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBufferPtr) {
-	ss := pkt.AsSlices()
+	ss := pkt.AsSlices() // avoid memcpy
 	if len(ss) == 1 {
 		var tcphdr header.TCP
 		switch header.IPVersion(ss[0]) {
@@ -70,7 +71,7 @@ func (e *Endpoint) InjectInbound(protocol tcpip.NetworkProtocolNumber, pkt stack
 		default:
 		}
 		if len(tcphdr) > 0 {
-			DeCustomFIN(tcphdr)
+			DecodeCustomFIN(tcphdr)
 			e.setAck(tcphdr.SequenceNumber())
 		}
 	} else {
@@ -113,7 +114,7 @@ func (e *Endpoint) decodeSlices(bs [][]byte, proto tcpip.NetworkProtocolNumber) 
 		tcphdr = append(tcphdr, bs[i]...)
 	}
 
-	if DeCustomFIN(tcphdr) {
+	if DecodeCustomFIN(tcphdr) {
 		j := copy(bs[s][s2:], tcphdr)
 		for i := s + 1; i < len(bs) && j < len(tcphdr); i++ {
 			j += copy(bs[i], tcphdr[j:])

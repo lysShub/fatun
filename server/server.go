@@ -5,36 +5,43 @@ package server
 
 import (
 	"context"
-	"crypto/tls"
 	"itun"
+	"itun/sconn"
 	"net/netip"
 
 	"github.com/lysShub/relraw"
 	"github.com/lysShub/relraw/tcp/bpf"
-	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
 type Config struct {
-	TLS *tls.Config
+	sconn.Config
 }
 
 type Server struct {
-	Config
+	cfg *Config
+
+	l relraw.Listener
 
 	Addr netip.AddrPort
+
+	ap *PortAdapter
 }
 
-func ListenAndServer(ctx context.Context, addr string, cfg Config) error {
+func ListenAndServer(ctx context.Context, addr string, cfg *Config) error {
 	a, err := netip.ParseAddrPort(addr)
 	if err != nil {
 		return err
 	}
+	var s = &Server{
+		cfg:  cfg,
+		Addr: a,
+		ap:   NewPortAdapter(a.Addr()),
+	}
 
-	l, err := bpf.ListenWithBPF(a)
+	s.l, err = bpf.Listen(a)
 	if err != nil {
 		return err
 	}
-	defer l.Close()
 
 	for {
 		select {
@@ -43,69 +50,11 @@ func ListenAndServer(ctx context.Context, addr string, cfg Config) error {
 		default:
 		}
 
-		rconn, err := l.Accept()
+		rconn, err := s.l.Accept()
 		if err != nil {
 			return err
 		}
 
-		s := &Handler{
-			Raw: rconn,
-		}
-
-		go s.Do(ctx)
+		go Handle(ctx, s, itun.WrapRawConn(rconn))
 	}
-}
-
-type Handler struct {
-	Raw relraw.RawConn
-
-	mgrRaw  *itun.TCPConn
-	MgrConn *tls.Conn
-
-	Srv *Server
-}
-
-func NewHandler(conn relraw.RawConn, cf Config) (*Handler, error) {
-
-	return nil, nil
-}
-
-func (s *Handler) Do(ctx context.Context) error {
-	go func() {
-		var ip = header.IPv4(make([]byte, 1536))
-		for {
-			if n, err := s.Raw.Read(ip); err != nil {
-				panic(err)
-			} else if header.IPVersion(ip) != 4 {
-				continue
-			} else if n < header.IPv4MinimumSize+header.IPv6MinimumSize {
-				continue
-			}
-
-			tcphdr := header.TCP(ip.Payload())
-
-			if itun.IsMgrSeg(tcphdr) {
-				if _, err := s.mgrRaw.InjectIP(ip); err != nil {
-					panic(err)
-				}
-			} else {
-				// 如果握手没完成, 需要报错
-			}
-		}
-	}()
-
-	if err := s.handshake(ctx); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (s *Handler) handshake(ctx context.Context) error {
-	// tls handshake
-	s.MgrConn = tls.Client(s.mgrRaw, s.Srv.Config.TLS)
-
-	// itun init config
-
-	return nil
 }

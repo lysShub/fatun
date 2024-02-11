@@ -46,12 +46,12 @@ func Test_Custom_TCP_Flag(t *testing.T) {
 		tcphdr := buildTCP(true)
 		require.True(t, validChecksum(tcphdr))
 
-		EnCustomFIN(tcphdr)
+		EncodeCustomFIN(tcphdr)
 		require.True(t, validChecksum(tcphdr))
 		require.True(t, isCustomFIN(tcphdr))
 		require.False(t, tcphdr.Flags().Contains(header.TCPFlagFin))
 
-		DeCustomFIN(tcphdr)
+		DecodeCustomFIN(tcphdr)
 		require.True(t, validChecksum(tcphdr))
 		require.True(t, tcphdr.Flags().Contains(header.TCPFlagFin))
 	})
@@ -60,7 +60,7 @@ func Test_Custom_TCP_Flag(t *testing.T) {
 		tcphdr := buildTCP(false)
 		require.True(t, validChecksum(tcphdr))
 
-		EnCustomFIN(tcphdr)
+		EncodeCustomFIN(tcphdr)
 		require.True(t, validChecksum(tcphdr))
 		require.False(t, isCustomFIN(tcphdr))
 	})
@@ -69,7 +69,7 @@ func Test_Custom_TCP_Flag(t *testing.T) {
 		tcphdr := buildTCP(false)
 		require.True(t, validChecksum(tcphdr))
 
-		DeCustomFIN(tcphdr)
+		DecodeCustomFIN(tcphdr)
 		require.True(t, validChecksum(tcphdr))
 		require.False(t, isCustomFIN(tcphdr))
 	})

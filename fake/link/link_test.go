@@ -2,7 +2,6 @@ package link_test
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"itun/fake/link"
 	"net"
@@ -22,10 +21,13 @@ import (
 
 func Test_Custom_Network_Stack(t *testing.T) {
 
-	var cconn, sconn net.Conn
-	var links []*link.Endpoint
+	// user stack
+	var cconn, sconn, links = func() (net.Conn, net.Conn, []*link.Endpoint) {
+		var (
+			cconn, sconn net.Conn
+			links        []*link.Endpoint
+		)
 
-	{ // user stack
 		var (
 			stacks []*stack.Stack
 			nics   = []tcpip.NICID{123, 321}
@@ -60,20 +62,18 @@ func Test_Custom_Network_Stack(t *testing.T) {
 			for {
 				pkb := a.ReadContext(context.Background())
 				if pkb.IsNil() {
-					continue
-				} else {
-					iphdr := header.IPv4(pkb.ToView().AsSlice())
-					tcphdr := header.TCP(iphdr.Payload())
-					require.False(t, tcphdr.Flags().Contains(header.TCPFlagFin))
+					return
 				}
+				iphdr := header.IPv4(pkb.ToView().AsSlice())
+				tcphdr := header.TCP(iphdr.Payload())
+				require.False(t, tcphdr.Flags().Contains(header.TCPFlagFin))
 
 				pkb2 := stack.NewPacketBuffer(stack.PacketBufferOptions{
-					Payload: buffer.MakeWithData(pkb.ToView().AsSlice()),
+					Payload: buffer.MakeWithData(iphdr),
 				})
 				pkb.DecRef()
 
 				b.InjectInbound(ipv4.ProtocolNumber, pkb2)
-
 			}
 		}
 		go linkUnicom(links[0], links[1])
@@ -101,7 +101,8 @@ func Test_Custom_Network_Stack(t *testing.T) {
 		require.NoError(t, err)
 
 		wg.Wait()
-	}
+		return cconn, sconn, links
+	}()
 
 	go io.Copy(sconn, sconn)
 
@@ -118,6 +119,8 @@ func Test_Custom_Network_Stack(t *testing.T) {
 	require.NoError(t, cconn.Close())
 	time.Sleep(time.Second)
 
-	fmt.Println(links[0].SeqAck())
-	fmt.Println(links[1].SeqAck())
+	s1, a1 := links[0].SeqAck()
+	s2, a2 := links[1].SeqAck()
+	require.Equal(t, s1, a2)
+	require.Equal(t, s2, a1)
 }

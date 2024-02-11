@@ -1,6 +1,7 @@
 package fake
 
 import (
+	"itun/sconn/crypto"
 	"math/rand"
 	"sync/atomic"
 
@@ -25,6 +26,7 @@ type FakeTCP struct {
 	// raw []byte
 }
 
+// NewFakeTCP set fake tcp header
 func NewFakeTCP(localPort, remotePort uint16, initSeq, initAck uint32) *FakeTCP {
 	f := &FakeTCP{
 		lport: localPort,
@@ -52,16 +54,13 @@ func init() {
 func (f *FakeTCP) Send(b []byte, reserved int) (tcp []byte, empty int) {
 	i := reserved - header.TCPMinimumMSS
 
-	var tcphdr header.TCP
-	if i >= 0 {
-		tcphdr = header.TCP(b[i:])
-
-	} else {
-		tmp := make([]byte, len(b)-i)
-		copy(tmp[:header.TCPMinimumSize], b[reserved:])
-		b = tmp
-		tcphdr = header.TCP(b)
+	if i <= 0 {
+		n := (len(b) - reserved) + header.IPv4MinimumSize + header.TCPMinimumSize
+		tmp := make([]byte, n, n+crypto.Bytes)
+		copy(tmp[header.TCPMinimumSize+header.IPv4MinimumSize:], b[reserved:])
+		b, i = tmp, header.IPv4MinimumSize
 	}
+	tcphdr := header.TCP(b[i:])
 
 	tcphdr.Encode(&header.TCPFields{
 		SrcPort:    f.lport,
@@ -80,7 +79,6 @@ func (f *FakeTCP) Send(b []byte, reserved int) (tcp []byte, empty int) {
 	return b, i
 }
 
-func (f *FakeTCP) Recv(tcp header.TCP) int {
-	f.ack.Store(tcp.SequenceNumber() + uint32(len(tcp.Payload())))
-	return int(tcp.DataOffset())
+func (f *FakeTCP) Recv(tcp header.TCP) {
+	f.ack.Store(tcp.SequenceNumber() + uint32(len(tcp.Payload()))) // todo: store greater
 }

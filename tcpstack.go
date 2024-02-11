@@ -19,9 +19,15 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 )
 
+// todo: support set unreliable
+//       实现原理： 1. 数据包在link层，send之后直接发送ack，
+//       问题：不想要实际的数据包进入stack
+
 type userStack struct {
 	stack *stack.Stack
 	link  *channel.Endpoint
+
+	unreliable bool
 }
 
 const nicid tcpip.NICID = 123
@@ -50,8 +56,8 @@ func newUserStack(addr netip.Addr) (userStack, error) {
 	return s, nil
 }
 
-// InjectIP downlink, inject IP packet to stack
-func (t *userStack) InjectIP(ip []byte) (int, error) {
+// LinkInject downlink, inject IP packet to stack
+func (t *userStack) LinkInject(ip header.IPv4) (int, error) {
 	pkb := stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buffer.MakeWithData(ip)})
 	defer pkb.DecRef()
 
@@ -59,8 +65,8 @@ func (t *userStack) InjectIP(ip []byte) (int, error) {
 	return len(ip), nil
 }
 
-// ReadIP uplink, read IP packet from stack
-func (t *userStack) ReadIP(ip []byte) (int, error) {
+// LinkRead uplink, read IP packet from stack
+func (t *userStack) LinkRead(ip header.IPv4) (int, error) {
 	pkb := t.link.ReadContext(context.Background())
 	defer pkb.DecRef()
 
@@ -69,6 +75,12 @@ func (t *userStack) ReadIP(ip []byte) (int, error) {
 	if n < len(s) {
 		return 0, io.ErrShortBuffer
 	}
+
+	if t.unreliable {
+		// tcphdr := header.TCP(ip[:n].Payload())
+
+	}
+
 	return n, nil
 }
 

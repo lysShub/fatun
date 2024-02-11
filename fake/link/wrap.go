@@ -11,7 +11,7 @@ const (
 	checksumDelta        uint16 = 255
 )
 
-func EnCustomFIN(tcphdr header.TCP) bool {
+func EncodeCustomFIN(tcphdr header.TCP) bool {
 	newFlags := tcphdr.Flags()
 	if newFlags.Contains(header.TCPFlagFin) {
 
@@ -34,7 +34,7 @@ func isCustomFIN(tcphdr header.TCP) bool {
 	return tcphdr[TCPCustomFlagsOffset]&TCPCustomFlagFin == TCPCustomFlagFin
 }
 
-func DeCustomFIN(tcphdr header.TCP) bool {
+func DecodeCustomFIN(tcphdr header.TCP) bool {
 	if isCustomFIN(tcphdr) {
 		tcphdr[TCPCustomFlagsOffset] = tcphdr[TCPCustomFlagsOffset] ^ TCPCustomFlagFin
 
