@@ -2,19 +2,13 @@ package server
 
 import (
 	"fmt"
-	"itun"
 	"net/netip"
 	"sync"
 
+	"github.com/lysShub/itun"
+
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
-
-type Session struct {
-	Proto itun.Proto
-
-	// proxy connect's destination address
-	Server netip.AddrPort
-}
 
 /*
 	设计这个的目的是为了复用端口
@@ -32,7 +26,7 @@ type PortAdapter struct {
 
 	sync.RWMutex
 
-	sess map[Session] /* localPort */ uint16
+	sess map[itun.Session] /* localPort */ uint16
 
 	port map[portKey]map[ /* servers */ netip.AddrPort]struct{}
 }
@@ -47,13 +41,13 @@ type portKey struct {
 func NewPortAdapter(addr netip.Addr) *PortAdapter {
 	return &PortAdapter{
 		mgr:  itun.NewPortMgr(addr),
-		sess: make(map[Session]uint16, 16),
+		sess: make(map[itun.Session]uint16, 16),
 		port: make(map[portKey]map[netip.AddrPort]struct{}, 16),
 	}
 }
 
 // GetPort get a local machine port
-func (a *PortAdapter) GetPort(s Session) (port uint16, err error) {
+func (a *PortAdapter) GetPort(s itun.Session) (port uint16, err error) {
 	if icmp(s.Proto) {
 		return 0, nil
 	}
@@ -105,7 +99,7 @@ func (a *PortAdapter) GetPort(s Session) (port uint16, err error) {
 }
 
 // todo: idle timeout delete
-func (a *PortAdapter) DelPort(s Session) error {
+func (a *PortAdapter) DelPort(s itun.Session) error {
 	if icmp(s.Proto) {
 		return nil
 	}

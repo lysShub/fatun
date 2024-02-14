@@ -19,10 +19,6 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 )
 
-// todo: support set unreliable
-//       实现原理： 1. 数据包在link层，send之后直接发送ack，
-//       问题：不想要实际的数据包进入stack
-
 type userStack struct {
 	stack *stack.Stack
 	link  *channel.Endpoint

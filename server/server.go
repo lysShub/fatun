@@ -5,20 +5,17 @@ package server
 
 import (
 	"context"
-	"itun"
-	"itun/sconn"
 	"net/netip"
+
+	"github.com/lysShub/itun"
+	"github.com/lysShub/itun/config"
 
 	"github.com/lysShub/relraw"
 	"github.com/lysShub/relraw/tcp/bpf"
 )
 
-type Config struct {
-	sconn.Config
-}
-
 type Server struct {
-	cfg *Config
+	cfg *config.Server
 
 	l relraw.Listener
 
@@ -27,7 +24,7 @@ type Server struct {
 	ap *PortAdapter
 }
 
-func ListenAndServer(ctx context.Context, addr string, cfg *Config) error {
+func ListenAndServer(ctx context.Context, addr string, cfg *config.Server) error {
 	a, err := netip.ParseAddrPort(addr)
 	if err != nil {
 		return err

@@ -1,13 +1,15 @@
+//go:build linux
+// +build linux
+
 package server
 
 import (
 	"context"
 	"fmt"
-	"itun"
-	"itun/sconn"
-	"itun/segment"
 
-	"github.com/lysShub/relraw"
+	"github.com/lysShub/itun"
+	"github.com/lysShub/itun/sconn"
+	"github.com/lysShub/itun/segment"
 )
 
 type handler struct {
@@ -17,7 +19,8 @@ type handler struct {
 
 	mgrConn *sconn.MgrConn
 
-	sessions map[ /*id*/ uint16]relraw.RawConn
+	//
+	sessionMgr *SessionMgr
 }
 
 // todo: 这个conn是fack tcp, 它不是可靠的, 我们按照数据报来接受处理他
@@ -32,9 +35,41 @@ func Handle(ctx context.Context, srv *Server, conn *itun.RawConn) error {
 		return err
 	}
 
-	// work
+	// manager work
+	for {
+		seg, err := h.mgrConn.Next()
+		if err != nil {
+			panic(err)
+		}
 
-	return nil
+		t := seg.Type()
+		if !t.Validate() || t.IsConfig() {
+			panic("invalid manager type ")
+		}
+		switch t {
+		case segment.MgrSegAddTCP:
+			// addr, err := seg.AddTCP()
+			// if err != nil {
+			// 	panic(err)
+			// }
+			// s, err := h.sessionMgr.Add(ctx, h.conn, itun.Session{Proto: header.TCPProtocolNumber, Server: addr})
+			// if err != nil {
+			// 	panic(err)
+			// }
+
+			// err = h.mgrConn.Replay(segment.MgrAddTCP(s.ID()))
+			// if err != nil {
+			// 	panic(err)
+			// }
+		case segment.MgrSegDelTCP:
+		case segment.MgrSegAddUDP:
+		case segment.MgrSegDelUDP:
+		case segment.MgrSegPackLoss:
+		case segment.MgrSegPing:
+		default:
+			panic("todo:")
+		}
+	}
 }
 
 func (h *handler) handshake(ctx context.Context, raw *itun.RawConn) (err error) {
@@ -70,9 +105,9 @@ func (h *handler) initConfig(ctx context.Context) (err error) {
 		}
 		switch t {
 		case segment.MgrSegIPv6:
-			h.mgrConn.Replay(segment.MgrIPv6(false))
+			// h.mgrConn.Replay(segment.MgrIPv6(false))
 		case segment.MgrSegCrypto:
-			h.mgrConn.Replay(segment.MgrCrypto(h.srv.cfg.Crypto))
+			// h.mgrConn.Replay(segment.MgrCrypto(h.srv.cfg.Crypto))
 		case segment.MgrSegEndConfig:
 			return nil
 		default:
@@ -90,10 +125,17 @@ func (h *handler) uplink(ctx context.Context) {
 			panic(err)
 		}
 
-		if seg.ID() == segment.MgrSegID {
+		if id := seg.ID(); id == segment.MgrSegID {
 			h.mgrConn.Inject(seg)
 		} else {
-
+			s := h.sessionMgr.Get(id)
+			if s != nil {
+				if err := s.Write(seg.Payload()); err != nil {
+					panic(err)
+				}
+			} else {
+				// todo: log
+			}
 		}
 	}
 }

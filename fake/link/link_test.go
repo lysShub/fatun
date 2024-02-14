@@ -3,11 +3,12 @@ package link_test
 import (
 	"context"
 	"io"
-	"itun/fake/link"
 	"net"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/lysShub/itun/fake/link"
 
 	"github.com/stretchr/testify/require"
 	"gvisor.dev/gvisor/pkg/buffer"

@@ -17,12 +17,13 @@ func _() {
 	_ = x[MgrSegAddUDP-6]
 	_ = x[MgrSegDelUDP-7]
 	_ = x[MgrSegPackLoss-8]
-	_ = x[enum_end-9]
+	_ = x[MgrSegPing-9]
+	_ = x[enum_end-10]
 }
 
-const _MgrSegType_name = "enum_startCryptoIPv6EndConfigAddTCPDelTCPAddUDPDelUDPPackLossenum_end"
+const _MgrSegType_name = "enum_startCryptoIPv6EndConfigAddTCPDelTCPAddUDPDelUDPPackLossPingenum_end"
 
-var _MgrSegType_index = [...]uint8{0, 10, 16, 20, 29, 35, 41, 47, 53, 61, 69}
+var _MgrSegType_index = [...]uint8{0, 10, 16, 20, 29, 35, 41, 47, 53, 61, 65, 73}
 
 func (i MgrSegType) String() string {
 	if i >= MgrSegType(len(_MgrSegType_index)-1) {

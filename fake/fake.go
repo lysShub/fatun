@@ -1,9 +1,9 @@
 package fake
 
 import (
-	"itun/sconn/crypto"
-	"math/rand"
 	"sync/atomic"
+
+	"github.com/lysShub/itun/sconn/crypto"
 
 	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -35,20 +35,6 @@ func NewFakeTCP(localPort, remotePort uint16, initSeq, initAck uint32) *FakeTCP 
 	f.seq.Store(initSeq)
 	f.ack.Store(initAck)
 	return f
-}
-
-func init() {
-	var tcphdr header.TCP
-	tcphdr.Encode(&header.TCPFields{
-		SrcPort:    19986,
-		DstPort:    8080,
-		SeqNum:     rand.Uint32(),
-		AckNum:     rand.Uint32(),
-		DataOffset: header.TCPMinimumSize,
-		Flags:      0,
-		WindowSize: uint16(rand.Uint32()),
-		Checksum:   0,
-	})
 }
 
 func (f *FakeTCP) Send(b []byte, reserved int) (tcp []byte, empty int) {

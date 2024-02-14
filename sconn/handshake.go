@@ -4,9 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"itun"
-	"itun/fake/link"
 	"net"
+
+	"github.com/lysShub/itun"
+	"github.com/lysShub/itun/fake/link"
 
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"

@@ -4,8 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"itun/segment"
 	"net"
+
+	"github.com/lysShub/itun/segment"
 
 	"github.com/lysShub/relraw"
 	"gvisor.dev/gvisor/pkg/buffer"
@@ -26,8 +27,8 @@ type MgrConn struct {
 	link  *channel.Endpoint
 	stack *stack.Stack
 
-	proto tcpip.NetworkProtocolNumber
-	ip    *relraw.IPStack2
+	proto   tcpip.NetworkProtocolNumber
+	ipstack *relraw.IPStack
 }
 
 func AcceptMgrConn(ctx context.Context, raw *Conn) (*MgrConn, error) {
@@ -94,7 +95,7 @@ func newMgrConn(ctx context.Context, raw *Conn) (*MgrConn, error) {
 	}, stack.AddressProperties{})
 	mc.stack.SetRouteTable([]tcpip.Route{{Destination: header.IPv4EmptySubnet, NIC: nicid}})
 
-	mc.ip = relraw.NewIPStack2(
+	mc.ipstack = relraw.NewIPStack(
 		raw.LocalAddrAddrPort().Addr(),
 		raw.RemoteAddrAddrPort().Addr(),
 		tcp.ProtocolNumber,
@@ -109,13 +110,10 @@ func (mc *MgrConn) Inject(seg segment.Segment) {
 		panic(fmt.Sprintf("not MgrSeg with id %d", seg.ID()))
 	}
 
-	var ip = make([]byte, len(seg.Payload())+mc.ip.AttachSize())
-	copy(ip[mc.ip.AttachSize():], seg.Payload())
-
-	mc.ip.AttachUp(ip)
+	ip := mc.ipstack.AttachInbound(seg.Payload())
+	// todo: validate ip
 
 	pkb := stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buffer.MakeWithData(ip)})
-
 	mc.link.InjectInbound(header.IPv4ProtocolNumber, pkb)
 }
 
@@ -139,7 +137,7 @@ func (mc *MgrConn) downlink(ctx context.Context, raw *Conn) {
 }
 
 func (mc *MgrConn) Next() (segment.MgrSeg, error) {
-	return segment.ReadMgrMsg(mc.conn)
+	return segment.ReadMgrMsg(mc.conn, nil)
 }
 
 func (mc *MgrConn) Replay(seg segment.MgrSeg) error {

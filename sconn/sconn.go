@@ -5,12 +5,13 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"itun"
-	"itun/fake"
-	"itun/sconn/crypto"
-	"itun/segment"
 	"net"
 	"unsafe"
+
+	"github.com/lysShub/itun"
+	"github.com/lysShub/itun/fake"
+	"github.com/lysShub/itun/sconn/crypto"
+	"github.com/lysShub/itun/segment"
 
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
