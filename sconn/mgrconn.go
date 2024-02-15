@@ -22,7 +22,7 @@ import (
 
 // manager connection
 type MgrConn struct {
-	conn net.Conn
+	net.Conn
 
 	link  *channel.Endpoint
 	stack *stack.Stack
@@ -41,7 +41,7 @@ func AcceptMgrConn(ctx context.Context, raw *Conn) (*MgrConn, error) {
 	if err != nil {
 		return nil, err
 	}
-	mc.conn, err = l.Accept()
+	mc.Conn, err = l.Accept()
 	if err != nil {
 		return nil, err
 	}
@@ -55,7 +55,7 @@ func ConnectMgrConn(ctx context.Context, raw *Conn) (*MgrConn, error) {
 		return nil, err
 	}
 
-	mc.conn, err = gonet.DialTCPWithBind(ctx, mc.stack, raw.LocalAddr(), raw.RemoteAddr(), mc.proto)
+	mc.Conn, err = gonet.DialTCPWithBind(ctx, mc.stack, raw.LocalAddr(), raw.RemoteAddr(), mc.proto)
 	if err != nil {
 		return nil, err
 	}
@@ -134,13 +134,4 @@ func (mc *MgrConn) downlink(ctx context.Context, raw *Conn) {
 		}
 		pkb.DecRef()
 	}
-}
-
-func (mc *MgrConn) Next() (segment.MgrSeg, error) {
-	return segment.ReadMgrMsg(mc.conn, nil)
-}
-
-func (mc *MgrConn) Replay(seg segment.MgrSeg) error {
-	_, err := mc.conn.Write(seg)
-	return err
 }
