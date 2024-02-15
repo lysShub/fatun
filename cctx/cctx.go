@@ -2,7 +2,6 @@ package cctx
 
 import (
 	"context"
-	"errors"
 	"time"
 )
 
@@ -45,56 +44,33 @@ func WithContext(ctx context.Context) CancelCtx {
 type timeCancelCtx struct {
 	context.Context
 	cancel context.CancelFunc
-	cause  *errWrap
+	cause  error
 }
 
 func WithTimeout(ctx context.Context, timeout time.Duration) CancelCtx {
-	var c = &timeCancelCtx{cause: &errWrap{}}
+	var c = &timeCancelCtx{}
 	c.Context, c.cancel = context.WithTimeoutCause(ctx, timeout, c.cause)
 	return c
 }
 
 func WithDeadline(ctx context.Context, deadline time.Time) CancelCtx {
-	var c = &timeCancelCtx{cause: &errWrap{}}
+	var c = &timeCancelCtx{}
 	c.Context, c.cancel = context.WithDeadlineCause(ctx, deadline, c.cause)
 	return c
-}
-
-type errWrap struct {
-	_   [0]func() // uncomparable
-	err error
-}
-
-func (e *errWrap) Is(err error) bool {
-	if err == nil {
-		return e.err == nil
-	}
-
-	if se, ok := err.(*errWrap); ok {
-		err = se.err
-	}
-	return errors.Is(err, e.err)
-}
-
-func (e *errWrap) Error() string {
-	if e.err != nil {
-		return e.err.Error()
-	}
-	return ""
 }
 
 func (tc *timeCancelCtx) Cancel(cause error) {
 	select {
 	case <-tc.Context.Done():
 	default:
-		tc.cause.err = cause
+		tc.cause = cause
 		tc.cancel()
 	}
 }
 
 func (tc *timeCancelCtx) Err() error {
 	err := context.Cause(tc.Context)
-	if err != nil && !errors.Is(err, &errWrap{}) {
+	if err != nil {
 		return err
 	}
 

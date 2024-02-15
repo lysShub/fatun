@@ -108,6 +108,8 @@ func Test_Cancel_Ctx(t *testing.T) {
 		c.Cancel(errors.New("1"))
 
 		<-c.Done()
-		require.Equal(t, context.DeadlineExceeded, c.Err())
+
+		e := c.Err()
+		require.Equal(t, context.DeadlineExceeded, e)
 	})
 }
