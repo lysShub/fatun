@@ -1,0 +1,45 @@
+syntax = "proto3";
+
+/*
+
+"clang-format.style": "{ BasedOnStyle: LLVM, UseTab: Never, IndentWidth: 4, TabWidth:
+  4, BreakBeforeBraces: Mozilla, AllowShortIfStatementsOnASingleLine: false,
+  IndentCaseLabels: false, ColumnLimit: 90, AccessModifierOffset: -4,
+  NamespaceIndentation: All, FixNamespaceComments: false }",
+
+*/
+
+option go_package = "github.com/lysShub/itun/control/internal";
+
+package internal;
+
+service Control
+{
+    rpc Crypto(Bool) returns (Null) {}
+    rpc IPv6(Null) returns (Bool) {}
+    rpc EndConfig(Null) returns (Null) {}
+    rpc AddTCP(String) returns (Session) {}
+    rpc DelTCP(SessionID) returns (Err) {}
+    rpc AddUDP(String) returns (Session) {}
+    rpc DelUDP(SessionID) returns (Err) {}
+    rpc PackLoss(Null) returns (Float32) {}
+    rpc Ping(Null) returns (Null) {}
+}
+
+message Null {}
+
+message Bool { bool Val = 1; }
+
+message String { string Str = 1; }
+
+message Err { string Err = 1; }
+
+message SessionID { uint32 ID = 1; }
+
+message Float32 { float Val = 1; }
+
+message Session
+{
+    uint32 ID = 1;
+    Err Err = 2;
+}

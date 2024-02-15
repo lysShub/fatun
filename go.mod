@@ -4,11 +4,10 @@ go 1.21
 
 require (
 	github.com/lysShub/relraw v0.0.0-20240212182658-088792871a5a
-	golang.org/x/sys v0.16.0
+	golang.org/x/sys v0.16.0 // indirect
 )
 
 require (
-	github.com/golang/protobuf v1.5.3
 	github.com/stretchr/testify v1.8.4
 	golang.org/x/net v0.20.0
 	google.golang.org/grpc v1.61.0
@@ -18,6 +17,7 @@ require (
 
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/golang/protobuf v1.5.3 // indirect
 	github.com/google/btree v1.1.2 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
