@@ -9,15 +9,15 @@ func _() {
 	// Re-run the stringer command to generate them again.
 	var x [1]struct{}
 	_ = x[enum_start-0]
-	_ = x[MgrSegCrypto-1]
-	_ = x[MgrSegIPv6-2]
-	_ = x[MgrSegEndConfig-3]
-	_ = x[MgrSegAddTCP-4]
-	_ = x[MgrSegDelTCP-5]
-	_ = x[MgrSegAddUDP-6]
-	_ = x[MgrSegDelUDP-7]
-	_ = x[MgrSegPackLoss-8]
-	_ = x[MgrSegPing-9]
+	_ = x[Crypto-1]
+	_ = x[IPv6-2]
+	_ = x[EndConfig-3]
+	_ = x[AddTCP-4]
+	_ = x[DelTCP-5]
+	_ = x[AddUDP-6]
+	_ = x[DelUDP-7]
+	_ = x[PackLoss-8]
+	_ = x[Ping-9]
 	_ = x[enum_end-10]
 }
 

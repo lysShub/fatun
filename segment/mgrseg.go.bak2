@@ -1,7 +1,6 @@
 package segment
 
 import (
-	"context"
 	"encoding/binary"
 	"encoding/hex"
 	"errors"
@@ -11,15 +10,9 @@ import (
 	"net/netip"
 	"sync"
 
-	internal "github.com/lysShub/itun/segment/internal2"
+	"github.com/lysShub/itun/segment/internal"
 	"google.golang.org/protobuf/proto"
 )
-
-/*
-	MgrSeg 总是由client发出req, proxy server 回复resp
-
-	todo: 这个不对，MgrSeg 还是有tcp头
-*/
 
 // MgrSegType PayloadLen Payload
 // [0]        [1,3)      [3,n)
@@ -35,7 +28,7 @@ const (
 )
 
 func (ms MgrSeg) setType(typ MgrSegType) bool {
-	if typ.Validate() {
+	if typ.validate() {
 		Segment(ms).SetID(MgrSegID)
 		ms[typ] = byte(typ)
 		return true
@@ -67,38 +60,43 @@ type MgrSegType uint8
 
 const (
 	enum_start MgrSegType = iota
-	Crypto                // 是否加密
-	IPv6                  // 是否支持IPv6
-	EndConfig             // 结束mgr初始化配置
-	AddTCP                // 新增tcp代理
-	DelTCP                // 删除tcp代理
-	AddUDP                // 新增udp代理
-	DelUDP                // 删除udp代理
-	PackLoss              // 请求Server报告上行丢包率
-	Ping                  // ping请求
+
+	MgrSegCrypto    // 是否加密
+	MgrSegIPv6      // 是否支持IPv6
+	MgrSegEndConfig // 结束mgr初始化配置
+	MgrSegAddTCP    // 新增tcp代理
+	MgrSegDelTCP    // 删除tcp代理
+	MgrSegAddUDP    // 新增udp代理
+	MgrSegDelUDP    // 删除udp代理
+	MgrSegPackLoss  // 请求Server报告上行丢包率
+	MgrSegPing      // ping请求
+
 	enum_end
 )
 
-func (st MgrSegType) Validate() bool {
+func (st MgrSegType) Validate() error {
+	if !st.validate() {
+		return ErrInvalidMgrType(st)
+	}
+	return nil
+}
+
+func (st MgrSegType) validate() bool {
 	return enum_start < st &&
 		st < enum_end
 }
 
 func (st MgrSegType) IsConfig() bool {
-	return st.Validate() && st <= EndConfig
+	return st.validate() && st <= MgrSegEndConfig
 }
 
 type MgrClient struct {
 	sync.RWMutex
-
 	conn net.Conn
-	seg  MgrSeg
+
+	seg MgrSeg
 }
 
-// 1. 序列化req
-// 2. 发送
-// 3. 接收
-// 4. 反序列化后返回
 func NewMgrClient(conn net.Conn) *MgrClient {
 	return &MgrClient{conn: conn}
 }
@@ -112,7 +110,7 @@ func (mc *MgrClient) do(t MgrSegType, req []byte) (resp []byte, err error) {
 
 	// request
 	if !mc.seg.setType(t) {
-		return nil, ErrInvalidMgrType(t)
+		return nil, fmt.Errorf("invalid manager segment type %s", t)
 	}
 	mc.seg.setPayloadLen(uint16(len(req)))
 	mc.seg = append(mc.seg, req...)
@@ -120,7 +118,7 @@ func (mc *MgrClient) do(t MgrSegType, req []byte) (resp []byte, err error) {
 	if n, err := mc.conn.Write(mc.seg); err != nil {
 		return nil, err
 	} else if n != len(mc.seg) {
-		panic("impossible")
+		return nil, fmt.Errorf("impossible")
 	}
 
 	// response
@@ -135,13 +133,28 @@ func (mc *MgrClient) do(t MgrSegType, req []byte) (resp []byte, err error) {
 	return mc.seg.payload(), nil
 }
 
+func (mc *MgrClient) Crypto(crypto bool) (err error) {
+	p, err := proto.Marshal(&internal.CryptoReq{Crypto: crypto})
+	if err != nil {
+		return err
+	}
+
+	b, err := mc.do(MgrSegCrypto, p)
+	if err != nil {
+		return err
+	}
+
+	var resp = &internal.CryptoResp{}
+	return proto.Unmarshal(b, resp)
+}
+
 func (mc *MgrClient) IPv6() (ipv6 bool, err error) {
 	p, err := proto.Marshal(&internal.IPv6Req{})
 	if err != nil {
 		return false, err
 	}
 
-	b, err := mc.do(IPv6, p)
+	b, err := mc.do(MgrSegIPv6, p)
 	if err != nil {
 		return false, err
 	}
@@ -156,7 +169,7 @@ func (mc *MgrClient) AddTCP(addr netip.AddrPort) (sessionId uint16, err error) {
 		return 0, err
 	}
 
-	b, err := mc.do(AddTCP, p)
+	b, err := mc.do(MgrSegAddTCP, p)
 	if err != nil {
 		return 0, err
 	}
@@ -172,7 +185,7 @@ func (mc *MgrClient) DelTCP(addr netip.AddrPort) (err error) {
 		return err
 	}
 
-	b, err := mc.do(DelTCP, p)
+	b, err := mc.do(MgrSegDelTCP, p)
 	if err != nil {
 		return err
 	}
@@ -187,7 +200,7 @@ func (mc *MgrClient) AddUDP(addr netip.AddrPort) (sessionId uint16, err error) {
 		return 0, err
 	}
 
-	b, err := mc.do(AddUDP, p)
+	b, err := mc.do(MgrSegAddUDP, p)
 	if err != nil {
 		return 0, err
 	}
@@ -203,7 +216,7 @@ func (mc *MgrClient) DelUDP(addr netip.AddrPort) (err error) {
 		return err
 	}
 
-	b, err := mc.do(DelUDP, p)
+	b, err := mc.do(MgrSegDelUDP, p)
 	if err != nil {
 		return err
 	}
@@ -212,58 +225,80 @@ func (mc *MgrClient) DelUDP(addr netip.AddrPort) (err error) {
 	return errors.Join(proto.Unmarshal(b, resp), strErr(resp.Error))
 }
 
-// todo: 尝试grpc
-
-type mgrServer struct {
+type MgrServer struct {
+	sync.RWMutex
 	conn net.Conn
-	srv  MgrServer
 	seg  MgrSeg
 }
 
-type MgrServer interface {
-	Crypto(crypto bool)
-	IPv6() bool
-	EndConfig()
-	AddTCP(addr netip.AddrPort) (uint16, error)
-	DelTCP(addr netip.AddrPort) error
-	AddUDP(addr netip.AddrPort) (uint16, error)
-	DelUDP(addr netip.AddrPort) error
-	PackLoss() float32
-	Ping()
-}
-
-func MgrServe(ctx context.Context, conn net.Conn, srv mgrServer) {
-	var s = &mgrServer{
+func NewMgrServer(conn net.Conn) *MgrServer {
+	return &MgrServer{
 		conn: conn,
 	}
-
-	for {
-		if err := s.readMsg(); err != nil {
-			panic(err)
-		}
-
-		switch t := s.seg.Type(); t {
-
-		}
-	}
 }
 
-func (ms *mgrServer) readMsg() (err error) {
-	var req = &internal.CryptoReq{}
-	proto.Unmarshal(ms.seg.payload(), req)
+func (ms *MgrServer) NextSeg() (typ MgrSegType, err error) {
+	ms.seg, err = ReadMgrMsg(ms.conn, ms.seg)
 
-	ms.srv.Crypto(req.Crypto)
+	err = errors.Join(err, ms.seg.Type().Validate())
+	return ms.seg.Type(), err
+}
+
+func (ms *MgrServer) Crypto(call func(crypto bool)) error {
+	var req = &internal.CryptoReq{}
+	if err := proto.Unmarshal(ms.seg.payload(), req); err != nil {
+		return err
+	}
+
+	call(req.Crypto)
 
 	var resp = &internal.CryptoResp{}
-	proto.Marshal(resp)
-
-	return nil
-}
-
-func (ms *mgrServer) crypto() (err error) {
-	ms.seg, err = ReadMgrMsg(ms.conn, ms.seg)
+	b, err := proto.Marshal(resp)
 	if err != nil {
 		return err
+	}
+
+	ms.seg = append(ms.seg[mgrSegMiniSize:], b...)
+
+	_, err = ms.conn.Write(ms.seg)
+	return err
+}
+
+func (ms *MgrServer) IPv6(call func() bool) error {
+	var req = &internal.IPv6Req{}
+	if err := proto.Unmarshal(ms.seg.payload(), req); err != nil {
+		return err
+	}
+
+	var resp = &internal.IPv6Resp{IPv6: call()}
+	if b, err := proto.Marshal(resp); err != nil {
+		return err
+	} else {
+		ms.seg = append(ms.seg[mgrSegMiniSize:], b...)
+	}
+
+	_, err := ms.conn.Write(ms.seg)
+	return err
+}
+
+func (ms *MgrServer) AddTCP(call func(addr netip.AddrPort) (uint16, error)) error {
+	var req = &internal.AddTCPReq{}
+	if err := proto.Unmarshal(ms.seg.payload(), req); err != nil {
+		return err
+	}
+
+	var resp = &internal.AddTCPResp{}
+
+	addr, err := netip.ParseAddrPort(req.Addr)
+	if err != nil {
+		resp.Error = err.Error()
+		return err
+	}
+	if id, err := call(addr); err != nil {
+		resp.Error = err.Error()
+		return err
+	} else {
+		resp.SessionID = uint32(id)
 	}
 
 	return nil

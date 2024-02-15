@@ -47,7 +47,7 @@ func Handle(ctx context.Context, srv *Server, conn *itun.RawConn) error {
 			panic("invalid manager type ")
 		}
 		switch t {
-		case segment.MgrSegAddTCP:
+		case segment.AddTCP:
 			// addr, err := seg.AddTCP()
 			// if err != nil {
 			// 	panic(err)
@@ -61,11 +61,11 @@ func Handle(ctx context.Context, srv *Server, conn *itun.RawConn) error {
 			// if err != nil {
 			// 	panic(err)
 			// }
-		case segment.MgrSegDelTCP:
-		case segment.MgrSegAddUDP:
-		case segment.MgrSegDelUDP:
-		case segment.MgrSegPackLoss:
-		case segment.MgrSegPing:
+		case segment.DelTCP:
+		case segment.AddUDP:
+		case segment.DelUDP:
+		case segment.PackLoss:
+		case segment.Ping:
 		default:
 			panic("todo:")
 		}
@@ -104,11 +104,11 @@ func (h *handler) initConfig(ctx context.Context) (err error) {
 			return fmt.Errorf("invalid init manager config segment type %s", t)
 		}
 		switch t {
-		case segment.MgrSegIPv6:
+		case segment.IPv6:
 			// h.mgrConn.Replay(segment.MgrIPv6(false))
-		case segment.MgrSegCrypto:
+		case segment.Crypto:
 			// h.mgrConn.Replay(segment.MgrCrypto(h.srv.cfg.Crypto))
-		case segment.MgrSegEndConfig:
+		case segment.EndConfig:
 			return nil
 		default:
 			panic(fmt.Errorf("handle %s manager segment", t))
