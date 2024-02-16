@@ -5,9 +5,10 @@ import (
 	"time"
 )
 
-// self cancel-able context, sub-goroutine can cancel
-// whole task with error. the cctx.Err() return error from
-// context.Cause(ctx) firstly, then ctx.Err().
+// self cancel-able context, sub-goroutine can cancel whole task with error.
+// the cctx.Err() return error from context.Cause(ctx) firstly, then ctx.Err().
+//
+// if a function takes xxx as a parameter, it does not need to return err
 type CancelCtx interface {
 	context.Context
 	Cancel(cause error)
@@ -29,10 +30,11 @@ func (c *cancelCtx) Cancel(cause error) {
 }
 
 func (c *cancelCtx) Err() error {
-	if err := context.Cause(c.Context); err != nil {
-		return err
+	err := context.Cause(c.Context)
+	if err == nil {
+		err = c.Context.Err()
 	}
-	return c.Context.Err()
+	return err
 }
 
 func WithContext(ctx context.Context) CancelCtx {
@@ -69,10 +71,8 @@ func (tc *timeCancelCtx) Cancel(cause error) {
 }
 
 func (tc *timeCancelCtx) Err() error {
-	err := context.Cause(tc.Context)
-	if err != nil {
-		return err
+	if tc.cause != nil {
+		return tc.cause
 	}
-
 	return tc.Context.Err()
 }

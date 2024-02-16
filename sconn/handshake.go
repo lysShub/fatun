@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"time"
 
 	"github.com/lysShub/itun"
+	"github.com/lysShub/itun/cctx"
 	"github.com/lysShub/itun/fake/link"
 
 	"gvisor.dev/gvisor/pkg/buffer"
@@ -24,7 +26,7 @@ type ustack struct {
 	link  *link.Endpoint
 }
 
-func newUserStack(ctx context.Context, cancel context.CancelCauseFunc, raw *itun.RawConn) (*ustack, error) {
+func newUserStack(ctx cctx.CancelCtx, raw *itun.RawConn) *ustack {
 
 	st := stack.New(stack.Options{
 		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol},
@@ -35,7 +37,8 @@ func newUserStack(ctx context.Context, cancel context.CancelCauseFunc, raw *itun
 
 	const nicid tcpip.NICID = 1234
 	if err := st.CreateNIC(nicid, l); err != nil {
-		return nil, errors.New(err.String())
+		ctx.Cancel(errors.New(err.String()))
+		return nil
 	}
 	st.AddProtocolAddress(nicid, tcpip.ProtocolAddress{
 		Protocol:          header.IPv4ProtocolNumber,
@@ -48,22 +51,21 @@ func newUserStack(ctx context.Context, cancel context.CancelCauseFunc, raw *itun
 		link:  l,
 	}
 
-	go u.uplink(ctx, cancel, raw)
-	go u.downlink(ctx, cancel, raw)
-	return u, nil
+	go u.uplink(ctx, raw)
+	go u.downlink(ctx, raw)
+	return u
 }
 
-func (u *ustack) uplink(ctx context.Context, cancel context.CancelCauseFunc, raw *itun.RawConn) {
+func (u *ustack) uplink(ctx cctx.CancelCtx, raw *itun.RawConn) {
 	var b = make([]byte, raw.MTU())
 
-	// todo: RawConn support context
 	for {
-		n, err := raw.Read(b)
+		n, err := raw.ReadCtx(ctx, b)
 		if err != nil {
 			select {
 			case <-ctx.Done():
 			default:
-				cancel(fmt.Errorf("uplink %s", err.Error()))
+				ctx.Cancel(fmt.Errorf("uplink %s", err.Error()))
 			}
 			return
 		}
@@ -72,7 +74,7 @@ func (u *ustack) uplink(ctx context.Context, cancel context.CancelCauseFunc, raw
 	}
 }
 
-func (u *ustack) downlink(ctx context.Context, cancel context.CancelCauseFunc, raw *itun.RawConn) {
+func (u *ustack) downlink(ctx cctx.CancelCtx, raw *itun.RawConn) {
 	for {
 		pkb := u.link.ReadContext(ctx)
 		if pkb.IsNil() {
@@ -81,7 +83,7 @@ func (u *ustack) downlink(ctx context.Context, cancel context.CancelCauseFunc, r
 
 		_, err := raw.Write(pkb.ToView().AsSlice())
 		if err != nil {
-			cancel(fmt.Errorf("downlink %s", err.Error()))
+			ctx.Cancel(fmt.Errorf("downlink %s", err.Error()))
 			return
 		}
 	}
@@ -91,25 +93,43 @@ func (s *ustack) SeqAck() (seg, ack uint32) {
 	return s.link.SeqAck()
 }
 
-func (s *ustack) Accept(ctx context.Context) (net.Conn, error) {
+func (s *ustack) Accept(ctx cctx.CancelCtx) net.Conn {
 	l, err := gonet.ListenTCP(s.stack, s.raw.LocalAddr(), s.raw.NetworkProtocolNumber())
 	if err != nil {
-		return nil, err
+		ctx.Cancel(err)
+		return nil
 	}
 
-	conn, err := l.Accept()
-	if err != nil {
-		return nil, err
-	}
+	acceptCtx := cctx.WithTimeout(ctx, time.Second*5) // todo: from config
 
-	// todo: validate remote addr
-	return conn, nil
+	var conn net.Conn
+	go func() {
+		var err error
+		conn, err = l.Accept()
+		if err != nil {
+			acceptCtx.Cancel(err)
+		}
+		acceptCtx.Cancel(nil)
+	}()
+	<-acceptCtx.Done()
+
+	err = acceptCtx.Err()
+	if err != nil && !errors.Is(err, context.Canceled) {
+		ctx.Cancel(errors.Join(err, l.Close()))
+		return nil
+	}
+	return conn // todo: validate remote addr
 }
 
-func (s *ustack) Connect(ctx context.Context) (net.Conn, error) {
-	return gonet.DialTCPWithBind(
+func (s *ustack) Connect(ctx cctx.CancelCtx) net.Conn {
+	conn, err := gonet.DialTCPWithBind(
 		ctx, s.stack,
 		s.raw.LocalAddr(), s.raw.RemoteAddr(),
 		s.raw.NetworkProtocolNumber(),
 	)
+	if err != nil {
+		ctx.Cancel(err)
+		return nil
+	}
+	return conn
 }

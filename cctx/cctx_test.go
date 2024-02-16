@@ -12,7 +12,7 @@ import (
 
 func Test_Cancel_Ctx(t *testing.T) {
 
-	t.Run("repeate-cancel", func(t *testing.T) {
+	t.Run("cancel/repeate-cancel", func(t *testing.T) {
 		c := cctx.WithContext(context.Background())
 		c.Cancel(errors.New("1"))
 		c.Cancel(errors.New("2"))
@@ -20,7 +20,7 @@ func Test_Cancel_Ctx(t *testing.T) {
 		<-c.Done()
 	})
 
-	t.Run("cancel-anyone", func(t *testing.T) {
+	t.Run("cancel/cancel-anyone", func(t *testing.T) {
 		c := cctx.WithContext(context.Background())
 		defer c.Cancel(nil)
 
@@ -36,7 +36,7 @@ func Test_Cancel_Ctx(t *testing.T) {
 		<-c.Done()
 	})
 
-	t.Run("cancel-time", func(t *testing.T) {
+	t.Run("cancel/timeout", func(t *testing.T) {
 		c := cctx.WithTimeout(context.Background(), time.Second)
 		defer c.Cancel(nil)
 
@@ -51,16 +51,26 @@ func Test_Cancel_Ctx(t *testing.T) {
 		require.Greater(t, time.Since(s), time.Millisecond*500)
 	})
 
-	t.Run("cancel-nil", func(t *testing.T) {
+	t.Run("err/ctx-cancel-nil", func(t *testing.T) {
 		c := cctx.WithContext(context.Background())
 		c.Cancel(nil)
 		c.Cancel(errors.New("2"))
 
+		<-c.Done()
+		e := c.Err()
+		require.Equal(t, context.Canceled, e)
+	})
+	t.Run("err/timectx-cancel-nil", func(t *testing.T) {
+		c := cctx.WithTimeout(context.Background(), time.Hour)
+		c.Cancel(nil)
+		c.Cancel(errors.New("2"))
+
+		<-c.Done()
 		e := c.Err()
 		require.Equal(t, context.Canceled, e)
 	})
 
-	t.Run("ctx-cancel-error", func(t *testing.T) {
+	t.Run("err/ctx-cancel-error", func(t *testing.T) {
 		c := cctx.WithContext(context.Background())
 		c.Cancel(errors.New("1"))
 		c.Cancel(errors.New("2"))
@@ -68,40 +78,16 @@ func Test_Cancel_Ctx(t *testing.T) {
 		<-c.Done()
 		require.Equal(t, errors.New("1"), c.Err())
 	})
-
-	t.Run("ctx-not-cancel-error", func(t *testing.T) {
-		c := cctx.WithContext(context.Background())
-		defer c.Cancel(nil)
-
-		require.Equal(t, nil, c.Err())
-	})
-
-	t.Run("timectx-not-cancel-error", func(t *testing.T) {
-		c := cctx.WithContext(context.Background())
-		defer c.Cancel(nil)
-
-		require.Equal(t, nil, c.Err())
-	})
-
-	t.Run("ctx-cancel-nil", func(t *testing.T) {
-		c := cctx.WithContext(context.Background())
-		c.Cancel(nil)
+	t.Run("err/timectx-cancel-error", func(t *testing.T) {
+		c := cctx.WithTimeout(context.Background(), time.Hour)
+		c.Cancel(errors.New("1"))
 		c.Cancel(errors.New("2"))
 
 		<-c.Done()
-		require.Equal(t, context.Canceled, c.Err())
+		require.Equal(t, errors.New("1"), c.Err())
 	})
 
-	t.Run("timectx-cancel-nil", func(t *testing.T) {
-		c := cctx.WithTimeout(context.Background(), time.Second)
-		c.Cancel(nil)
-		c.Cancel(errors.New("2"))
-
-		<-c.Done()
-		require.Equal(t, context.Canceled, c.Err())
-	})
-
-	t.Run("timectx-cancel-timeout", func(t *testing.T) {
+	t.Run("err/timectx-timeout", func(t *testing.T) {
 		c := cctx.WithTimeout(context.Background(), time.Second)
 
 		time.Sleep(time.Second * 2)
@@ -112,4 +98,23 @@ func Test_Cancel_Ctx(t *testing.T) {
 		e := c.Err()
 		require.Equal(t, context.DeadlineExceeded, e)
 	})
+}
+
+func Test_Cancel_Ctx_Inherit(t *testing.T) {
+
+	t.Run("child-ctx-err", func(t *testing.T) {
+
+		p := cctx.WithContext(context.Background())
+		c := cctx.WithContext(p)
+
+		err := errors.New("a")
+		p.Cancel(err)
+
+		<-c.Done()
+		<-p.Done()
+
+		e := c.Err()
+		require.True(t, errors.Is(err, e))
+	})
+
 }
