@@ -15,7 +15,6 @@ package internal;
 
 service Control
 {
-    rpc Crypto(Bool) returns (Null) {}
     rpc IPv6(Null) returns (Bool) {}
     rpc EndConfig(Null) returns (Null) {}
     rpc AddTCP(String) returns (Session) {}

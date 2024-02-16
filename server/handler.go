@@ -6,135 +6,91 @@ package server
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/lysShub/itun"
+	"github.com/lysShub/itun/cctx"
+	"github.com/lysShub/itun/control"
 	"github.com/lysShub/itun/sconn"
 	"github.com/lysShub/itun/segment"
 )
 
 type handler struct {
-	srv *Server
+	ctx        cctx.CancelCtx
+	srv        *Server
+	raw        *itun.RawConn
+	sessionMgr *SessionMgr
 
 	conn *sconn.Conn // 连接 Client <----> ProxyServer 的安全conn
 
-	mgrConn *sconn.MgrConn
-
-	//
-	sessionMgr *SessionMgr
+	mgrConn *control.CtrConn
 }
 
 // todo: 这个conn是fack tcp, 它不是可靠的, 我们按照数据报来接受处理他
 // 它最开始几个数据包的行为符合正常的tcp
 
-func Handle(ctx context.Context, srv *Server, conn *itun.RawConn) error {
-	ctx = context.WithoutCancel(ctx)
-	// todo: with timeout ctx
+func Handle(c context.Context, srv *Server, raw *itun.RawConn) {
+	ctx := cctx.WithContext(c)
+	var h = &handler{
+		ctx: ctx,
+		srv: srv,
+		raw: raw,
+	}
+	h.sessionMgr = NewSessionMgr(h)
 
-	var h = &handler{srv: srv}
-	if err := h.handshake(ctx, conn); err != nil {
-		return err
+	// build secret conn and control-conn
+	h.conn = sconn.Accept(ctx, raw, &h.srv.cfg.Config)
+	if err := ctx.Err(); err != nil {
+		fmt.Println(err)
+		return
+	}
+	h.mgrConn = control.AcceptCtrConn(ctx, h.conn)
+	if err := ctx.Err(); err != nil {
+		fmt.Println(err)
+		return
 	}
 
-	// manager work
-	for {
-		seg, err := h.mgrConn.Next()
-		if err != nil {
-			panic(err)
-		}
-
-		t := seg.Type()
-		if !t.Validate() || t.IsConfig() {
-			panic("invalid manager type ")
-		}
-		switch t {
-		case segment.AddTCP:
-			// addr, err := seg.AddTCP()
-			// if err != nil {
-			// 	panic(err)
-			// }
-			// s, err := h.sessionMgr.Add(ctx, h.conn, itun.Session{Proto: header.TCPProtocolNumber, Server: addr})
-			// if err != nil {
-			// 	panic(err)
-			// }
-
-			// err = h.mgrConn.Replay(segment.MgrAddTCP(s.ID()))
-			// if err != nil {
-			// 	panic(err)
-			// }
-		case segment.DelTCP:
-		case segment.AddUDP:
-		case segment.DelUDP:
-		case segment.PackLoss:
-		case segment.Ping:
-		default:
-			panic("todo:")
-		}
-	}
-}
-
-func (h *handler) handshake(ctx context.Context, raw *itun.RawConn) (err error) {
-	// prev-send packets and swap secret key stage
-	h.conn, err = sconn.Accept(ctx, raw, &h.srv.cfg.Config)
-	if err != nil {
-		return err
-	}
-
-	// establish a manager connection
-	if h.mgrConn, err = sconn.AcceptMgrConn(ctx, h.conn); err != nil {
-		return err
-	}
+	// start uplink handler
 	go h.uplink(ctx)
 
-	// init manager config stage
-	h.initConfig(ctx)
+	// start control handler
+	go h.control(ctx)
 
-	return nil
+	<-ctx.Done()
+	fmt.Println("proxy closed: ", ctx.Err())
+
 }
 
-func (h *handler) initConfig(ctx context.Context) (err error) {
-	// todo: set max loop
-	for {
-		seg, err := h.mgrConn.Next()
-		if err != nil {
-			return err
-		}
-
-		t := seg.Type()
-		if !t.IsConfig() {
-			return fmt.Errorf("invalid init manager config segment type %s", t)
-		}
-		switch t {
-		case segment.IPv6:
-			// h.mgrConn.Replay(segment.MgrIPv6(false))
-		case segment.Crypto:
-			// h.mgrConn.Replay(segment.MgrCrypto(h.srv.cfg.Crypto))
-		case segment.EndConfig:
-			return nil
-		default:
-			panic(fmt.Errorf("handle %s manager segment", t))
-		}
-	}
+func (h *handler) control(ctx cctx.CancelCtx) {
+	control.Serve(
+		ctx,
+		h.mgrConn,
+		handlerImplPtr(h),
+		time.Second*5, // todo: from config
+	)
 }
 
-func (h *handler) uplink(ctx context.Context) {
-	var b = make([]byte, h.conn.MTU())
-
+func (h *handler) uplink(ctx cctx.CancelCtx) {
+	var b = make([]byte, h.conn.Raw().MTU())
 	for {
-		seg, err := h.conn.Read(b)
+		seg, err := h.conn.RecvSeg(b)
 		if err != nil {
-			panic(err)
+			ctx.Cancel(err)
+			return
 		}
 
-		if id := seg.ID(); id == segment.MgrSegID {
+		if id := seg.ID(); id == segment.CtrSegID {
 			h.mgrConn.Inject(seg)
 		} else {
 			s := h.sessionMgr.Get(id)
 			if s != nil {
-				if err := s.Write(seg.Payload()); err != nil {
-					panic(err)
+				err := s.Write(seg.Payload())
+				if err != nil {
+					ctx.Cancel(err)
+					return
 				}
 			} else {
-				// todo: log
+				fmt.Println("not register session or timeout session, need register")
 			}
 		}
 	}

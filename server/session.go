@@ -4,7 +4,6 @@
 package server
 
 import (
-	"context"
 	"fmt"
 	"net/netip"
 	"slices"
@@ -12,6 +11,7 @@ import (
 	"time"
 
 	"github.com/lysShub/itun"
+	"github.com/lysShub/itun/cctx"
 	"github.com/lysShub/itun/sconn"
 	"github.com/lysShub/itun/segment"
 
@@ -21,7 +21,7 @@ import (
 )
 
 type SessionMgr struct {
-	srv   *Server
+	hdr   *handler
 	idmgr idmgr
 
 	sync.RWMutex
@@ -35,9 +35,9 @@ type SessionMgr struct {
 	idleTrigger *time.Ticker
 }
 
-func NewSessionMgr(srv *Server) *SessionMgr {
+func NewSessionMgr(hdr *handler) *SessionMgr {
 	mgr := &SessionMgr{
-		srv: srv,
+		hdr: hdr,
 
 		sessions: make(map[uint16]*Session, 16),
 		ids:      make(map[itun.Session]uint16, 16),
@@ -47,7 +47,7 @@ func NewSessionMgr(srv *Server) *SessionMgr {
 	return mgr
 }
 
-func (sm *SessionMgr) Add(ctx context.Context, raw *sconn.Conn, session itun.Session) (*Session, error) {
+func (sm *SessionMgr) Add(ctx cctx.CancelCtx, session itun.Session) (*Session, error) {
 	sm.RLock()
 	id, has := sm.ids[session]
 	sm.RUnlock()
@@ -59,11 +59,14 @@ func (sm *SessionMgr) Add(ctx context.Context, raw *sconn.Conn, session itun.Ses
 	if err != nil {
 		return nil, err
 	}
-	port, err := sm.srv.ap.GetPort(session)
+	port, err := sm.hdr.srv.ap.GetPort(session)
 	if err != nil {
 		return nil, err
 	}
-	s, err := NewSession(ctx, id, raw, session, netip.AddrPortFrom(sm.srv.Addr.Addr(), port))
+	s, err := NewSession(
+		ctx, id, sm.hdr.conn, session,
+		netip.AddrPortFrom(sm.hdr.srv.Addr.Addr(), port),
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -121,6 +124,7 @@ func (e ErrSessionExceed) Error() string {
 }
 
 type Session struct {
+	ctx cctx.CancelCtx
 	pxy relraw.RawConn
 	id  uint16
 
@@ -129,9 +133,15 @@ type Session struct {
 	keepalive     uint16
 }
 
-func NewSession(ctx context.Context, id uint16, raw *sconn.Conn, s itun.Session, laddr netip.AddrPort) (*Session, error) {
+func NewSession(
+	ctx cctx.CancelCtx, id uint16,
+	raw *sconn.Conn,
+	s itun.Session, laddr netip.AddrPort,
+) (*Session, error) {
+
 	var se = &Session{
-		id: id,
+		ctx: cctx.WithContext(ctx),
+		id:  id,
 	}
 
 	var err error
@@ -146,7 +156,7 @@ func NewSession(ctx context.Context, id uint16, raw *sconn.Conn, s itun.Session,
 		return nil, fmt.Errorf("not support protocol number %d", s.Proto)
 	}
 
-	go se.handle(ctx, raw)
+	go se.downlink(raw)
 	return se, nil
 }
 
@@ -155,22 +165,24 @@ func (s *Session) ID() uint16 {
 }
 
 // recv from s and write to raw
-func (s *Session) handle(ctx context.Context, raw *sconn.Conn) {
-	var b = make([]byte, raw.MTU())
+func (s *Session) downlink(conn *sconn.Conn) {
+	var b = make([]byte, conn.Raw().MTU())
 
 	for {
-		n, err := s.pxy.Read(b)
+		n, err := s.pxy.ReadCtx(s.ctx, b)
 		if err != nil {
-			panic(err)
+			s.ctx.Cancel(err)
+			return
 		}
 
 		iphdr := header.IPv4(b[:n]) // todo: ipv4
 		i := int(iphdr.HeaderLength()) - 1
 		segment.Segment(iphdr[i:]).SetID(s.id)
 
-		err = raw.Write(segment.Segment(iphdr), i)
+		err = conn.SendSeg(segment.Segment(iphdr), i)
 		if err != nil {
-			panic(err)
+			s.ctx.Cancel(err)
+			return
 		}
 	}
 }
@@ -193,6 +205,8 @@ func (s *Session) idleTrigger() uint8 {
 }
 
 func (s *Session) Close() error {
+	s.ctx.Cancel(nil)
+	s.pxy.Close()
 	return nil // todo:
 }
 
@@ -226,7 +240,7 @@ func (m *idmgr) getLocked() (id uint16, err error) {
 	}
 
 	id = m.allocs[n-1] + 1
-	if id != segment.MgrSegID && !slices.Contains(m.allocs, id) {
+	if id != segment.CtrSegID && !slices.Contains(m.allocs, id) {
 		return id, nil
 	}
 	for i := 0; i < n-1; i++ {
@@ -247,7 +261,7 @@ func (m *idmgr) Put(id uint16) {
 		return
 	}
 
-	m.allocs[i] = segment.MgrSegID
+	m.allocs[i] = segment.CtrSegID
 	slices.Sort(m.allocs)
 	m.allocs = m.allocs[:len(m.allocs)-1]
 }

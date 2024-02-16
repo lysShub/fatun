@@ -2,17 +2,20 @@ package control
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"net/netip"
+	"sync/atomic"
+	"time"
 
+	"github.com/lysShub/itun/cctx"
 	"github.com/lysShub/itun/control/internal"
 	"google.golang.org/grpc"
 )
 
 type MgrHander interface {
-	Crypto(crypto bool)
 	IPv6() bool
-	EndConfig() error
+	EndConfig()
 	AddTCP(addr netip.AddrPort) (uint16, error)
 	DelTCP(id uint16) error
 	AddUDP(addr netip.AddrPort) (uint16, error)
@@ -21,17 +24,56 @@ type MgrHander interface {
 	Ping()
 }
 
-func Serve(ctx context.Context, conn net.Conn, hdr MgrHander) error {
-	s := grpc.NewServer()
-	defer s.Stop()
+func Serve(ctx cctx.CancelCtx, conn net.Conn, hdr MgrHander, initCfgTimeout time.Duration) {
+	s := newServer(hdr)
+	s.serve(ctx, conn, initCfgTimeout)
+}
 
-	internal.RegisterControlServer(s, &server{hdr: hdr})
-	return s.Serve(newListenerWrap(ctx, conn))
+func newServer(hdr MgrHander) *server {
+	var s = &server{
+		srv: grpc.NewServer(),
+		hdr: hdr,
+	}
+	internal.RegisterControlServer(s.srv, s)
+	return s
 }
 
 type server struct {
 	internal.UnimplementedControlServer
+
+	srv *grpc.Server
+
 	hdr MgrHander
+
+	initedConfig atomic.Bool
+}
+
+type ErrInitConfigTimeout time.Duration
+
+func (e ErrInitConfigTimeout) Error() string {
+	return fmt.Sprintf("control init config exceed %s", time.Duration(e))
+}
+
+func (s *server) serve(ctx cctx.CancelCtx, conn net.Conn, initCfgTimeout time.Duration) {
+	go func() {
+		time.Sleep(initCfgTimeout)
+		if !s.initedConfig.Load() {
+			ctx.Cancel(ErrInitConfigTimeout(initCfgTimeout))
+		}
+	}()
+
+	err := s.srv.Serve(newListenerWrap(ctx, conn))
+	if err != nil {
+		ctx.Cancel(err)
+	}
+}
+
+func (s *server) IPv6(_ context.Context, in *internal.Null) (*internal.Bool, error) {
+	return &internal.Bool{Val: s.hdr.IPv6()}, nil
+}
+func (s *server) EndConfig(_ context.Context, in *internal.Null) (*internal.Null, error) {
+	s.initedConfig.CompareAndSwap(false, true)
+	return &internal.Null{}, nil
 }
 
 func (s *server) AddTCP(_ context.Context, in *internal.String) (*internal.Session, error) {
@@ -56,10 +98,6 @@ func (s *server) AddUDP(_ context.Context, in *internal.String) (*internal.Sessi
 	}
 	return &internal.Session{ID: uint32(id)}, nil
 }
-func (s *server) Crypto(_ context.Context, in *internal.Bool) (*internal.Null, error) {
-	s.hdr.Crypto(in.Val)
-	return &internal.Null{}, nil
-}
 func (s *server) DelTCP(_ context.Context, in *internal.SessionID) (*internal.Err, error) {
 	err := s.hdr.DelTCP(uint16(in.ID))
 	return internal.Eg(err), err
@@ -67,12 +105,6 @@ func (s *server) DelTCP(_ context.Context, in *internal.SessionID) (*internal.Er
 func (s *server) DelUDP(_ context.Context, in *internal.SessionID) (*internal.Err, error) {
 	err := s.hdr.DelUDP(uint16(in.ID))
 	return internal.Eg(err), err
-}
-func (s *server) EndConfig(_ context.Context, in *internal.Null) (*internal.Null, error) {
-	return &internal.Null{}, nil
-}
-func (s *server) IPv6(_ context.Context, in *internal.Null) (*internal.Bool, error) {
-	return &internal.Bool{Val: s.hdr.IPv6()}, nil
 }
 func (s *server) PackLoss(_ context.Context, in *internal.Null) (*internal.Float32, error) {
 	return &internal.Float32{Val: s.hdr.PackLoss()}, nil

@@ -6,6 +6,7 @@ import (
 	"unsafe"
 
 	"golang.org/x/net/bpf"
+	"golang.org/x/sys/unix"
 )
 
 func setFilterAll(conn interface {

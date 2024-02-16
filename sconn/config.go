@@ -18,16 +18,15 @@ type Config struct {
 	// second tcp packet, etc.
 	PrevPackets PrevPackets //todo: support mutiple data set
 
-	// default false
-	Crypto bool
-
-	// swap secret key, not nil if Crypto set
+	// swap secret key, not crypto if nil
 	SwapKey SwapSercetKey
 }
 
 type SwapSercetKey interface {
-	SendKey(ctx context.Context, tcp net.Conn) ([crypto.Bytes]byte, error)
-	RecvKey(ctx context.Context, tcp net.Conn) ([crypto.Bytes]byte, error)
+	// notice: don't close conn inner
+
+	SendKey(ctx context.Context, conn net.Conn) ([crypto.Bytes]byte, error)
+	RecvKey(ctx context.Context, conn net.Conn) ([crypto.Bytes]byte, error)
 }
 
 func (pps PrevPackets) Client(ctx cctx.CancelCtx, conn net.Conn) {

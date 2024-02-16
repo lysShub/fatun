@@ -7,11 +7,11 @@ import (
 // Segment include PxySeg and MgrSeg, identify by SessionID; MgrSeg is a TCP
 // packet, PxySeg indicate a transport layer packet, with header.
 //
-// SessionID   TCP/UDP packet
+// SessionID   Payload(tcp/udp packet)
 // [0, 2)      [2, n)
 type Segment []byte
 
-const MgrSegID uint16 = 0xffff
+const CtrSegID uint16 = 0xffff
 const (
 	idOffset1 = 0
 	idOffset2 = 2

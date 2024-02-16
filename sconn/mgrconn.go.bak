@@ -37,7 +37,7 @@ func AcceptMgrConn(ctx context.Context, raw *Conn) (*MgrConn, error) {
 		return nil, err
 	}
 
-	l, err := gonet.ListenTCP(mc.stack, raw.LocalAddr(), mc.proto)
+	l, err := gonet.ListenTCP(mc.stack, raw.raw.LocalAddr(), mc.proto)
 	if err != nil {
 		return nil, err
 	}
@@ -49,13 +49,13 @@ func AcceptMgrConn(ctx context.Context, raw *Conn) (*MgrConn, error) {
 	return mc, nil
 }
 
-func ConnectMgrConn(ctx context.Context, raw *Conn) (*MgrConn, error) {
-	mc, err := newMgrConn(ctx, raw)
+func ConnectMgrConn(ctx context.Context, conn *Conn) (*MgrConn, error) {
+	mc, err := newMgrConn(ctx, conn)
 	if err != nil {
 		return nil, err
 	}
 
-	mc.Conn, err = gonet.DialTCPWithBind(ctx, mc.stack, raw.LocalAddr(), raw.RemoteAddr(), mc.proto)
+	mc.Conn, err = gonet.DialTCPWithBind(ctx, mc.stack, conn.raw.LocalAddr(), conn.raw.RemoteAddr(), mc.proto)
 	if err != nil {
 		return nil, err
 	}
@@ -63,11 +63,11 @@ func ConnectMgrConn(ctx context.Context, raw *Conn) (*MgrConn, error) {
 	return mc, nil
 }
 
-func newMgrConn(ctx context.Context, raw *Conn) (*MgrConn, error) {
+func newMgrConn(ctx context.Context, conn *Conn) (*MgrConn, error) {
 	var mc = &MgrConn{}
 
 	var npf stack.NetworkProtocolFactory
-	switch p := raw.NetworkProtocolNumber(); p {
+	switch p := conn.raw.NetworkProtocolNumber(); p {
 	case header.IPv4ProtocolNumber:
 		mc.proto = p
 		npf = ipv4.NewProtocol
@@ -83,7 +83,7 @@ func newMgrConn(ctx context.Context, raw *Conn) (*MgrConn, error) {
 		TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol},
 		// HandleLocal:        true,
 	})
-	mc.link = channel.New(4, uint32(raw.MTU()), "")
+	mc.link = channel.New(4, uint32(conn.raw.MTU()), "")
 
 	const nicid tcpip.NICID = 5678
 	if err := mc.stack.CreateNIC(nicid, mc.link); err != nil {
@@ -91,22 +91,22 @@ func newMgrConn(ctx context.Context, raw *Conn) (*MgrConn, error) {
 	}
 	mc.stack.AddProtocolAddress(nicid, tcpip.ProtocolAddress{
 		Protocol:          header.IPv4ProtocolNumber,
-		AddressWithPrefix: raw.LocalAddr().Addr.WithPrefix(),
+		AddressWithPrefix: conn.raw.LocalAddr().Addr.WithPrefix(),
 	}, stack.AddressProperties{})
 	mc.stack.SetRouteTable([]tcpip.Route{{Destination: header.IPv4EmptySubnet, NIC: nicid}})
 
 	mc.ipstack = relraw.NewIPStack(
-		raw.LocalAddrAddrPort().Addr(),
-		raw.RemoteAddrAddrPort().Addr(),
+		conn.raw.LocalAddrAddrPort().Addr(),
+		conn.raw.RemoteAddrAddrPort().Addr(),
 		tcp.ProtocolNumber,
 	)
 
-	go mc.downlink(ctx, raw)
+	go mc.downlink(ctx, conn)
 	return mc, nil
 }
 
 func (mc *MgrConn) Inject(seg segment.Segment) {
-	if seg.ID() != segment.MgrSegID {
+	if seg.ID() != segment.CtrSegID {
 		panic(fmt.Sprintf("not MgrSeg with id %d", seg.ID()))
 	}
 
@@ -126,9 +126,9 @@ func (mc *MgrConn) downlink(ctx context.Context, raw *Conn) {
 
 		iphdr := header.IPv4(pkb.ToView().AsSlice())
 		n := iphdr.HeaderLength()
-		segment.Segment(iphdr[n-1:]).SetID(segment.MgrSegID)
+		segment.Segment(iphdr[n-1:]).SetID(segment.CtrSegID)
 
-		err := raw.Write(segment.Segment(iphdr), int(n)-1)
+		err := raw.SendSeg(segment.Segment(iphdr), int(n)-1)
 		if err != nil {
 			panic(err)
 		}

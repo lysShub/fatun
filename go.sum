@@ -14,6 +14,8 @@ github.com/lysShub/dll-go v0.0.0-20240131092034-3f09ae5eff72 h1:sVpTzdeme/y/csKB
 github.com/lysShub/dll-go v0.0.0-20240131092034-3f09ae5eff72/go.mod h1:Ww946b4py3gpmi5bGAyR6AUr3fFdalALEmk34/URCBM=
 github.com/lysShub/relraw v0.0.0-20240212182658-088792871a5a h1:SlfTaPhGYFkEj7r5Q3IAqkSXaEsaKUWay5VmTdY4zqA=
 github.com/lysShub/relraw v0.0.0-20240212182658-088792871a5a/go.mod h1:zn/siNnikoML7d/GD3SjL3LEz0TkfHFa+9wj3jj64bU=
+github.com/lysShub/relraw v0.0.0-20240216081657-362d51a052a3 h1:o2+cRMUUBil4Zs9dnZR5561RbzPdZqtaYTibXWtnABs=
+github.com/lysShub/relraw v0.0.0-20240216081657-362d51a052a3/go.mod h1:zn/siNnikoML7d/GD3SjL3LEz0TkfHFa+9wj3jj64bU=
 github.com/lysShub/wintun-go v0.0.0-20240131112415-8f3bf638af49 h1:+BtJbmYw5V5Qd3TLsXwOmvnx+KcYmz5KqDM5av/T5vc=
 github.com/lysShub/wintun-go v0.0.0-20240131112415-8f3bf638af49/go.mod h1:a8jsRV4kDa2yZAkygNrNhkblO+3/nkoS5x/PTVsK644=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=

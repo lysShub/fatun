@@ -1,11 +1,10 @@
 package control
 
 import (
-	"context"
 	"net"
-	"os"
 	"sync/atomic"
 
+	"github.com/lysShub/itun/cctx"
 	"google.golang.org/grpc/grpclog"
 )
 
@@ -24,12 +23,12 @@ func init() {
 }
 
 type listenerWrap struct {
-	ctx      context.Context
+	ctx      cctx.CancelCtx
 	accetped atomic.Bool
 	conn     net.Conn
 }
 
-func newListenerWrap(ctx context.Context, conn net.Conn) *listenerWrap {
+func newListenerWrap(ctx cctx.CancelCtx, conn net.Conn) *listenerWrap {
 	return &listenerWrap{ctx: ctx, conn: conn}
 }
 
@@ -42,19 +41,20 @@ func (l *listenerWrap) Accept() (net.Conn, error) {
 			Op:     "accept",
 			Net:    l.conn.LocalAddr().Network(),
 			Source: l.conn.LocalAddr(),
-			Err:    os.ErrClosed,
+			Err:    l.ctx.Err(),
 		}
 	default:
-		if l.accetped.CompareAndSwap(false, true) {
-			return l.conn, nil
-		} else {
-			<-l.ctx.Done()
-			return nil, &net.OpError{
-				Op:     "accept",
-				Net:    l.conn.LocalAddr().Network(),
-				Source: l.conn.LocalAddr(),
-				Err:    os.ErrClosed,
-			}
+	}
+
+	if l.accetped.CompareAndSwap(false, true) {
+		return l.conn, nil
+	} else {
+		<-l.ctx.Done()
+		return nil, &net.OpError{
+			Op:     "accept",
+			Net:    l.conn.LocalAddr().Network(),
+			Source: l.conn.LocalAddr(),
+			Err:    l.ctx.Err(),
 		}
 	}
 }
