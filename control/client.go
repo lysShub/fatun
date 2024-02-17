@@ -13,7 +13,6 @@ import (
 )
 
 func NewCtrClient(ctx cctx.CancelCtx, conn net.Conn) *Client {
-
 	opts := []grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.FailOnNonTempDialError(true),

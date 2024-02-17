@@ -19,10 +19,10 @@ type Config struct {
 	PrevPackets PrevPackets //todo: support mutiple data set
 
 	// swap secret key, not crypto if nil
-	SwapKey SwapSercetKey
+	SwapKey SwapSecretKey
 }
 
-type SwapSercetKey interface {
+type SwapSecretKey interface {
 	// notice: don't close conn inner
 
 	SendKey(ctx context.Context, conn net.Conn) ([crypto.Bytes]byte, error)

@@ -1,6 +1,7 @@
 package sconn
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net"
@@ -26,9 +27,9 @@ type Conn struct {
 }
 
 // todo: return offset
-func (s *Conn) RecvSeg(b []byte) (seg segment.Segment, err error) {
+func (s *Conn) RecvSeg(ctx context.Context, b []byte) (seg segment.Segment, err error) {
 	for len(seg) > 0 {
-		n, err := s.raw.Read(b)
+		n, err := s.raw.ReadCtx(ctx, b)
 		if err != nil {
 			return nil, err
 		}

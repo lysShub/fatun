@@ -5,6 +5,8 @@ package server
 
 import (
 	"context"
+	"fmt"
+	"net"
 	"net/netip"
 
 	"github.com/lysShub/itun"
@@ -24,18 +26,34 @@ type Server struct {
 	ap *PortAdapter
 }
 
-func ListenAndServer(ctx context.Context, addr string, cfg *config.Server) error {
-	a, err := netip.ParseAddrPort(addr)
-	if err != nil {
+func ListenAndServe(ctx context.Context, addr string, cfg *config.Server) (err error) {
+	var addrPort netip.AddrPort
+	if a, err := net.ResolveTCPAddr("tcp", addr); err != nil {
 		return err
-	}
-	var s = &Server{
-		cfg:  cfg,
-		Addr: a,
-		ap:   NewPortAdapter(a.Addr()),
+	} else {
+		if a.Port == 0 {
+			a.Port = itun.DefaultPort
+		}
+
+		addr, ok := netip.AddrFromSlice(a.IP)
+		if !ok {
+			if len(a.IP) == 0 {
+				addr = relraw.LocalAddr()
+			} else {
+				return fmt.Errorf("invalid address %s", a.IP)
+			}
+		} else if addr.Is4In6() {
+			addr = netip.AddrFrom4(addr.As4())
+		}
+		addrPort = netip.AddrPortFrom(addr, uint16(a.Port))
 	}
 
-	s.l, err = bpf.Listen(a)
+	var s = &Server{
+		cfg:  cfg,
+		Addr: addrPort,
+		ap:   NewPortAdapter(addrPort.Addr()),
+	}
+	s.l, err = bpf.Listen(addrPort)
 	if err != nil {
 		return err
 	}
@@ -52,6 +70,6 @@ func ListenAndServer(ctx context.Context, addr string, cfg *config.Server) error
 			return err
 		}
 
-		go Handle(ctx, s, itun.WrapRawConn(rconn))
+		go Proxy(ctx, s, itun.WrapRawConn(rconn, cfg.MTU))
 	}
 }

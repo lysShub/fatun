@@ -3,8 +3,8 @@ module github.com/lysShub/itun
 go 1.21
 
 require (
-	github.com/lysShub/relraw v0.0.0-20240216081657-362d51a052a3
-	golang.org/x/sys v0.16.0 // indirect
+	github.com/lysShub/relraw v0.0.0-20240217084343-ccd5ba453bd1
+	golang.org/x/sys v0.16.0
 )
 
 require (
@@ -17,11 +17,15 @@ require (
 
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/ebitengine/purego v0.5.1 // indirect
 	github.com/golang/protobuf v1.5.3 // indirect
 	github.com/google/btree v1.1.2 // indirect
+	github.com/lysShub/divert-go v0.0.0-20240212080231-0b1a1334331a // indirect
+	github.com/lysShub/dll-go v0.0.0-20240131092034-3f09ae5eff72 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
 	golang.org/x/time v0.5.0 // indirect
+	golang.zx2c4.com/wireguard/windows v0.5.3 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20231106174013-bbf56f31fb17 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

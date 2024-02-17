@@ -2,6 +2,8 @@ github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/ebitengine/purego v0.5.1 h1:hNunhThpOf1vzKl49v6YxIsXLhl92vbBEv1/2Ez3ZrY=
 github.com/ebitengine/purego v0.5.1/go.mod h1:ah1In8AOtksoNK6yk5z1HTJeUkC1Ez4Wk2idgGslMwQ=
+github.com/go-ping/ping v1.1.0 h1:3MCGhVX4fyEUuhsfwPrsEdQw6xspHkv5zHsiSoDFZYw=
+github.com/go-ping/ping v1.1.0/go.mod h1:xIFjORFzTxqIV/tDVGO4eDy/bLuSyawEeojSm3GfRGk=
 github.com/golang/protobuf v1.5.0/go.mod h1:FsONVRAS9T7sI+LIUmWTfcYkHO4aIWwzhcaSAoJOfIk=
 github.com/golang/protobuf v1.5.3 h1:KhyjKVUg7Usr/dYsdSqoFveMYd5ko72D+zANwlG1mmg=
 github.com/golang/protobuf v1.5.3/go.mod h1:XVQd3VNwM+JqD3oG2Ue2ip4fOMUkwXdXDdiuN0vRsmY=
@@ -10,12 +12,16 @@ github.com/google/btree v1.1.2/go.mod h1:qOPhT0dTNdNzV6Z/lhRX0YXUafgPLFUh+gZMl76
 github.com/google/go-cmp v0.5.5/go.mod h1:v8dTdLbMG2kIc/vJvl+f65V22dbkXbowE6jgT/gNBxE=
 github.com/google/go-cmp v0.6.0 h1:ofyhxvXcZhMsU5ulbFiLKl/XBFqE1GSq7atu8tAmTRI=
 github.com/google/go-cmp v0.6.0/go.mod h1:17dUlkBOakJ0+DkrSSNjCkIjxS6bF9zb3elmeNGIjoY=
+github.com/google/uuid v1.4.0 h1:MtMxsa51/r9yyhkyLsVeVt0B+BGQZzpQiTQ4eHZ8bc4=
+github.com/google/uuid v1.4.0/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo=
+github.com/lysShub/divert-go v0.0.0-20240212080231-0b1a1334331a h1:Zo7DiHBcDA0gUvJv9h/aQ3DNap/hR4zJlAupyCQ/UlM=
+github.com/lysShub/divert-go v0.0.0-20240212080231-0b1a1334331a/go.mod h1:d1SuldlJJppacF/Dlks4BPjdxH301oYdC3dPoF+w2SU=
 github.com/lysShub/dll-go v0.0.0-20240131092034-3f09ae5eff72 h1:sVpTzdeme/y/csKBVz3yP6umbxrNbQBamUXgFXD7Z4Y=
 github.com/lysShub/dll-go v0.0.0-20240131092034-3f09ae5eff72/go.mod h1:Ww946b4py3gpmi5bGAyR6AUr3fFdalALEmk34/URCBM=
-github.com/lysShub/relraw v0.0.0-20240212182658-088792871a5a h1:SlfTaPhGYFkEj7r5Q3IAqkSXaEsaKUWay5VmTdY4zqA=
-github.com/lysShub/relraw v0.0.0-20240212182658-088792871a5a/go.mod h1:zn/siNnikoML7d/GD3SjL3LEz0TkfHFa+9wj3jj64bU=
 github.com/lysShub/relraw v0.0.0-20240216081657-362d51a052a3 h1:o2+cRMUUBil4Zs9dnZR5561RbzPdZqtaYTibXWtnABs=
 github.com/lysShub/relraw v0.0.0-20240216081657-362d51a052a3/go.mod h1:zn/siNnikoML7d/GD3SjL3LEz0TkfHFa+9wj3jj64bU=
+github.com/lysShub/relraw v0.0.0-20240217084343-ccd5ba453bd1 h1:pOG1DX+3tmhUubuP3dC27P5xOjDkX97GDh6l7MpStWI=
+github.com/lysShub/relraw v0.0.0-20240217084343-ccd5ba453bd1/go.mod h1:zn/siNnikoML7d/GD3SjL3LEz0TkfHFa+9wj3jj64bU=
 github.com/lysShub/wintun-go v0.0.0-20240131112415-8f3bf638af49 h1:+BtJbmYw5V5Qd3TLsXwOmvnx+KcYmz5KqDM5av/T5vc=
 github.com/lysShub/wintun-go v0.0.0-20240131112415-8f3bf638af49/go.mod h1:a8jsRV4kDa2yZAkygNrNhkblO+3/nkoS5x/PTVsK644=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
@@ -24,6 +30,8 @@ github.com/stretchr/testify v1.8.4 h1:CcVxjf3Q8PM0mHUKJCdn+eZZtm5yQwehR5yeSVQQcU
 github.com/stretchr/testify v1.8.4/go.mod h1:sz/lmYIOXD/1dqDmKjjqLyZ2RngseejIcXlSw2iwfAo=
 golang.org/x/net v0.20.0 h1:aCL9BSgETF1k+blQaYUBx9hJ9LOGP3gAVemcZlf1Kpo=
 golang.org/x/net v0.20.0/go.mod h1:z8BVo6PvndSri0LbOE3hAn0apkU+1YvI6E70E9jsnvY=
+golang.org/x/sync v0.5.0 h1:60k92dhOjHxJkrqnwsfl8KuaHbn/5dl0lUPUklKo3qE=
+golang.org/x/sync v0.5.0/go.mod h1:Czt+wKu1gCyEFDUtn0jG5QVvpJ6rzVqr5aXyt9drQfk=
 golang.org/x/sys v0.16.0 h1:xWw16ngr6ZMtmxDyKyIgsE93KNKz5HKmMa3b8ALHidU=
 golang.org/x/sys v0.16.0/go.mod h1:/VUhepiaJMQUp4+oa/7Zr1D23ma6VTLIYjOOTFZPUcA=
 golang.org/x/text v0.14.0 h1:ScX5w1eTa3QqT8oi6+ziP7dTV1S2+ALU0bI+0zXKWiQ=

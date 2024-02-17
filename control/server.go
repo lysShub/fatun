@@ -24,22 +24,22 @@ type MgrHander interface {
 	Ping()
 }
 
-func Serve(ctx cctx.CancelCtx, conn net.Conn, hdr MgrHander, initCfgTimeout time.Duration) {
-	s := newServer(hdr)
-	s.serve(ctx, conn, initCfgTimeout)
-}
-
-func newServer(hdr MgrHander) *server {
-	var s = &server{
-		srv: grpc.NewServer(),
-		hdr: hdr,
+func NewServer(ctx cctx.CancelCtx, conn net.Conn, hdr MgrHander) *Server {
+	var s = &Server{
+		ctx:      ctx,
+		listener: newListenerWrap(ctx, conn),
+		srv:      grpc.NewServer(),
+		hdr:      hdr,
 	}
 	internal.RegisterControlServer(s.srv, s)
 	return s
 }
 
-type server struct {
+type Server struct {
 	internal.UnimplementedControlServer
+
+	ctx      cctx.CancelCtx
+	listener net.Listener
 
 	srv *grpc.Server
 
@@ -54,29 +54,29 @@ func (e ErrInitConfigTimeout) Error() string {
 	return fmt.Sprintf("control init config exceed %s", time.Duration(e))
 }
 
-func (s *server) serve(ctx cctx.CancelCtx, conn net.Conn, initCfgTimeout time.Duration) {
+func (s *Server) Serve(initCfgTimeout time.Duration) {
 	go func() {
 		time.Sleep(initCfgTimeout)
 		if !s.initedConfig.Load() {
-			ctx.Cancel(ErrInitConfigTimeout(initCfgTimeout))
+			s.ctx.Cancel(ErrInitConfigTimeout(initCfgTimeout))
 		}
 	}()
 
-	err := s.srv.Serve(newListenerWrap(ctx, conn))
+	err := s.srv.Serve(s.listener)
 	if err != nil {
-		ctx.Cancel(err)
+		s.ctx.Cancel(err)
 	}
 }
 
-func (s *server) IPv6(_ context.Context, in *internal.Null) (*internal.Bool, error) {
+func (s *Server) IPv6(_ context.Context, in *internal.Null) (*internal.Bool, error) {
 	return &internal.Bool{Val: s.hdr.IPv6()}, nil
 }
-func (s *server) EndConfig(_ context.Context, in *internal.Null) (*internal.Null, error) {
+func (s *Server) EndConfig(_ context.Context, in *internal.Null) (*internal.Null, error) {
 	s.initedConfig.CompareAndSwap(false, true)
 	return &internal.Null{}, nil
 }
 
-func (s *server) AddTCP(_ context.Context, in *internal.String) (*internal.Session, error) {
+func (s *Server) AddTCP(_ context.Context, in *internal.String) (*internal.Session, error) {
 	addr, err := netip.ParseAddrPort(in.Str)
 	if err != nil {
 		return &internal.Session{Err: internal.Eg(err)}, err
@@ -87,7 +87,7 @@ func (s *server) AddTCP(_ context.Context, in *internal.String) (*internal.Sessi
 	}
 	return &internal.Session{ID: uint32(id)}, nil
 }
-func (s *server) AddUDP(_ context.Context, in *internal.String) (*internal.Session, error) {
+func (s *Server) AddUDP(_ context.Context, in *internal.String) (*internal.Session, error) {
 	addr, err := netip.ParseAddrPort(in.Str)
 	if err != nil {
 		return &internal.Session{Err: internal.Eg(err)}, err
@@ -98,17 +98,17 @@ func (s *server) AddUDP(_ context.Context, in *internal.String) (*internal.Sessi
 	}
 	return &internal.Session{ID: uint32(id)}, nil
 }
-func (s *server) DelTCP(_ context.Context, in *internal.SessionID) (*internal.Err, error) {
+func (s *Server) DelTCP(_ context.Context, in *internal.SessionID) (*internal.Err, error) {
 	err := s.hdr.DelTCP(uint16(in.ID))
 	return internal.Eg(err), err
 }
-func (s *server) DelUDP(_ context.Context, in *internal.SessionID) (*internal.Err, error) {
+func (s *Server) DelUDP(_ context.Context, in *internal.SessionID) (*internal.Err, error) {
 	err := s.hdr.DelUDP(uint16(in.ID))
 	return internal.Eg(err), err
 }
-func (s *server) PackLoss(_ context.Context, in *internal.Null) (*internal.Float32, error) {
+func (s *Server) PackLoss(_ context.Context, in *internal.Null) (*internal.Float32, error) {
 	return &internal.Float32{Val: s.hdr.PackLoss()}, nil
 }
-func (s *server) Ping(_ context.Context, in *internal.Null) (*internal.Null, error) {
+func (s *Server) Ping(_ context.Context, in *internal.Null) (*internal.Null, error) {
 	return &internal.Null{}, nil
 }

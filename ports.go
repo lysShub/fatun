@@ -7,6 +7,10 @@ import (
 )
 
 func NewPortMgr(addr netip.Addr) *PortMgr {
+	if !addr.IsValid() {
+		panic("invalid address")
+	}
+
 	var mgr = &PortMgr{
 		tcp: map[uint16]*net.TCPListener{},
 		udp: map[uint16]*net.UDPConn{},

@@ -1,149 +1,196 @@
 package server
 
 import (
+	"errors"
 	"fmt"
 	"net/netip"
+	"sort"
 	"sync"
 
 	"github.com/lysShub/itun"
-
-	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
-
-/*
-	设计这个的目的是为了复用端口
-
-	打算replay也用relraw, 每个session对应一个replay-conn，上行需要根据id路由到对应的replay-conn， 下行直接读取即可。
-	那么id可以使用proxy唯一的了
-
-
-
-	todo: relraw bindLocal是可选项
-*/
 
 type PortAdapter struct {
 	mgr *itun.PortMgr
 
-	sync.RWMutex
+	mu sync.RWMutex
 
-	sess map[itun.Session] /* localPort */ uint16
+	// sess map[Session] /* localPort */ uint16
 
-	port map[portKey]map[ /* servers */ netip.AddrPort]struct{}
+	ports map[portKey] /* server adds */ *AddrSet
 }
+
+// NewPortAdapter for reuse local machine port, reduce port consume
+// require: one local port can be reused sessions, that has different
+// destination address
+func NewPortAdapter(addr netip.Addr) *PortAdapter {
+	return &PortAdapter{
+		mgr: itun.NewPortMgr(addr),
+		// sess:  make(map[Session]uint16, 16),
+		ports: make(map[portKey]*AddrSet, 16),
+	}
+}
+
+type AddrSet struct {
+	addrs addrs
+}
+
+type addrs []netip.AddrPort
+
+func (a addrs) Len() int           { return len(a) }
+func (a addrs) Less(i, j int) bool { return less(a[i], a[j]) }
+func less(a, b netip.AddrPort) bool {
+	if a.Addr() != b.Addr() {
+		return a.Addr().Less(b.Addr())
+	} else {
+		return a.Port() < b.Port()
+	}
+}
+func (a addrs) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
+
+// idx<0 not Find
+func (a *AddrSet) Find(addr netip.AddrPort) (idx int) {
+	i := sort.Search(len(a.addrs), func(i int) bool {
+		return !less(a.addrs[i], addr)
+	})
+	if i < len(a.addrs) && a.addrs[i] == addr {
+		return i
+	}
+	return -1
+}
+func (a *AddrSet) Has(addr netip.AddrPort) bool {
+	return a.Find(addr) >= 0
+}
+func (a *AddrSet) Add(addr netip.AddrPort) {
+	if !a.Has(addr) {
+		a.addrs = append(a.addrs, addr)
+		sort.Sort(a.addrs)
+	}
+}
+func (a *AddrSet) Del(addr netip.AddrPort) {
+	i := a.Find(addr)
+	if i < 0 {
+		return
+	}
+	copy(a.addrs[i:], a.addrs[i+1:])
+	a.addrs = a.addrs[:len(a.addrs)-1]
+}
+func (a *AddrSet) Len() int { return len(a.addrs) }
 
 type portKey struct {
 	proto     itun.Proto
 	loaclPort uint16
 }
 
-// NewPortAdapter for reuse local machine port, reduce port consume
-// require: the same local port corresponding different server addresses
-func NewPortAdapter(addr netip.Addr) *PortAdapter {
-	return &PortAdapter{
-		mgr:  itun.NewPortMgr(addr),
-		sess: make(map[itun.Session]uint16, 16),
-		port: make(map[portKey]map[netip.AddrPort]struct{}, 16),
-	}
-}
-
 // GetPort get a local machine port
-func (a *PortAdapter) GetPort(s itun.Session) (port uint16, err error) {
-	if icmp(s.Proto) {
+func (a *PortAdapter) GetPort(proto itun.Proto, dst netip.AddrPort) (port uint16, err error) {
+	if !proto.IsValid() {
+		return 0, itun.ErrInvalidProto(proto)
+	} else if !dst.IsValid() {
+		return 0, itun.ErrInvalidAddr(dst.Addr())
+	}
+
+	if proto.IsICMP() {
 		return 0, nil
 	}
 
 	// try reuse alloced port,
-	a.RLock()
-	for k, v := range a.port {
-		if k.proto == s.Proto {
+	a.mu.RLock()
+	for k, v := range a.ports {
+		if k.proto != proto {
 			continue
 		}
 
-		_, has := v[s.Server]
-		if !has {
+		if !v.Has(dst) {
 			port = k.loaclPort
 			break
 		}
 	}
-	a.RUnlock()
+	a.mu.RUnlock()
 
 	// alloc new port
 	if port == 0 {
-		switch s.Proto {
-		case header.TCPProtocolNumber:
+		switch proto {
+		case itun.TCP:
 			port, err = a.mgr.GetTCPPort()
 			if err != nil {
 				return 0, err
 			}
-		case header.UDPProtocolNumber:
+		case itun.UDP:
 			port, err = a.mgr.GetUDPPort()
 			if err != nil {
 				return 0, err
 			}
 		default:
-			return 0, fmt.Errorf("unknown transport protocol code %d", s.Proto)
+			return 0, fmt.Errorf("unknown transport protocol code %d", proto)
 		}
 	}
 
 	// update map
-	a.Lock()
-	a.sess[s] = port
-
-	a.port[portKey{
-		proto:     s.Proto,
-		loaclPort: port,
-	}][s.Server] = struct{}{}
-	a.Unlock()
+	pk := portKey{proto: proto, loaclPort: port}
+	a.mu.Lock()
+	if as := a.ports[pk]; as != nil {
+		as.Add(dst)
+	} else {
+		as = &AddrSet{}
+		as.Add(dst)
+		a.ports[pk] = as
+	}
+	a.mu.Unlock()
 
 	return port, nil
 }
 
 // todo: idle timeout delete
-func (a *PortAdapter) DelPort(s itun.Session) error {
-	if icmp(s.Proto) {
+func (a *PortAdapter) DelPort(proto itun.Proto, port uint16, dst netip.AddrPort) error {
+	if proto.IsICMP() {
 		return nil
 	}
 
-	var port uint16
-	a.RLock()
-	port = a.sess[s]
-	a.RUnlock()
-
-	if port == 0 {
-		return fmt.Errorf("PortAdapter not exist Session {Proto:%d, Server:%s}", s.Proto, s.Server)
-	}
-
 	pk := portKey{
-		proto:     s.Proto,
+		proto:     proto,
 		loaclPort: port,
 	}
 	notuse := false
 
-	a.Lock()
-	delete(a.sess, s)
-
-	delete(a.port[pk], s.Server)
-
-	if len(a.port[pk]) == 0 {
-		delete(a.port, pk)
+	a.mu.Lock()
+	a.ports[pk].Del(dst)
+	if a.ports[pk].Len() == 0 {
+		delete(a.ports, pk)
 		notuse = true
 	}
-	a.Unlock()
+	a.mu.Unlock()
 
 	if notuse {
-		switch s.Proto {
-		case header.TCPProtocolNumber:
+		switch proto {
+		case itun.TCP:
 			return a.mgr.DelTCPPort(port)
-		case header.UDPProtocolNumber:
+		case itun.UDP:
 			return a.mgr.DelUDPPort(port)
 		default:
-			return fmt.Errorf("unknown transport protocol code %d", s.Proto)
+			return itun.ErrInvalidProto(proto)
 		}
 	}
 	return nil
 }
 
-func icmp(proto itun.Proto) bool {
-	return proto == header.ICMPv4ProtocolNumber ||
-		proto == header.ICMPv6ProtocolNumber
+func (a *PortAdapter) Close() (err error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	for pk := range a.ports {
+		var e error
+		switch pk.proto {
+		case itun.TCP:
+			e = a.mgr.DelTCPPort(pk.loaclPort)
+		case itun.UDP:
+			e = a.mgr.DelUDPPort(pk.loaclPort)
+		default:
+			e = errors.Join(err, itun.ErrInvalidProto(pk.proto))
+		}
+		err = errors.Join(err, e)
+	}
+
+	a.ports = map[portKey]*AddrSet{}
+	return err
 }

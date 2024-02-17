@@ -8,10 +8,11 @@ import (
 
 type RawConn struct {
 	relraw.RawConn
+	mtu uint16
 }
 
-func WrapRawConn(conn relraw.RawConn) *RawConn {
-	return &RawConn{RawConn: conn}
+func WrapRawConn(conn relraw.RawConn, mtu uint16) *RawConn {
+	return &RawConn{RawConn: conn, mtu: mtu}
 }
 
 func (r *RawConn) LocalAddr() tcpip.FullAddress {
@@ -34,5 +35,5 @@ func (r *RawConn) NetworkProtocolNumber() tcpip.NetworkProtocolNumber {
 }
 
 func (r *RawConn) MTU() int {
-	return 0
+	return int(r.mtu)
 }

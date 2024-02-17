@@ -4,6 +4,8 @@
 package server
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"net/netip"
 	"slices"
@@ -21,8 +23,8 @@ import (
 )
 
 type SessionMgr struct {
-	hdr   *handler
-	idmgr idmgr
+	proxyer *proxyer
+	idmgr   IdMgr
 
 	sync.RWMutex
 
@@ -32,24 +34,28 @@ type SessionMgr struct {
 	// filter reduplicate add session
 	ids map[itun.Session]uint16
 
-	idleTrigger *time.Ticker
+	idle *itun.Idle
 }
 
-func NewSessionMgr(hdr *handler) *SessionMgr {
+func NewSessionMgr(pxyer *proxyer) *SessionMgr {
 	mgr := &SessionMgr{
-		hdr: hdr,
+		proxyer: pxyer,
 
 		sessions: make(map[uint16]*Session, 16),
 		ids:      make(map[itun.Session]uint16, 16),
 	}
+	var tick *time.Ticker
+	mgr.idle, tick = itun.NewIdle(time.Second * 30) // todo: from config
 
-	go mgr.keepalive()
+	// todo: 把keepalive移出去
+	go mgr.keepalive(context.Background(), tick)
 	return mgr
 }
 
-func (sm *SessionMgr) Add(ctx cctx.CancelCtx, session itun.Session) (*Session, error) {
+// todo: session 应该包括localAddr， 如果同一个机器的两个程序同时访问了相同的地址时
+func (sm *SessionMgr) Add(ctx cctx.CancelCtx, s itun.Session) (*Session, error) {
 	sm.RLock()
-	id, has := sm.ids[session]
+	id, has := sm.ids[s]
 	sm.RUnlock()
 	if has {
 		return sm.Get(id), nil
@@ -59,27 +65,37 @@ func (sm *SessionMgr) Add(ctx cctx.CancelCtx, session itun.Session) (*Session, e
 	if err != nil {
 		return nil, err
 	}
-	port, err := sm.hdr.srv.ap.GetPort(session)
+	port, err := sm.proxyer.srv.ap.GetPort(s.Proto, s.DstAddr)
 	if err != nil {
 		return nil, err
 	}
-	s, err := NewSession(
-		ctx, id, sm.hdr.conn, session,
-		netip.AddrPortFrom(sm.hdr.srv.Addr.Addr(), port),
+	session, err := NewSession(
+		ctx, id, sm.proxyer.conn, s,
+		netip.AddrPortFrom(sm.proxyer.srv.Addr.Addr(), port),
 	)
 	if err != nil {
 		return nil, err
 	}
 
 	sm.Lock()
-	sm.sessions[id] = s
-	sm.ids[session] = id
+	sm.sessions[id] = session
+	sm.ids[s] = id
 	sm.Unlock()
-	return s, nil
+	return session, nil
 }
 
-func (sm *SessionMgr) Del(id uint16) error {
-	return nil
+func (sm *SessionMgr) Del(id uint16) (err error) {
+	s := sm.Get(id)
+	if s != nil {
+		err = s.Close()
+		sm.idmgr.Put(s.ID())
+
+		sm.Lock()
+		delete(sm.ids, s.session)
+		delete(sm.sessions, id)
+		sm.Unlock()
+	}
+	return err
 }
 
 func (sm *SessionMgr) Get(id uint16) *Session {
@@ -88,54 +104,50 @@ func (sm *SessionMgr) Get(id uint16) *Session {
 	return sm.sessions[id]
 }
 
-func (sm *SessionMgr) keepalive() {
-	const keepalive = time.Minute
-	const N = 8
-
-	var d = keepalive / 8
-	d = d - d.Truncate(time.Second) + time.Second
-	sm.idleTrigger = time.NewTicker(d)
-
+func (sm *SessionMgr) keepalive(ctx context.Context, ticker *time.Ticker) {
+	var ids = make([]uint16, 0, 16)
 	for {
-		<-sm.idleTrigger.C
+		select {
+		case <-ticker.C:
+		case <-ctx.Done():
+			return
+		}
 
-		var sid uint16
 		sm.RLock()
 		for id, s := range sm.sessions {
-			if s.idleTrigger() > N {
-				sid = id
+			if s.Idled() {
+				ids = append(ids, id)
 				break
 			}
 		}
 		sm.RUnlock()
 
-		if err := sm.Del(sid); err != nil {
-			panic(err)
+		for _, id := range ids {
+			if err := sm.Del(id); err != nil {
+				panic(err)
+			}
 		}
+		ids = ids[:0]
 	}
 }
 
 const maxSessions = 0xffff - 1
 
-type ErrSessionExceed struct{}
-
-func (e ErrSessionExceed) Error() string {
-	return "session exceed limit"
-}
+var ErrSessionExceed = errors.New("session exceed limit")
 
 type Session struct {
-	ctx cctx.CancelCtx
-	pxy relraw.RawConn
-	id  uint16
+	ctx     cctx.CancelCtx
+	id      uint16
+	session itun.Session
 
-	idleCnt       uint8
-	lastKeepalive uint16
-	keepalive     uint16
+	pxy relraw.RawConn
+
+	idle *itun.Idle
 }
 
 func NewSession(
 	ctx cctx.CancelCtx, id uint16,
-	raw *sconn.Conn,
+	conn *sconn.Conn,
 	s itun.Session, laddr netip.AddrPort,
 ) (*Session, error) {
 
@@ -146,8 +158,8 @@ func NewSession(
 
 	var err error
 	switch s.Proto {
-	case header.TCPProtocolNumber:
-		se.pxy, err = bpf.Connect(laddr, s.Server, relraw.UsedPort())
+	case itun.TCP:
+		se.pxy, err = bpf.Connect(laddr, s.DstAddr, relraw.UsedPort())
 		if err != nil {
 			return nil, err
 		}
@@ -156,7 +168,7 @@ func NewSession(
 		return nil, fmt.Errorf("not support protocol number %d", s.Proto)
 	}
 
-	go se.downlink(raw)
+	go se.downlink(conn)
 	return se, nil
 }
 
@@ -184,57 +196,52 @@ func (s *Session) downlink(conn *sconn.Conn) {
 			s.ctx.Cancel(err)
 			return
 		}
+		s.idle.Action()
 	}
 }
 
 // Write write uplink proxy-data
 func (s *Session) Write(pxy []byte) error {
+	s.idle.Action()
 	_, err := s.pxy.Write(pxy)
 	return err
 }
 
-func (s *Session) idleTrigger() uint8 {
-	if s.lastKeepalive == s.keepalive {
-		s.idleCnt++
-	} else {
-		s.idleCnt = 0
-	}
-	s.lastKeepalive, s.keepalive = s.keepalive, 0
-
-	return s.idleCnt
+func (s *Session) Idled() bool {
+	return s.idle.Idled()
 }
 
 func (s *Session) Close() error {
+	err := s.pxy.Close()
 	s.ctx.Cancel(nil)
-	s.pxy.Close()
-	return nil // todo:
+	return err
 }
 
-type idmgr struct {
-	sync.RWMutex
+type IdMgr struct {
+	mu     sync.RWMutex
 	allocs []uint16 // asc
 }
 
-func (m *idmgr) Get() (uint16, error) {
-	m.RLock()
+func (m *IdMgr) Get() (uint16, error) {
+	m.mu.RLock()
 	id, err := m.getLocked()
-	m.RUnlock()
+	m.mu.RUnlock()
 	if err != nil {
 		return 0, err
 	}
 
-	m.Lock()
+	m.mu.Lock()
 	m.allocs = append(m.allocs, id)
 	slices.Sort(m.allocs)
-	m.Unlock()
+	m.mu.Unlock()
 
 	return id, nil
 }
 
-func (m *idmgr) getLocked() (id uint16, err error) {
+func (m *IdMgr) getLocked() (id uint16, err error) {
 	n := len(m.allocs)
 	if n >= maxSessions {
-		return 0, ErrSessionExceed{}
+		return 0, ErrSessionExceed
 	} else if n == 0 {
 		return 0, nil
 	}
@@ -252,9 +259,9 @@ func (m *idmgr) getLocked() (id uint16, err error) {
 	return 0, fmt.Errorf("unknown error")
 }
 
-func (m *idmgr) Put(id uint16) {
-	m.Lock()
-	defer m.Unlock()
+func (m *IdMgr) Put(id uint16) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
 	i := slices.Index(m.allocs, id)
 	if i < 0 {
