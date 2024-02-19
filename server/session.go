@@ -14,6 +14,7 @@ import (
 
 	"github.com/lysShub/itun"
 	"github.com/lysShub/itun/cctx"
+	"github.com/lysShub/itun/protocol"
 	"github.com/lysShub/itun/sconn"
 	"github.com/lysShub/itun/segment"
 
@@ -32,7 +33,7 @@ type SessionMgr struct {
 	sessions map[uint16]*Session
 
 	// filter reduplicate add session
-	ids map[itun.Session]uint16
+	ids map[protocol.Session]uint16
 
 	idle *itun.Idle
 }
@@ -42,7 +43,7 @@ func NewSessionMgr(pxyer *proxyer) *SessionMgr {
 		proxyer: pxyer,
 
 		sessions: make(map[uint16]*Session, 16),
-		ids:      make(map[itun.Session]uint16, 16),
+		ids:      make(map[protocol.Session]uint16, 16),
 	}
 	var tick *time.Ticker
 	mgr.idle, tick = itun.NewIdle(time.Second * 30) // todo: from config
@@ -53,7 +54,7 @@ func NewSessionMgr(pxyer *proxyer) *SessionMgr {
 }
 
 // todo: session 应该包括localAddr， 如果同一个机器的两个程序同时访问了相同的地址时
-func (sm *SessionMgr) Add(ctx cctx.CancelCtx, s itun.Session) (*Session, error) {
+func (sm *SessionMgr) Add(ctx cctx.CancelCtx, s protocol.Session) (*Session, error) {
 	sm.RLock()
 	id, has := sm.ids[s]
 	sm.RUnlock()
@@ -138,7 +139,7 @@ var ErrSessionExceed = errors.New("session exceed limit")
 type Session struct {
 	ctx     cctx.CancelCtx
 	id      uint16
-	session itun.Session
+	session protocol.Session
 
 	pxy relraw.RawConn
 
@@ -148,7 +149,7 @@ type Session struct {
 func NewSession(
 	ctx cctx.CancelCtx, id uint16,
 	conn *sconn.Conn,
-	s itun.Session, laddr netip.AddrPort,
+	s protocol.Session, laddr netip.AddrPort,
 ) (*Session, error) {
 
 	var se = &Session{
@@ -158,7 +159,7 @@ func NewSession(
 
 	var err error
 	switch s.Proto {
-	case itun.TCP:
+	case protocol.TCP:
 		se.pxy, err = bpf.Connect(laddr, s.DstAddr, relraw.UsedPort())
 		if err != nil {
 			return nil, err
@@ -178,20 +179,26 @@ func (s *Session) ID() uint16 {
 
 // recv from s and write to raw
 func (s *Session) downlink(conn *sconn.Conn) {
-	var b = make([]byte, conn.Raw().MTU())
+	n := conn.Raw().MTU()
+	var seg = segment.Segment{
+		Packet: relraw.ToPacket(0, make([]byte, n)),
+	}
 
 	for {
-		n, err := s.pxy.ReadCtx(s.ctx, b)
+		seg.Sets(0, n)
+		err := s.pxy.ReadCtx(s.ctx, seg.Packet)
 		if err != nil {
 			s.ctx.Cancel(err)
 			return
 		}
 
-		iphdr := header.IPv4(b[:n]) // todo: ipv4
-		i := int(iphdr.HeaderLength()) - 1
-		segment.Segment(iphdr[i:]).SetID(s.id)
+		// todo: 更改dst port, 或者在client注入之前更改
 
-		err = conn.SendSeg(segment.Segment(iphdr), i)
+		iphdr := header.IPv4(seg.Data()) // todo: ipv4
+		seg.SetHead(int(iphdr.HeaderLength()) - 2)
+		seg.SetID(s.id)
+
+		err = conn.SendSeg(s.ctx, seg)
 		if err != nil {
 			s.ctx.Cancel(err)
 			return

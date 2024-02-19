@@ -7,7 +7,6 @@ import (
 	"net"
 	"os"
 	"time"
-	"unsafe"
 
 	"github.com/lysShub/itun"
 	"github.com/lysShub/itun/cctx"
@@ -27,42 +26,39 @@ type Conn struct {
 }
 
 // todo: return offset
-func (s *Conn) RecvSeg(ctx context.Context, b []byte) (seg segment.Segment, err error) {
-	for len(seg) > 0 {
-		n, err := s.raw.ReadCtx(ctx, b)
-		if err != nil {
-			return nil, err
-		}
-
-		iphdr := header.IPv4(b[:n]) // todo: ipv6
-		tcphdr := header.TCP(iphdr.Payload())
-		if s.crypter != nil {
-			tcphdr, err = s.crypter.Decrypt(tcphdr)
-			if err != nil {
-				return nil, err
-			}
-		}
-		s.fake.Recv(tcphdr)
-		seg = segment.Segment(tcphdr.Payload())
-	}
-
-	return seg, err
-}
-
-func (s *Conn) SendSeg(seg segment.Segment, reserved int) (err error) {
-	tcp, empty := s.fake.Send(seg, reserved)
-
-	ptr := uintptr(unsafe.Pointer(&tcp[0]))
-	if s.crypter != nil {
-		tcp = s.crypter.Encrypt(tcp)
-	}
-
-	if ptr == uintptr(unsafe.Pointer(&tcp[0])) {
-		return s.raw.WriteReserved(tcp, empty)
-	} else {
-		_, err = s.raw.Write(seg)
+func (s *Conn) RecvSeg(ctx context.Context, seg segment.Segment) (err error) {
+	err = s.raw.ReadCtx(ctx, seg.Packet)
+	if err != nil {
 		return err
 	}
+
+	iphdr := header.IPv4(seg.Data()) // todo: ipv6
+	// remove ip header
+	seg.SetHead(seg.Head() + int(iphdr.HeaderLength()))
+
+	if s.crypter != nil {
+		err = s.crypter.Decrypt(seg.Packet)
+		if err != nil {
+			return err
+		}
+	}
+	s.fake.AttachRecv(seg.Packet)
+
+	tcphdr := header.TCP(seg.Data())
+	// remove tcp header
+	seg.SetHead(seg.Head() + int(tcphdr.DataOffset()))
+
+	return nil
+}
+
+func (s *Conn) SendSeg(ctx context.Context, seg segment.Segment) (err error) {
+	s.fake.AttachSend(seg.Packet)
+
+	if s.crypter != nil {
+		s.crypter.Encrypt(seg.Packet)
+	}
+
+	return s.raw.WriteCtx(ctx, seg.Packet)
 }
 
 func (s *Conn) Raw() *itun.RawConn {

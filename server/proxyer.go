@@ -14,6 +14,7 @@ import (
 	"github.com/lysShub/itun/control"
 	"github.com/lysShub/itun/sconn"
 	"github.com/lysShub/itun/segment"
+	"github.com/lysShub/relraw"
 )
 
 type proxyer struct {
@@ -75,9 +76,15 @@ func (p *proxyer) control() {
 }
 
 func (p *proxyer) uplink() {
-	var b = make([]byte, p.conn.Raw().MTU())
+	n := p.conn.Raw().MTU()
+	var seg = segment.Segment{
+		Packet: relraw.ToPacket(0, make([]byte, n)),
+	}
+
 	for {
-		seg, err := p.conn.RecvSeg(p.ctx, b)
+		seg.Sets(0, n)
+
+		err := p.conn.RecvSeg(p.ctx, seg)
 		if err != nil {
 			p.ctx.Cancel(err)
 			return

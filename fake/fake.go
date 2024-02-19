@@ -3,7 +3,7 @@ package fake
 import (
 	"sync/atomic"
 
-	"github.com/lysShub/itun/sconn/crypto"
+	"github.com/lysShub/relraw"
 
 	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -37,18 +37,9 @@ func NewFakeTCP(localPort, remotePort uint16, initSeq, initAck uint32) *FakeTCP 
 	return f
 }
 
-func (f *FakeTCP) Send(b []byte, reserved int) (tcp []byte, empty int) {
-	i := reserved - header.TCPMinimumMSS
-
-	if i <= 0 {
-		n := (len(b) - reserved) + header.IPv4MinimumSize + header.TCPMinimumSize
-		tmp := make([]byte, n, n+crypto.Bytes)
-		copy(tmp[header.TCPMinimumSize+header.IPv4MinimumSize:], b[reserved:])
-		b, i = tmp, header.IPv4MinimumSize
-	}
-	tcphdr := header.TCP(b[i:])
-
-	tcphdr.Encode(&header.TCPFields{
+func (f *FakeTCP) AttachSend(p *relraw.Packet) {
+	var b = make(header.TCP, header.TCPMinimumSize) // todo: global
+	b.Encode(&header.TCPFields{
 		SrcPort:    f.lport,
 		DstPort:    f.rport,
 		SeqNum:     f.seq.Load(),
@@ -58,13 +49,20 @@ func (f *FakeTCP) Send(b []byte, reserved int) (tcp []byte, empty int) {
 		WindowSize: 0xff32, // todo: rand
 		Checksum:   0,
 	})
-	f.seq.Add(uint32(len(b) - reserved))
+	f.seq.Add(uint32(p.Len()))
 
-	tcphdr.SetChecksum(^checksum.Checksum(tcphdr, 0))
+	b.SetChecksum(^checksum.Checksum(b, 0))
 
-	return b, i
+	p.Attach(b)
 }
 
-func (f *FakeTCP) Recv(tcp header.TCP) {
-	f.ack.Store(tcp.SequenceNumber() + uint32(len(tcp.Payload()))) // todo: store greater
+func (f *FakeTCP) AttachRecv(tcp *relraw.Packet) {
+	tcphdr := header.TCP(tcp.Data())
+
+	new := tcphdr.SequenceNumber() + uint32(len(tcphdr.Payload()))
+	old := f.ack.Load()
+
+	if new > old {
+		f.ack.Store(new)
+	}
 }

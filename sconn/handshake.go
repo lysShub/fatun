@@ -10,6 +10,7 @@ import (
 	"github.com/lysShub/itun"
 	"github.com/lysShub/itun/cctx"
 	"github.com/lysShub/itun/fake/link"
+	"github.com/lysShub/relraw"
 
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -57,10 +58,10 @@ func newUserStack(ctx cctx.CancelCtx, raw *itun.RawConn) *ustack {
 }
 
 func (u *ustack) uplink(ctx cctx.CancelCtx, raw *itun.RawConn) {
-	var b = make([]byte, raw.MTU())
+	var p = relraw.ToPacket(0, make([]byte, raw.MTU()))
 
 	for {
-		n, err := raw.ReadCtx(ctx, b)
+		err := raw.ReadCtx(ctx, p)
 		if err != nil {
 			select {
 			case <-ctx.Done():
@@ -69,7 +70,7 @@ func (u *ustack) uplink(ctx cctx.CancelCtx, raw *itun.RawConn) {
 			}
 			return
 		}
-		pkb := stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buffer.MakeWithData(b[:n])})
+		pkb := stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buffer.MakeWithData(p.Data())})
 		u.link.InjectInbound(header.IPv4ProtocolNumber, pkb)
 	}
 }

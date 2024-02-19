@@ -6,8 +6,8 @@ package server
 import (
 	"net/netip"
 
-	"github.com/lysShub/itun"
 	"github.com/lysShub/itun/control"
+	"github.com/lysShub/itun/protocol"
 )
 
 type proxyerImpl proxyer
@@ -25,9 +25,9 @@ func (pi *proxyerImpl) EndConfig() {}
 func (pi *proxyerImpl) AddTCP(addr netip.AddrPort) (uint16, error) {
 	s, err := pi.sessionMgr.Add(
 		pi.ctx,
-		itun.Session{
+		protocol.Session{
 			SrcAddr: pi.SrcAddr,
-			Proto:   itun.TCP,
+			Proto:   protocol.TCP,
 			DstAddr: addr,
 		},
 	)
@@ -43,8 +43,8 @@ func (pi *proxyerImpl) DelTCP(id uint16) error {
 func (pi *proxyerImpl) AddUDP(addr netip.AddrPort) (uint16, error) {
 	s, err := pi.sessionMgr.Add(
 		pi.ctx,
-		itun.Session{
-			Proto:   itun.UDP,
+		protocol.Session{
+			Proto:   protocol.UDP,
 			DstAddr: addr,
 		},
 	)

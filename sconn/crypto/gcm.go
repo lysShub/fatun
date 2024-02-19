@@ -5,6 +5,7 @@ import (
 	"crypto/cipher"
 	"fmt"
 
+	"github.com/lysShub/relraw"
 	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
@@ -28,72 +29,72 @@ func NewTCPCrypt(key [Bytes]byte) (*TCPCrypt, error) {
 		}
 	}
 	g.nonceLen = g.c.NonceSize()
-	if g.nonceLen > 12 {
-		// checksum flag behind tcp[:12]
-		return nil, fmt.Errorf("not support nonce length greater than header.TCPMinimumSize")
+	if g.nonceLen > header.TCPChecksumOffset {
+		return nil, fmt.Errorf("not support nonce length greater than header.TCPChecksumOffset")
 	}
 
 	return g, nil
 }
 
-func (g *TCPCrypt) Encrypt(tcp header.TCP) header.TCP {
-	n := len(tcp)
-	for n+Bytes > cap(tcp) {
-		tcp = append(tcp, 0)
-	}
-	tcp = tcp[:n]
+func (g *TCPCrypt) Encrypt(tcp *relraw.Packet) {
+	tcp.AllocTail(Bytes)
 
 	// todo: not strict nonce
-	// additionalData can't contain tcp checksum flag
-	i := tcp.DataOffset()
-	g.c.Seal(tcp[i:i], tcp[:g.nonceLen], tcp[i:], tcp[:header.TCPChecksumOffset])
 
-	tcp = tcp[:len(tcp)+Bytes]
-	return tcp
+	// additionalData can't contain tcp checksum flag
+	tcphdr := header.TCP(tcp.Data())
+	i := tcphdr.DataOffset()
+	g.c.Seal(tcphdr[i:i], tcphdr[:g.nonceLen], tcphdr[i:], tcphdr[:header.TCPChecksumOffset])
+
+	tcp.SetLen(len(tcphdr) + Bytes)
 }
 
 // DecryptChecksum encrypt tcp packet and update checksum, pseudoSum1 indicate pseudo checksum
 // with totalLen=0.
-func (g *TCPCrypt) EncryptChecksum(tcp header.TCP, pseudoSum1 uint16) header.TCP {
-	n := len(tcp)
-	for n+Bytes > cap(tcp) {
-		tcp = append(tcp, 0)
-	}
-	tcp = tcp[:n]
+func (g *TCPCrypt) EncryptChecksum(tcp *relraw.Packet, pseudoSum1 uint16) {
+	tcp.AllocTail(Bytes)
 
-	i := tcp.DataOffset()
-	g.c.Seal(tcp[i:i], tcp[:g.nonceLen], tcp[i:], tcp[:header.TCPChecksumOffset])
+	tcphdr := header.TCP(tcp.Data())
 
-	tcp = tcp[:len(tcp)+Bytes]
-	tcp.SetChecksum(0)
-	ps := checksum.Combine(pseudoSum1, uint16(len(tcp)))
-	tcp.SetChecksum(^checksum.Checksum(tcp, ps))
-	return tcp
+	i := tcphdr.DataOffset()
+	g.c.Seal(tcphdr[i:i], tcphdr[:g.nonceLen], tcphdr[i:], tcphdr[:header.TCPChecksumOffset])
+
+	tcphdr = tcphdr[:len(tcphdr)+Bytes]
+	tcphdr.SetChecksum(0)
+	ps := checksum.Combine(pseudoSum1, uint16(len(tcphdr)))
+	tcphdr.SetChecksum(^checksum.Checksum(tcphdr, ps))
+
+	tcp.SetLen(len(tcphdr))
 }
 
-func (g *TCPCrypt) Decrypt(tcp header.TCP) (header.TCP, error) {
-	i := tcp.DataOffset()
+func (g *TCPCrypt) Decrypt(tcp *relraw.Packet) error {
+	tcphdr := header.TCP(tcp.Data())
 
-	_, err := g.c.Open(tcp[i:i], tcp[:g.nonceLen], tcp[i:], tcp[:header.TCPChecksumOffset])
+	i := tcphdr.DataOffset()
+	_, err := g.c.Open(tcphdr[i:i], tcphdr[:g.nonceLen], tcphdr[i:], tcphdr[:header.TCPChecksumOffset])
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	return tcp[:len(tcp)-Bytes], nil
+	tcp.SetLen(len(tcphdr) - Bytes)
+	return nil
 }
 
 // DecryptChecksum decrypt tcp packet and update checksum, pseudoSum1 indicate pseudo checksum
 // with totalLen=0.
-func (g *TCPCrypt) DecryptChecksum(tcp header.TCP, pseudoSum1 uint16) (header.TCP, error) {
-	i := tcp.DataOffset()
+func (g *TCPCrypt) DecryptChecksum(tcp *relraw.Packet, pseudoSum1 uint16) error {
+	tcphdr := header.TCP(tcp.Data())
 
-	_, err := g.c.Open(tcp[i:i], tcp[:g.nonceLen], tcp[i:], tcp[:header.TCPChecksumOffset])
+	i := tcphdr.DataOffset()
+	_, err := g.c.Open(tcphdr[i:i], tcphdr[:g.nonceLen], tcphdr[i:], tcphdr[:header.TCPChecksumOffset])
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	tcp = tcp[:len(tcp)-Bytes]
-	tcp.SetChecksum(0)
-	tcp.SetChecksum(^checksum.Checksum(tcp, checksum.Combine(pseudoSum1, uint16(len(tcp)))))
-	return tcp, nil
+	tcphdr = tcphdr[:len(tcphdr)-Bytes]
+	tcphdr.SetChecksum(0)
+	tcphdr.SetChecksum(^checksum.Checksum(tcphdr, checksum.Combine(pseudoSum1, uint16(len(tcphdr)))))
+
+	tcp.SetLen(len(tcphdr))
+	return nil
 }

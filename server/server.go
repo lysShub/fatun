@@ -11,6 +11,7 @@ import (
 
 	"github.com/lysShub/itun"
 	"github.com/lysShub/itun/config"
+	"github.com/lysShub/itun/protocol"
 
 	"github.com/lysShub/relraw"
 	"github.com/lysShub/relraw/tcp/bpf"
@@ -32,7 +33,7 @@ func ListenAndServe(ctx context.Context, addr string, cfg *config.Server) (err e
 		return err
 	} else {
 		if a.Port == 0 {
-			a.Port = itun.DefaultPort
+			a.Port = protocol.DefaultPort
 		}
 
 		addr, ok := netip.AddrFromSlice(a.IP)

@@ -4,7 +4,7 @@ import (
 	"net/netip"
 	"testing"
 
-	"github.com/lysShub/itun"
+	"github.com/lysShub/itun/protocol"
 	"github.com/lysShub/itun/server"
 	"github.com/lysShub/relraw"
 	"github.com/stretchr/testify/require"
@@ -40,15 +40,15 @@ func Test_Port_Adapter(t *testing.T) {
 			require.NoError(t, ap.Close())
 		}()
 
-		p1, err := ap.GetPort(itun.TCP, addr1)
+		p1, err := ap.GetPort(protocol.TCP, addr1)
 		require.NoError(t, err)
 
-		p2, err := ap.GetPort(itun.TCP, addr2)
+		p2, err := ap.GetPort(protocol.TCP, addr2)
 		require.NoError(t, err)
 
 		require.Equal(t, p1, p2)
 
-		p3, err := ap.GetPort(itun.TCP, addr3)
+		p3, err := ap.GetPort(protocol.TCP, addr3)
 		require.NoError(t, err)
 
 		require.Equal(t, p2, p3)
@@ -61,10 +61,10 @@ func Test_Port_Adapter(t *testing.T) {
 			require.NoError(t, ap.Close())
 		}()
 
-		p1, err := ap.GetPort(itun.TCP, addr1)
+		p1, err := ap.GetPort(protocol.TCP, addr1)
 		require.NoError(t, err)
 
-		p2, err := ap.GetPort(itun.TCP, addr1)
+		p2, err := ap.GetPort(protocol.TCP, addr1)
 		require.NoError(t, err)
 
 		require.NotEqual(t, p1, p2)
@@ -77,7 +77,7 @@ func Test_Port_Adapter(t *testing.T) {
 		}()
 
 		p1, err := ap.GetPort(123, addr1)
-		require.Equal(t, itun.ErrInvalidProto(123), err)
+		require.Equal(t, protocol.ErrInvalidProto(123), err)
 		require.Zero(t, p1)
 	})
 
@@ -87,8 +87,8 @@ func Test_Port_Adapter(t *testing.T) {
 			require.NoError(t, ap.Close())
 		}()
 
-		p1, err := ap.GetPort(itun.TCP, netip.AddrPort{})
-		require.Equal(t, itun.ErrInvalidAddr(netip.Addr{}), err)
+		p1, err := ap.GetPort(protocol.TCP, netip.AddrPort{})
+		require.Equal(t, protocol.ErrInvalidAddr(netip.Addr{}), err)
 		require.Zero(t, p1)
 	})
 }

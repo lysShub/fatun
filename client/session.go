@@ -1,12 +1,12 @@
 package client
 
 import (
-	"context"
 	"sync"
 
-	"github.com/lysShub/itun"
 	"github.com/lysShub/itun/cctx"
+	"github.com/lysShub/itun/protocol"
 	"github.com/lysShub/itun/sconn"
+	"github.com/lysShub/itun/segment"
 )
 
 type SessionMgr struct {
@@ -21,7 +21,7 @@ func NewSessionMgr(c *Client) *SessionMgr {
 	return &SessionMgr{}
 }
 
-func (sm *SessionMgr) Add(s itun.Session, id uint16) error {
+func (sm *SessionMgr) Add(s protocol.Session, id uint16) error {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
@@ -38,14 +38,9 @@ func (sm *SessionMgr) Get(id uint16) *Session {
 	return sm.sess[id]
 }
 
-type Capture interface {
-	RecvCtx(ctx context.Context, ip []byte) (n int, err error)
-	Inject(b []byte) error
-}
-
 type Session struct {
 	ctx cctx.CancelCtx
-	s   itun.Session
+	s   protocol.Session
 
 	capture Capture
 }
@@ -62,20 +57,20 @@ func NewSession(
 }
 
 func (s *Session) uplink(conn *sconn.Conn) {
-	var b = make([]byte, conn.Raw().MTU())
+	// var b = make([]byte, conn.Raw().MTU())
 
-	for {
-		n, err := s.capture.RecvCtx(s.ctx, b)
-		if err != nil {
-			s.ctx.Cancel(err)
-			return
-		}
+	// for {
+	// n, err := s.capture.RecvCtx(s.ctx, b)
+	// if err != nil {
+	// 	s.ctx.Cancel(err)
+	// 	return
+	// }
 
-		conn.SendSeg(b[:n], 0)
-	}
+	// conn.SendSeg(b[:n], 0)
+	// }
 
 }
 
-func (s *Session) Inject(b []byte, reserved int) error {
-	return nil
+func (s *Session) Inject(seg segment.Segment) error {
+	return s.capture.Inject(nil) // todo:
 }

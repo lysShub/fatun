@@ -10,8 +10,10 @@ import (
 	"github.com/lysShub/itun/cctx"
 	"github.com/lysShub/itun/config"
 	"github.com/lysShub/itun/control"
+	"github.com/lysShub/itun/protocol"
 	"github.com/lysShub/itun/sconn"
 	"github.com/lysShub/itun/segment"
+	"github.com/lysShub/relraw"
 )
 
 type Client struct {
@@ -35,7 +37,7 @@ func NewClient(proxyServer string, cfg *config.Client) (*Client, error) {
 		return nil, err
 	} else {
 		if a.Port == 0 {
-			a.Port = itun.DefaultPort
+			a.Port = protocol.DefaultPort
 		}
 		addr, ok := netip.AddrFromSlice(a.IP)
 		if !ok {
@@ -79,13 +81,13 @@ func (c *Client) Connect(ctx cctx.CancelCtx, server netip.AddrPort) error {
 	return nil
 }
 
-func (c *Client) AddProxy(s itun.Session) error {
+func (c *Client) AddProxy(s protocol.Session) error {
 	if !s.IsValid() {
-		return itun.ErrInvalidSession(s)
+		return protocol.ErrInvalidSession(s)
 	}
 
 	switch s.Proto {
-	case itun.TCP:
+	case protocol.TCP:
 		id, err := c.ctr.AddTCP(s.DstAddr)
 		if err != nil {
 			return err
@@ -97,10 +99,14 @@ func (c *Client) AddProxy(s itun.Session) error {
 }
 
 func (c *Client) downlink() {
-	var b = make([]byte, c.conn.Raw().MTU())
+	n := c.conn.Raw().MTU()
+	var seg = segment.Segment{
+		Packet: relraw.ToPacket(0, make([]byte, n)),
+	}
 	for {
-		seg, err := c.conn.RecvSeg(c.ctx, b)
-		if err != nil {
+		seg.Sets(0, n)
+
+		if err := c.conn.RecvSeg(c.ctx, seg); err != nil {
 			c.ctx.Cancel(err)
 			return
 		}
@@ -110,9 +116,7 @@ func (c *Client) downlink() {
 		} else {
 			s := c.sessionMgr.Get(id)
 			if s != nil {
-
-				s.Inject(seg, 0)
-
+				s.Inject(seg)
 			} else {
 				fmt.Println("回复了没有注册的")
 			}
