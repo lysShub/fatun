@@ -13,7 +13,6 @@ import (
 	"github.com/lysShub/itun/protocol"
 	"github.com/lysShub/itun/sconn"
 	"github.com/lysShub/itun/segment"
-	"github.com/lysShub/relraw"
 )
 
 type Client struct {
@@ -100,11 +99,10 @@ func (c *Client) AddProxy(s protocol.Session) error {
 
 func (c *Client) downlink() {
 	n := c.conn.Raw().MTU()
-	var seg = segment.Segment{
-		Packet: relraw.ToPacket(0, make([]byte, n)),
-	}
+
+	var seg = segment.NewSegment(n)
 	for {
-		seg.Sets(0, n)
+		seg.Packet().Sets(0, n)
 
 		if err := c.conn.RecvSeg(c.ctx, seg); err != nil {
 			c.ctx.Cancel(err)

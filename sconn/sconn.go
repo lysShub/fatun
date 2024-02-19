@@ -26,39 +26,41 @@ type Conn struct {
 }
 
 // todo: return offset
-func (s *Conn) RecvSeg(ctx context.Context, seg segment.Segment) (err error) {
-	err = s.raw.ReadCtx(ctx, seg.Packet)
+func (s *Conn) RecvSeg(ctx context.Context, seg *segment.Segment) (err error) {
+	p := seg.Packet()
+
+	err = s.raw.ReadCtx(ctx, p)
 	if err != nil {
 		return err
 	}
 
-	iphdr := header.IPv4(seg.Data()) // todo: ipv6
-	// remove ip header
-	seg.SetHead(seg.Head() + int(iphdr.HeaderLength()))
+	iphdr := header.IPv4(p.Data())                  // todo: ipv6
+	p.SetHead(p.Head() + int(iphdr.HeaderLength())) // remove ip header
 
 	if s.crypter != nil {
-		err = s.crypter.Decrypt(seg.Packet)
+		err = s.crypter.Decrypt(p)
 		if err != nil {
 			return err
 		}
 	}
-	s.fake.AttachRecv(seg.Packet)
+	s.fake.AttachRecv(p)
 
-	tcphdr := header.TCP(seg.Data())
-	// remove tcp header
-	seg.SetHead(seg.Head() + int(tcphdr.DataOffset()))
+	tcphdr := header.TCP(p.Data())
+	p.SetHead(p.Head() + int(tcphdr.DataOffset())) // remove tcp header
 
 	return nil
 }
 
-func (s *Conn) SendSeg(ctx context.Context, seg segment.Segment) (err error) {
-	s.fake.AttachSend(seg.Packet)
+func (s *Conn) SendSeg(ctx context.Context, seg *segment.Segment) (err error) {
+	p := seg.Packet()
+
+	s.fake.AttachSend(p)
 
 	if s.crypter != nil {
-		s.crypter.Encrypt(seg.Packet)
+		s.crypter.Encrypt(p)
 	}
 
-	return s.raw.WriteCtx(ctx, seg.Packet)
+	return s.raw.WriteCtx(ctx, p)
 }
 
 func (s *Conn) Raw() *itun.RawConn {

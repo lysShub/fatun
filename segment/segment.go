@@ -12,26 +12,44 @@ import (
 // SessionID   Payload(tcp/udp packet)
 // [0, 2)      [2, n)
 type Segment struct {
-	*relraw.Packet
+	p *relraw.Packet
+}
+
+func NewSegment(n int) *Segment {
+	return &Segment{
+		p: relraw.NewPacket(0, n),
+	}
+}
+
+func ToSegment(p *relraw.Packet) *Segment {
+	p.SetHead(HdrSize)
+	return &Segment{p: p}
 }
 
 const CtrSegID uint16 = 0xffff
 const (
 	idOffset1 = 0
 	idOffset2 = 2
+	HdrSize   = idOffset2
 )
+
+func (s *Segment) Packet() *relraw.Packet {
+	return s.p
+}
 
 // ID get session id
 func (s Segment) ID() uint16 {
-	return binary.BigEndian.Uint16(s.Data()[idOffset1:idOffset2])
+	b := s.p.Data()
+	return binary.BigEndian.Uint16(b[idOffset1:idOffset2])
 }
 
 // SetID set session id
 func (s Segment) SetID(id uint16) {
-	binary.BigEndian.PutUint16(s.Data()[idOffset1:idOffset2], id)
+	b := s.p.Data()
+	binary.BigEndian.PutUint16(b[idOffset1:idOffset2], id)
 }
 
 // Payload TCP/UPD packet
 func (s Segment) Payload() []byte {
-	return s.Data()[idOffset2:]
+	return s.p.Data()[idOffset2:]
 }

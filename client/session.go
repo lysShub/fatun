@@ -71,6 +71,6 @@ func (s *Session) uplink(conn *sconn.Conn) {
 
 }
 
-func (s *Session) Inject(seg segment.Segment) error {
+func (s *Session) Inject(seg *segment.Segment) error {
 	return s.capture.Inject(nil) // todo:
 }

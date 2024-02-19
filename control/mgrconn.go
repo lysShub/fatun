@@ -117,19 +117,22 @@ func newCtrConn(ctx cctx.CancelCtx, conn *sconn.Conn) *CtrConn {
 	return mc
 }
 
-func (mc *CtrConn) Inject(seg segment.Segment) {
+func (mc *CtrConn) Inject(seg *segment.Segment) {
 	if seg.ID() != segment.CtrSegID {
 		panic(fmt.Sprintf("not MgrSeg with id %d", seg.ID()))
 	}
 
 	// remove ip header and segment header
-	seg.SetHead(seg.Head() + 2)
+	p := seg.Packet()
+	p.SetHead(p.Head() + segment.HdrSize)
 
-	mc.ipstack.AttachInbound(seg.Packet)
+	mc.ipstack.AttachInbound(p)
 
 	// todo: validate ip packet
 
-	pkb := stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buffer.MakeWithData(seg.Data())})
+	pkb := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		Payload: buffer.MakeWithData(p.Data()),
+	})
 	mc.link.InjectInbound(header.IPv4ProtocolNumber, pkb)
 }
 
@@ -139,11 +142,11 @@ func (mc *CtrConn) downlink(ctx cctx.CancelCtx, conn *sconn.Conn) {
 		if pkb.IsNil() {
 			return
 		}
-
 		iphdr := header.IPv4(pkb.ToView().AsSlice())
-		seg := segment.Segment{
-			Packet: relraw.ToPacket(int(iphdr.HeaderLength())-2, iphdr),
-		}
+
+		p := relraw.ToPacket(int(iphdr.HeaderLength())-segment.HdrSize, iphdr)
+
+		seg := segment.ToSegment(p)
 		seg.SetID(segment.CtrSegID)
 
 		err := conn.SendSeg(ctx, seg)

@@ -3,7 +3,7 @@ module github.com/lysShub/itun
 go 1.21
 
 require (
-	github.com/lysShub/relraw v0.0.0-20240218173133-81adf085a83d
+	github.com/lysShub/relraw v0.0.0-20240219072031-64b9a6fc44a3
 	golang.org/x/sys v0.16.0
 )
 

@@ -18,10 +18,10 @@ github.com/lysShub/divert-go v0.0.0-20240218100932-81d2021c033a h1:d3WDu7l/RBmXa
 github.com/lysShub/divert-go v0.0.0-20240218100932-81d2021c033a/go.mod h1:d1SuldlJJppacF/Dlks4BPjdxH301oYdC3dPoF+w2SU=
 github.com/lysShub/dll-go v0.0.0-20240131092034-3f09ae5eff72 h1:sVpTzdeme/y/csKBVz3yP6umbxrNbQBamUXgFXD7Z4Y=
 github.com/lysShub/dll-go v0.0.0-20240131092034-3f09ae5eff72/go.mod h1:Ww946b4py3gpmi5bGAyR6AUr3fFdalALEmk34/URCBM=
-github.com/lysShub/relraw v0.0.0-20240218132830-a08e3e30a29a h1:Ri2nJIy2j294SUUjG5LO0XriRtM/iQobpSodjTAXIIU=
-github.com/lysShub/relraw v0.0.0-20240218132830-a08e3e30a29a/go.mod h1:xhJRMK7YjHnrX1Xyip3BEQzNk72PkVXqZH/dbnKhf/o=
 github.com/lysShub/relraw v0.0.0-20240218173133-81adf085a83d h1:YLSFy4zSyJGbQfGKj+vGErJotLcpuDF39DPgIdxtgDM=
 github.com/lysShub/relraw v0.0.0-20240218173133-81adf085a83d/go.mod h1:xhJRMK7YjHnrX1Xyip3BEQzNk72PkVXqZH/dbnKhf/o=
+github.com/lysShub/relraw v0.0.0-20240219072031-64b9a6fc44a3 h1:EiRUn/ZqeNBB5d1Mv3U3m+Ecoo9EEpOdBhh69Hx3zhw=
+github.com/lysShub/relraw v0.0.0-20240219072031-64b9a6fc44a3/go.mod h1:xhJRMK7YjHnrX1Xyip3BEQzNk72PkVXqZH/dbnKhf/o=
 github.com/lysShub/wintun-go v0.0.0-20240131112415-8f3bf638af49 h1:+BtJbmYw5V5Qd3TLsXwOmvnx+KcYmz5KqDM5av/T5vc=
 github.com/lysShub/wintun-go v0.0.0-20240131112415-8f3bf638af49/go.mod h1:a8jsRV4kDa2yZAkygNrNhkblO+3/nkoS5x/PTVsK644=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
