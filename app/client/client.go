@@ -10,7 +10,6 @@ import (
 	"github.com/lysShub/itun/cctx"
 	"github.com/lysShub/itun/config"
 	"github.com/lysShub/itun/control"
-	"github.com/lysShub/itun/protocol"
 	"github.com/lysShub/itun/sconn"
 	"github.com/lysShub/itun/segment"
 )
@@ -36,7 +35,7 @@ func NewClient(proxyServer string, cfg *config.Client) (*Client, error) {
 		return nil, err
 	} else {
 		if a.Port == 0 {
-			a.Port = protocol.DefaultPort
+			a.Port = itun.DefaultPort
 		}
 		addr, ok := netip.AddrFromSlice(a.IP)
 		if !ok {
@@ -80,13 +79,13 @@ func (c *Client) Connect(ctx cctx.CancelCtx, server netip.AddrPort) error {
 	return nil
 }
 
-func (c *Client) AddProxy(s protocol.Session) error {
+func (c *Client) AddProxy(s itun.Session) error {
 	if !s.IsValid() {
-		return protocol.ErrInvalidSession(s)
+		return itun.ErrInvalidSession(s)
 	}
 
 	switch s.Proto {
-	case protocol.TCP:
+	case itun.TCP:
 		id, err := c.ctr.AddTCP(s.DstAddr)
 		if err != nil {
 			return err

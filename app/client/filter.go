@@ -1,9 +1,9 @@
 package client
 
-import "github.com/lysShub/itun/protocol"
+import "github.com/lysShub/itun"
 
 type Filter interface {
-	ProxyCh() <-chan protocol.Session
+	ProxyCh() <-chan itun.Session
 
 	ResetRule(any) error
 }

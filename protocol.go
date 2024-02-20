@@ -1,10 +1,8 @@
-package protocol
+package itun
 
 import (
 	"fmt"
 	"net/netip"
-
-	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
 const DefaultPort = 19986
@@ -62,13 +60,4 @@ type ErrInvalidSession Session
 
 func (e ErrInvalidSession) Error() string {
 	return fmt.Sprintf("invalid %s session %s->%s", e.Proto, e.SrcAddr, e.DstAddr)
-}
-
-type RawConn interface {
-	LocalAddr() tcpip.FullAddress
-	RemoteAddr() tcpip.FullAddress
-	Proto() Proto
-	MTU() int
-
-	// relraw.RawConn
 }

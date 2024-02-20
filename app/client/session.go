@@ -3,8 +3,8 @@ package client
 import (
 	"sync"
 
+	"github.com/lysShub/itun"
 	"github.com/lysShub/itun/cctx"
-	"github.com/lysShub/itun/protocol"
 	"github.com/lysShub/itun/sconn"
 	"github.com/lysShub/itun/segment"
 )
@@ -21,7 +21,7 @@ func NewSessionMgr(c *Client) *SessionMgr {
 	return &SessionMgr{}
 }
 
-func (sm *SessionMgr) Add(s protocol.Session, id uint16) error {
+func (sm *SessionMgr) Add(s itun.Session, id uint16) error {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
@@ -40,7 +40,7 @@ func (sm *SessionMgr) Get(id uint16) *Session {
 
 type Session struct {
 	ctx cctx.CancelCtx
-	s   protocol.Session
+	s   itun.Session
 
 	capture Capture
 }

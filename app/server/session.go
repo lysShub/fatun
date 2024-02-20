@@ -14,7 +14,6 @@ import (
 
 	"github.com/lysShub/itun"
 	"github.com/lysShub/itun/cctx"
-	"github.com/lysShub/itun/protocol"
 	"github.com/lysShub/itun/sconn"
 	"github.com/lysShub/itun/segment"
 
@@ -32,7 +31,7 @@ type SessionMgr struct {
 	sessions map[uint16]*Session
 
 	// filter reduplicate add session
-	ids map[protocol.Session]uint16
+	ids map[itun.Session]uint16
 
 	idle *itun.Idle
 }
@@ -42,7 +41,7 @@ func NewSessionMgr(pxyer *proxyer) *SessionMgr {
 		proxyer: pxyer,
 
 		sessions: make(map[uint16]*Session, 16),
-		ids:      make(map[protocol.Session]uint16, 16),
+		ids:      make(map[itun.Session]uint16, 16),
 	}
 	var tick *time.Ticker
 	mgr.idle, tick = itun.NewIdle(time.Second * 30) // todo: from config
@@ -53,7 +52,7 @@ func NewSessionMgr(pxyer *proxyer) *SessionMgr {
 }
 
 // todo: session 应该包括localAddr， 如果同一个机器的两个程序同时访问了相同的地址时
-func (sm *SessionMgr) Add(ctx cctx.CancelCtx, s protocol.Session) (*Session, error) {
+func (sm *SessionMgr) Add(ctx cctx.CancelCtx, s itun.Session) (*Session, error) {
 	sm.RLock()
 	id, has := sm.ids[s]
 	sm.RUnlock()
@@ -138,7 +137,7 @@ var ErrSessionExceed = errors.New("session exceed limit")
 type Session struct {
 	ctx     cctx.CancelCtx
 	id      uint16
-	session protocol.Session
+	session itun.Session
 
 	pxy relraw.RawConn
 
@@ -148,7 +147,7 @@ type Session struct {
 func NewSession(
 	ctx cctx.CancelCtx, id uint16,
 	conn *sconn.Conn,
-	s protocol.Session, laddr netip.AddrPort,
+	s itun.Session, laddr netip.AddrPort,
 ) (*Session, error) {
 
 	var se = &Session{
@@ -158,14 +157,14 @@ func NewSession(
 
 	var err error
 	switch s.Proto {
-	case protocol.TCP:
+	case itun.TCP:
 		se.pxy, err = bpf.Connect(laddr, s.DstAddr, relraw.UsedPort())
 		if err != nil {
 			return nil, err
 		}
 	default:
 		// todo: udp
-		return nil, fmt.Errorf("not support protocol number %d", s.Proto)
+		return nil, fmt.Errorf("not support itun number %d", s.Proto)
 	}
 
 	go se.downlink(conn)

@@ -8,7 +8,6 @@ import (
 	"sync"
 
 	"github.com/lysShub/itun"
-	"github.com/lysShub/itun/protocol"
 )
 
 type PortAdapter struct {
@@ -79,16 +78,16 @@ func (a *AddrSet) Del(addr netip.AddrPort) {
 func (a *AddrSet) Len() int { return len(a.addrs) }
 
 type portKey struct {
-	proto     protocol.Proto
+	proto     itun.Proto
 	loaclPort uint16
 }
 
 // GetPort get a local machine port
-func (a *PortAdapter) GetPort(proto protocol.Proto, dst netip.AddrPort) (port uint16, err error) {
+func (a *PortAdapter) GetPort(proto itun.Proto, dst netip.AddrPort) (port uint16, err error) {
 	if !proto.IsValid() {
-		return 0, protocol.ErrInvalidProto(proto)
+		return 0, itun.ErrInvalidProto(proto)
 	} else if !dst.IsValid() {
-		return 0, protocol.ErrInvalidAddr(dst.Addr())
+		return 0, itun.ErrInvalidAddr(dst.Addr())
 	}
 
 	if proto.IsICMP() {
@@ -112,18 +111,18 @@ func (a *PortAdapter) GetPort(proto protocol.Proto, dst netip.AddrPort) (port ui
 	// alloc new port
 	if port == 0 {
 		switch proto {
-		case protocol.TCP:
+		case itun.TCP:
 			port, err = a.mgr.GetTCPPort()
 			if err != nil {
 				return 0, err
 			}
-		case protocol.UDP:
+		case itun.UDP:
 			port, err = a.mgr.GetUDPPort()
 			if err != nil {
 				return 0, err
 			}
 		default:
-			return 0, fmt.Errorf("unknown transport protocol code %d", proto)
+			return 0, fmt.Errorf("unknown transport itun code %d", proto)
 		}
 	}
 
@@ -143,7 +142,7 @@ func (a *PortAdapter) GetPort(proto protocol.Proto, dst netip.AddrPort) (port ui
 }
 
 // todo: idle timeout delete
-func (a *PortAdapter) DelPort(proto protocol.Proto, port uint16, dst netip.AddrPort) error {
+func (a *PortAdapter) DelPort(proto itun.Proto, port uint16, dst netip.AddrPort) error {
 	if proto.IsICMP() {
 		return nil
 	}
@@ -164,12 +163,12 @@ func (a *PortAdapter) DelPort(proto protocol.Proto, port uint16, dst netip.AddrP
 
 	if notuse {
 		switch proto {
-		case protocol.TCP:
+		case itun.TCP:
 			return a.mgr.DelTCPPort(port)
-		case protocol.UDP:
+		case itun.UDP:
 			return a.mgr.DelUDPPort(port)
 		default:
-			return protocol.ErrInvalidProto(proto)
+			return itun.ErrInvalidProto(proto)
 		}
 	}
 	return nil
@@ -182,12 +181,12 @@ func (a *PortAdapter) Close() (err error) {
 	for pk := range a.ports {
 		var e error
 		switch pk.proto {
-		case protocol.TCP:
+		case itun.TCP:
 			e = a.mgr.DelTCPPort(pk.loaclPort)
-		case protocol.UDP:
+		case itun.UDP:
 			e = a.mgr.DelUDPPort(pk.loaclPort)
 		default:
-			e = errors.Join(err, protocol.ErrInvalidProto(pk.proto))
+			e = errors.Join(err, itun.ErrInvalidProto(pk.proto))
 		}
 		err = errors.Join(err, e)
 	}
