@@ -23,7 +23,6 @@ type Conn struct {
 	crypter *crypto.TCPCrypt
 }
 
-// todo: return offset
 func (s *Conn) RecvSeg(ctx context.Context, seg *segment.Segment) (err error) {
 	p := seg.Packet()
 
@@ -60,6 +59,10 @@ func (s *Conn) SendSeg(ctx context.Context, seg *segment.Segment) (err error) {
 
 func (s *Conn) Raw() *itun.RawConn {
 	return s.raw
+}
+
+func (s *Conn) Close() error {
+	return s.raw.Close()
 }
 
 type ErrPrevPacketInvalid int
@@ -116,7 +119,7 @@ func accept(ctx cctx.CancelCtx, raw *itun.RawConn, cfg *Config) (conn *Conn) {
 	}
 
 	// swap secret key
-	if key, err := cfg.SwapKey.Server(ctx, tcp); err != nil {
+	if key, err := cfg.SwapKey.SecretKey(ctx, tcp); err != nil {
 		ctx.Cancel(errors.Join(ctx.Err(), err))
 		return nil
 	} else {
@@ -163,11 +166,11 @@ func connect(ctx cctx.CancelCtx, raw *itun.RawConn, cfg *Config) (conn *Conn) {
 	}
 
 	// swap secret key
-	if key, err := cfg.SwapKey.Client(ctx, tcp); err != nil {
+	if key, err := cfg.SwapKey.SecretKey(ctx, tcp); err != nil {
 		ctx.Cancel(err)
 		return nil
 	} else {
-		if key != [crypto.Bytes]byte{} {
+		if key != (Key{}) {
 			conn.crypter, err = crypto.NewTCPCrypt(key)
 			if err != nil {
 				ctx.Cancel(err)

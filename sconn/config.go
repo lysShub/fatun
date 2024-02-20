@@ -2,12 +2,10 @@ package sconn
 
 import (
 	"bytes"
-	"context"
 	"io"
 	"net"
 
 	"github.com/lysShub/itun/cctx"
-	"github.com/lysShub/itun/sconn/crypto"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
@@ -19,15 +17,7 @@ type Config struct {
 	PrevPackets PrevPackets //todo: support mutiple data set
 
 	// swap secret key, not crypto if nil
-	SwapKey SwapSecretKey
-}
-
-type SwapSecretKey interface {
-	// return [crypto.Bytes]byte{} mean not crypto
-	// notice: don't close conn inner
-
-	Client(ctx context.Context, conn net.Conn) ([crypto.Bytes]byte, error)
-	Server(ctx context.Context, conn net.Conn) ([crypto.Bytes]byte, error)
+	SwapKey SecretKey
 }
 
 func (pps PrevPackets) Client(ctx cctx.CancelCtx, conn net.Conn) {
@@ -74,13 +64,4 @@ func (pps PrevPackets) Server(ctx cctx.CancelCtx, conn net.Conn) {
 			}
 		}
 	}
-}
-
-type NotCrypto struct{}
-
-func (c *NotCrypto) Client(ctx context.Context, conn net.Conn) ([crypto.Bytes]byte, error) {
-	return [crypto.Bytes]byte{}, nil
-}
-func (c *NotCrypto) Server(ctx context.Context, conn net.Conn) ([crypto.Bytes]byte, error) {
-	return [crypto.Bytes]byte{}, nil
 }

@@ -10,14 +10,20 @@ import (
 	"net/netip"
 
 	"github.com/lysShub/itun"
-	"github.com/lysShub/itun/config"
+	"github.com/lysShub/itun/sconn"
 
 	"github.com/lysShub/relraw"
 	"github.com/lysShub/relraw/tcp/bpf"
 )
 
+type Config struct {
+	Sconn sconn.Config
+
+	MTU uint16
+}
+
 type Server struct {
-	cfg *config.Server
+	cfg *Config
 
 	l relraw.Listener
 
@@ -26,7 +32,7 @@ type Server struct {
 	ap *PortAdapter
 }
 
-func ListenAndServe(ctx context.Context, addr string, cfg *config.Server) (err error) {
+func ListenAndServe(ctx context.Context, addr string, cfg *Config) (err error) {
 	var addrPort netip.AddrPort
 	if a, err := net.ResolveTCPAddr("tcp", addr); err != nil {
 		return err

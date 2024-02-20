@@ -8,15 +8,19 @@ import (
 
 	"github.com/lysShub/itun"
 	"github.com/lysShub/itun/cctx"
-	"github.com/lysShub/itun/config"
 	"github.com/lysShub/itun/control"
 	"github.com/lysShub/itun/sconn"
 	"github.com/lysShub/itun/segment"
 )
 
+type Config struct {
+	sconn.Config
+	MTU uint16
+}
+
 type Client struct {
 	ctx        cctx.CancelCtx
-	cfg        *config.Client
+	cfg        *Config
 	sessionMgr *SessionMgr
 
 	conn *sconn.Conn
@@ -25,9 +29,9 @@ type Client struct {
 	ctr     *control.Client
 }
 
-func NewClient(proxyServer string, cfg *config.Client) (*Client, error) {
+func NewClient(proxyServer string, cfg *Config) (*Client, error) {
 	var c = &Client{
-		cfg: &config.Client{},
+		cfg: &Config{},
 	}
 
 	var server netip.AddrPort
@@ -62,7 +66,7 @@ func (c *Client) Connect(ctx cctx.CancelCtx, server netip.AddrPort) error {
 	}
 	conn := itun.WrapRawConn(raw, c.cfg.MTU)
 
-	c.conn = sconn.Connect(ctx, conn, &c.cfg.Sconn)
+	c.conn = sconn.Connect(ctx, conn, &c.cfg.Config)
 	if err := ctx.Err(); err != nil {
 		return err
 	}
