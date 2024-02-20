@@ -4,8 +4,8 @@ import (
 	"net/netip"
 	"testing"
 
+	"github.com/lysShub/itun/app/server"
 	"github.com/lysShub/itun/protocol"
-	"github.com/lysShub/itun/server"
 	"github.com/lysShub/relraw"
 	"github.com/stretchr/testify/require"
 )

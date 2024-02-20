@@ -107,11 +107,15 @@ func newCtrConn(ctx cctx.CancelCtx, conn *sconn.Conn) *CtrConn {
 	}, stack.AddressProperties{})
 	mc.stack.SetRouteTable([]tcpip.Route{{Destination: header.IPv4EmptySubnet, NIC: nicid}})
 
-	mc.ipstack = relraw.NewIPStack(
-		conn.Raw().LocalAddrAddrPort().Addr(),
-		conn.Raw().RemoteAddrAddrPort().Addr(),
+	var err error
+	mc.ipstack, err = relraw.NewIPStack(
+		conn.Raw().LocalAddrPort().Addr(),
+		conn.Raw().RemoteAddrPort().Addr(),
 		tcp.ProtocolNumber,
 	)
+	if err != nil {
+		ctx.Cancel(err)
+	}
 
 	go mc.downlink(ctx, conn)
 	return mc

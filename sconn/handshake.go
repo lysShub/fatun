@@ -22,7 +22,7 @@ import (
 )
 
 type ustack struct {
-	raw   itun.RawConn
+	raw   *itun.RawConn
 	stack *stack.Stack
 	link  *link.Endpoint
 }
@@ -32,7 +32,7 @@ func newUserStack(ctx cctx.CancelCtx, raw *itun.RawConn) *ustack {
 	st := stack.New(stack.Options{
 		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol},
 		TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol},
-		// HandleLocal:        true,
+		HandleLocal:        false,
 	})
 	l := link.New(4, uint32(raw.MTU()))
 
@@ -48,6 +48,7 @@ func newUserStack(ctx cctx.CancelCtx, raw *itun.RawConn) *ustack {
 	st.SetRouteTable([]tcpip.Route{{Destination: header.IPv4EmptySubnet, NIC: nicid}})
 
 	var u = &ustack{
+		raw:   raw,
 		stack: st,
 		link:  l,
 	}
@@ -58,9 +59,11 @@ func newUserStack(ctx cctx.CancelCtx, raw *itun.RawConn) *ustack {
 }
 
 func (u *ustack) uplink(ctx cctx.CancelCtx, raw *itun.RawConn) {
-	var p = relraw.ToPacket(0, make([]byte, raw.MTU()))
+	mtu := raw.MTU()
+	var p = relraw.ToPacket(0, make([]byte, mtu))
 
 	for {
+		p.Sets(0, mtu)
 		err := raw.ReadCtx(ctx, p)
 		if err != nil {
 			select {
@@ -70,7 +73,33 @@ func (u *ustack) uplink(ctx cctx.CancelCtx, raw *itun.RawConn) {
 			}
 			return
 		}
-		pkb := stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buffer.MakeWithData(p.Data())})
+
+		{
+			// todo: attach
+			// todo: 看能不直接
+			p.SetHead(0)
+			iphdr := header.IPv4(p.Data())
+			tcphdr := header.TCP(iphdr.Payload())
+			fmt.Printf(
+				"%s:%d-->%s:%d	\n",
+				iphdr.SourceAddress(), tcphdr.SourcePort(),
+				iphdr.DestinationAddress(), tcphdr.DestinationPort(),
+			)
+
+			fmt.Printf(
+				"%s-->%s	\n",
+				u.raw.RemoteAddrPort().String(),
+				u.raw.LocalAddrPort().String(),
+			)
+
+		}
+
+		// recover tcp to ip
+		p.SetHead(0)
+
+		pkb := stack.NewPacketBuffer(stack.PacketBufferOptions{
+			Payload: buffer.MakeWithData(p.Data()),
+		})
 		u.link.InjectInbound(header.IPv4ProtocolNumber, pkb)
 	}
 }
@@ -112,25 +141,37 @@ func (s *ustack) Accept(ctx cctx.CancelCtx) net.Conn {
 		}
 		acceptCtx.Cancel(nil)
 	}()
-	<-acceptCtx.Done()
 
-	err = acceptCtx.Err()
-	if err != nil && !errors.Is(err, context.Canceled) {
+	<-acceptCtx.Done()
+	if err = acceptCtx.Err(); !errors.Is(err, context.Canceled) {
 		ctx.Cancel(errors.Join(err, l.Close()))
 		return nil
 	}
+
 	return conn // todo: validate remote addr
 }
 
 func (s *ustack) Connect(ctx cctx.CancelCtx) net.Conn {
-	conn, err := gonet.DialTCPWithBind(
-		ctx, s.stack,
-		s.raw.LocalAddr(), s.raw.RemoteAddr(),
-		s.raw.NetworkProtocolNumber(),
-	)
-	if err != nil {
+	connectCtx := cctx.WithTimeout(ctx, time.Second*5) // todo: from config
+
+	var conn net.Conn
+	go func() { // gonet context is fool
+		var err error
+		conn, err = gonet.DialTCPWithBind(
+			connectCtx, s.stack,
+			s.raw.LocalAddr(), s.raw.RemoteAddr(),
+			s.raw.NetworkProtocolNumber(),
+		)
+		if err != nil {
+			ctx.Cancel(err)
+		}
+		connectCtx.Cancel(nil)
+	}()
+
+	<-connectCtx.Done()
+	if err := connectCtx.Err(); !errors.Is(err, context.Canceled) {
 		ctx.Cancel(err)
-		return nil
 	}
+
 	return conn
 }

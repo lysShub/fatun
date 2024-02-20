@@ -23,10 +23,11 @@ type Config struct {
 }
 
 type SwapSecretKey interface {
+	// return [crypto.Bytes]byte{} mean not crypto
 	// notice: don't close conn inner
 
-	SendKey(ctx context.Context, conn net.Conn) ([crypto.Bytes]byte, error)
-	RecvKey(ctx context.Context, conn net.Conn) ([crypto.Bytes]byte, error)
+	Client(ctx context.Context, conn net.Conn) ([crypto.Bytes]byte, error)
+	Server(ctx context.Context, conn net.Conn) ([crypto.Bytes]byte, error)
 }
 
 func (pps PrevPackets) Client(ctx cctx.CancelCtx, conn net.Conn) {
@@ -73,4 +74,13 @@ func (pps PrevPackets) Server(ctx cctx.CancelCtx, conn net.Conn) {
 			}
 		}
 	}
+}
+
+type NotCrypto struct{}
+
+func (c *NotCrypto) Client(ctx context.Context, conn net.Conn) ([crypto.Bytes]byte, error) {
+	return [crypto.Bytes]byte{}, nil
+}
+func (c *NotCrypto) Server(ctx context.Context, conn net.Conn) ([crypto.Bytes]byte, error) {
+	return [crypto.Bytes]byte{}, nil
 }

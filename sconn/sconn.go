@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
-	"os"
 	"time"
 
 	"github.com/lysShub/itun"
@@ -33,9 +31,6 @@ func (s *Conn) RecvSeg(ctx context.Context, seg *segment.Segment) (err error) {
 	if err != nil {
 		return err
 	}
-
-	iphdr := header.IPv4(p.Data())                  // todo: ipv6
-	p.SetHead(p.Head() + int(iphdr.HeaderLength())) // remove ip header
 
 	if s.crypter != nil {
 		err = s.crypter.Decrypt(p)
@@ -74,7 +69,7 @@ func (e ErrPrevPacketInvalid) Error() string {
 }
 
 func Accept(parentCtx cctx.CancelCtx, raw *itun.RawConn, cfg *Config) (s *Conn) {
-	ctx := cctx.WithTimeout(parentCtx, time.Second*30) // todo: from cfg
+	ctx := cctx.WithTimeout(parentCtx, time.Second*15) // todo: from cfg
 	defer ctx.Cancel(nil)
 
 	s = accept(ctx, raw, cfg)
@@ -86,7 +81,7 @@ func Accept(parentCtx cctx.CancelCtx, raw *itun.RawConn, cfg *Config) (s *Conn) 
 }
 
 func Connect(parentCtx cctx.CancelCtx, raw *itun.RawConn, cfg *Config) (s *Conn) {
-	ctx := cctx.WithTimeout(parentCtx, time.Second*30)
+	ctx := cctx.WithTimeout(parentCtx, time.Second*15)
 	defer ctx.Cancel(nil)
 
 	s = connect(ctx, raw, cfg)
@@ -96,8 +91,8 @@ func Connect(parentCtx cctx.CancelCtx, raw *itun.RawConn, cfg *Config) (s *Conn)
 	return s
 }
 
-func accept(ctx cctx.CancelCtx, raw *itun.RawConn, cfg *Config) (s *Conn) {
-	var conn = &Conn{raw: raw}
+func accept(ctx cctx.CancelCtx, raw *itun.RawConn, cfg *Config) (conn *Conn) {
+	conn = &Conn{raw: raw}
 
 	us := newUserStack(ctx, raw)
 	if err := ctx.Err(); err != nil {
@@ -105,8 +100,9 @@ func accept(ctx cctx.CancelCtx, raw *itun.RawConn, cfg *Config) (s *Conn) {
 		return nil
 	}
 
-	tcp := us.Accept(ctx)
-	if err := ctx.Err(); err != nil {
+	tcpAcceptCtx := cctx.WithTimeout(ctx, time.Second*5)
+	tcp := us.Accept(tcpAcceptCtx)
+	if err := tcpAcceptCtx.Err(); err != nil {
 		ctx.Cancel(err)
 		return nil
 	}
@@ -120,34 +116,39 @@ func accept(ctx cctx.CancelCtx, raw *itun.RawConn, cfg *Config) (s *Conn) {
 	}
 
 	// swap secret key
-	if cfg.SwapKey != nil {
-		key, err := cfg.SwapKey.RecvKey(ctx, tcp)
-		if err != nil && !tcpClosed(tcp) {
-			ctx.Cancel(errors.Join(ctx.Err(), err))
-			return nil
-		}
-
-		conn.crypter, err = crypto.NewTCPCrypt(key)
-		if err != nil {
-			ctx.Cancel(errors.Join(ctx.Err(), err))
-			return nil
+	if key, err := cfg.SwapKey.Server(ctx, tcp); err != nil {
+		ctx.Cancel(errors.Join(ctx.Err(), err))
+		return nil
+	} else {
+		if key != [crypto.Bytes]byte{} {
+			conn.crypter, err = crypto.NewTCPCrypt(key)
+			if err != nil {
+				ctx.Cancel(errors.Join(ctx.Err(), err))
+				return nil
+			}
 		}
 	}
 
+	if err := tcp.Close(); err != nil {
+		ctx.Cancel(err)
+		return nil
+	}
+
 	seq, ack := us.SeqAck()
-	s.fake = fake.NewFakeTCP(raw.LocalAddr().Port, raw.RemoteAddr().Port, seq, ack)
-	return s
+	conn.fake = fake.NewFakeTCP(raw.LocalAddr().Port, raw.RemoteAddr().Port, seq, ack)
+	return conn
 }
 
-func connect(ctx cctx.CancelCtx, raw *itun.RawConn, cfg *Config) (s *Conn) {
-	var conn = &Conn{raw: raw}
+func connect(ctx cctx.CancelCtx, raw *itun.RawConn, cfg *Config) (conn *Conn) {
+	conn = &Conn{raw: raw}
+
 	us := newUserStack(ctx, raw)
 	if err := ctx.Err(); err != nil {
 		ctx.Cancel(err)
 		return nil
 	}
 
-	tcp := us.Connect(cctx.WithTimeout(ctx, time.Second*5))
+	tcp := us.Connect(ctx)
 	if err := ctx.Err(); err != nil {
 		ctx.Cancel(err)
 		return nil
@@ -162,26 +163,25 @@ func connect(ctx cctx.CancelCtx, raw *itun.RawConn, cfg *Config) (s *Conn) {
 	}
 
 	// swap secret key
-	if cfg.SwapKey != nil {
-		key, err := cfg.SwapKey.SendKey(ctx, tcp)
-		if err != nil && !tcpClosed(tcp) {
-			ctx.Cancel(errors.Join(ctx.Err(), err))
-			return nil
-		}
-
-		conn.crypter, err = crypto.NewTCPCrypt(key)
-		if err != nil {
-			ctx.Cancel(errors.Join(ctx.Err(), err))
-			return nil
+	if key, err := cfg.SwapKey.Client(ctx, tcp); err != nil {
+		ctx.Cancel(err)
+		return nil
+	} else {
+		if key != [crypto.Bytes]byte{} {
+			conn.crypter, err = crypto.NewTCPCrypt(key)
+			if err != nil {
+				ctx.Cancel(err)
+				return nil
+			}
 		}
 	}
 
-	seq, ack := us.SeqAck()
-	s.fake = fake.NewFakeTCP(raw.LocalAddr().Port, raw.RemoteAddr().Port, seq, ack)
-	return s
-}
+	if err := tcp.Close(); err != nil {
+		ctx.Cancel(err)
+		return nil
+	}
 
-func tcpClosed(tcp net.Conn) bool {
-	n, err := tcp.Read(make([]byte, 0))
-	return n == 0 && errors.Is(err, os.ErrClosed)
+	seq, ack := us.SeqAck()
+	conn.fake = fake.NewFakeTCP(raw.LocalAddr().Port, raw.RemoteAddr().Port, seq, ack)
+	return conn
 }

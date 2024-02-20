@@ -20,7 +20,6 @@ import (
 
 	"github.com/lysShub/relraw"
 	"github.com/lysShub/relraw/tcp/bpf"
-	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
 type SessionMgr struct {
@@ -180,22 +179,18 @@ func (s *Session) ID() uint16 {
 // recv from s and write to raw
 func (s *Session) downlink(conn *sconn.Conn) {
 	n := conn.Raw().MTU()
-	var seg = segment.Segment{
-		Packet: relraw.ToPacket(0, make([]byte, n)),
-	}
+	seg := segment.NewSegment(n)
 
 	for {
-		seg.Sets(0, n)
-		err := s.pxy.ReadCtx(s.ctx, seg.Packet)
+		seg.Packet().Sets(0, n)
+		err := s.pxy.ReadCtx(s.ctx, seg.Packet())
 		if err != nil {
 			s.ctx.Cancel(err)
 			return
 		}
 
 		// todo: 更改dst port, 或者在client注入之前更改
-
-		iphdr := header.IPv4(seg.Data()) // todo: ipv4
-		seg.SetHead(int(iphdr.HeaderLength()) - 2)
+		seg.Packet().AllocHead(seg.Packet().Head() + segment.HdrSize)
 		seg.SetID(s.id)
 
 		err = conn.SendSeg(s.ctx, seg)

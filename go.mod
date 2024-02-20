@@ -3,7 +3,7 @@ module github.com/lysShub/itun
 go 1.21
 
 require (
-	github.com/lysShub/relraw v0.0.0-20240219072031-64b9a6fc44a3
+	github.com/lysShub/relraw v0.0.0-20240220072931-bcb1143dd4fe
 	golang.org/x/sys v0.16.0
 )
 
@@ -22,6 +22,7 @@ require (
 	github.com/google/btree v1.1.2 // indirect
 	github.com/lysShub/divert-go v0.0.0-20240218100932-81d2021c033a // indirect
 	github.com/lysShub/dll-go v0.0.0-20240131092034-3f09ae5eff72 // indirect
+	github.com/lysShub/wintun-go v0.0.0-20240131112415-8f3bf638af49 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
 	golang.org/x/time v0.5.0 // indirect
