@@ -46,7 +46,7 @@ func (g *TCPCrypt) Encrypt(tcp *relraw.Packet) {
 	i := tcphdr.DataOffset()
 	g.c.Seal(tcphdr[i:i], tcphdr[:g.nonceLen], tcphdr[i:], tcphdr[:header.TCPChecksumOffset])
 
-	tcp.SetLen(len(tcphdr) + Bytes)
+	tcp.SetLen(tcp.Len() + Bytes)
 }
 
 // DecryptChecksum encrypt tcp packet and update checksum, pseudoSum1 indicate pseudo checksum
@@ -69,6 +69,8 @@ func (g *TCPCrypt) EncryptChecksum(tcp *relraw.Packet, pseudoSum1 uint16) {
 
 func (g *TCPCrypt) Decrypt(tcp *relraw.Packet) error {
 	tcphdr := header.TCP(tcp.Data())
+
+	// todo: de-crypto should valid tcp packet integrity
 
 	i := tcphdr.DataOffset()
 	_, err := g.c.Open(tcphdr[i:i], tcphdr[:g.nonceLen], tcphdr[i:], tcphdr[:header.TCPChecksumOffset])

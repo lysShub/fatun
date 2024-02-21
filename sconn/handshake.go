@@ -1,177 +1,128 @@
 package sconn
 
 import (
-	"context"
 	"errors"
 	"fmt"
-	"net"
 	"time"
 
 	"github.com/lysShub/itun"
 	"github.com/lysShub/itun/cctx"
-	"github.com/lysShub/itun/fake/link"
-	"github.com/lysShub/relraw"
-
-	"gvisor.dev/gvisor/pkg/buffer"
-	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
-	"gvisor.dev/gvisor/pkg/tcpip/header"
-	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
-	"gvisor.dev/gvisor/pkg/tcpip/stack"
-	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
+	"github.com/lysShub/itun/fake"
+	"github.com/lysShub/itun/sconn/crypto"
 )
 
-type ustack struct {
-	raw   *itun.RawConn
-	stack *stack.Stack
-	link  *link.Endpoint
+type ErrPrevPacketInvalid int
+
+func (e ErrPrevPacketInvalid) Error() string {
+	return fmt.Sprintf("previous pakcet %d is invalid", e)
 }
 
-func newUserStack(ctx cctx.CancelCtx, raw *itun.RawConn) *ustack {
+func Accept(parentCtx cctx.CancelCtx, raw *itun.RawConn, cfg *Config) (s *Conn) {
+	ctx := cctx.WithTimeout(parentCtx, time.Second*15) // todo: from cfg
+	defer ctx.Cancel(nil)
 
-	st := stack.New(stack.Options{
-		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol},
-		TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol},
-		HandleLocal:        false,
-	})
-	l := link.New(4, uint32(raw.MTU()))
-
-	const nicid tcpip.NICID = 1234
-	if err := st.CreateNIC(nicid, l); err != nil {
-		ctx.Cancel(errors.New(err.String()))
+	s = accept(ctx, raw, cfg)
+	if err := ctx.Err(); err != nil {
+		parentCtx.Cancel(err)
 		return nil
 	}
-	st.AddProtocolAddress(nicid, tcpip.ProtocolAddress{
-		Protocol:          header.IPv4ProtocolNumber,
-		AddressWithPrefix: raw.LocalAddr().Addr.WithPrefix(),
-	}, stack.AddressProperties{})
-	st.SetRouteTable([]tcpip.Route{{Destination: header.IPv4EmptySubnet, NIC: nicid}})
+	return s
+}
 
-	var u = &ustack{
+func Connect(parentCtx cctx.CancelCtx, raw *itun.RawConn, cfg *Config) (s *Conn) {
+	ctx := cctx.WithTimeout(parentCtx, time.Second*15)
+	defer ctx.Cancel(nil)
+
+	s = connect(ctx, raw, cfg)
+	if err := ctx.Err(); err != nil {
+		parentCtx.Cancel(err)
+	}
+	return s
+}
+
+func accept(ctx cctx.CancelCtx, raw *itun.RawConn, cfg *Config) (conn *Conn) {
+	tcp := AcceptTCP(ctx, raw)
+	if err := ctx.Err(); err != nil {
+		ctx.Cancel(err)
+		return nil
+	}
+	defer tcp.Close() // todo: aceept error
+
+	conn = &Conn{
 		raw:   raw,
-		stack: st,
-		link:  l,
+		state: handshake,
 	}
 
-	go u.uplink(ctx, raw)
-	go u.downlink(ctx, raw)
-	return u
-}
+	// previous packets
+	cfg.PrevPackets.Server(ctx, tcp)
+	if err := ctx.Err(); err != nil {
+		ctx.Cancel(err)
+		return nil
+	}
 
-func (u *ustack) uplink(ctx cctx.CancelCtx, raw *itun.RawConn) {
-	mtu := raw.MTU()
-	var p = relraw.ToPacket(0, make([]byte, mtu))
-
-	for {
-		p.Sets(0, mtu)
-		err := raw.ReadCtx(ctx, p)
-		if err != nil {
-			select {
-			case <-ctx.Done():
-			default:
-				ctx.Cancel(fmt.Errorf("uplink %s", err.Error()))
+	// swap secret key
+	if key, err := cfg.SwapKey.SecretKey(ctx, tcp); err != nil {
+		ctx.Cancel(errors.Join(ctx.Err(), err))
+		return nil
+	} else {
+		if key != [crypto.Bytes]byte{} {
+			conn.crypter, err = crypto.NewTCPCrypt(key)
+			if err != nil {
+				ctx.Cancel(errors.Join(ctx.Err(), err))
+				return nil
 			}
-			return
-		}
-
-		{
-			// todo: attach
-			// todo: 看能不直接
-			p.SetHead(0)
-			iphdr := header.IPv4(p.Data())
-			tcphdr := header.TCP(iphdr.Payload())
-			fmt.Printf(
-				"%s:%d-->%s:%d	\n",
-				iphdr.SourceAddress(), tcphdr.SourcePort(),
-				iphdr.DestinationAddress(), tcphdr.DestinationPort(),
-			)
-
-			fmt.Printf(
-				"%s-->%s	\n",
-				u.raw.RemoteAddrPort().String(),
-				u.raw.LocalAddrPort().String(),
-			)
-
-		}
-
-		// recover tcp to ip
-		p.SetHead(0)
-
-		pkb := stack.NewPacketBuffer(stack.PacketBufferOptions{
-			Payload: buffer.MakeWithData(p.Data()),
-		})
-		u.link.InjectInbound(header.IPv4ProtocolNumber, pkb)
-	}
-}
-
-func (u *ustack) downlink(ctx cctx.CancelCtx, raw *itun.RawConn) {
-	for {
-		pkb := u.link.ReadContext(ctx)
-		if pkb.IsNil() {
-			return // ctx cancel
-		}
-
-		_, err := raw.Write(pkb.ToView().AsSlice())
-		if err != nil {
-			ctx.Cancel(fmt.Errorf("downlink %s", err.Error()))
-			return
 		}
 	}
-}
 
-func (s *ustack) SeqAck() (seg, ack uint32) {
-	return s.link.SeqAck()
-}
-
-func (s *ustack) Accept(ctx cctx.CancelCtx) net.Conn {
-	l, err := gonet.ListenTCP(s.stack, s.raw.LocalAddr(), s.raw.NetworkProtocolNumber())
-	if err != nil {
+	if err := tcp.Close(); err != nil {
 		ctx.Cancel(err)
 		return nil
 	}
 
-	acceptCtx := cctx.WithTimeout(ctx, time.Second*5) // todo: from config
+	seq, ack := tcp.SeqAck()
+	conn.fake = fake.NewFakeTCP(raw.LocalAddr().Port, raw.RemoteAddr().Port, seq, ack)
+	conn.state = transport
+	return conn
+}
 
-	var conn net.Conn
-	go func() {
-		var err error
-		conn, err = l.Accept()
-		if err != nil {
-			acceptCtx.Cancel(err)
-		}
-		acceptCtx.Cancel(nil)
-	}()
+func connect(ctx cctx.CancelCtx, raw *itun.RawConn, cfg *Config) (conn *Conn) {
+	tcp := ConnectTCP(ctx, raw)
+	if err := ctx.Err(); err != nil {
+		ctx.Cancel(err)
+		return nil
+	}
+	defer tcp.Close()
 
-	<-acceptCtx.Done()
-	if err = acceptCtx.Err(); !errors.Is(err, context.Canceled) {
-		ctx.Cancel(errors.Join(err, l.Close()))
+	conn = &Conn{raw: raw, state: handshake}
+
+	// previous packets
+	cfg.PrevPackets.Client(ctx, tcp)
+	if err := ctx.Err(); err != nil {
+		ctx.Cancel(err)
 		return nil
 	}
 
-	return conn // todo: validate remote addr
-}
-
-func (s *ustack) Connect(ctx cctx.CancelCtx) net.Conn {
-	connectCtx := cctx.WithTimeout(ctx, time.Second*5) // todo: from config
-
-	var conn net.Conn
-	go func() { // gonet context is fool
-		var err error
-		conn, err = gonet.DialTCPWithBind(
-			connectCtx, s.stack,
-			s.raw.LocalAddr(), s.raw.RemoteAddr(),
-			s.raw.NetworkProtocolNumber(),
-		)
-		if err != nil {
-			ctx.Cancel(err)
-		}
-		connectCtx.Cancel(nil)
-	}()
-
-	<-connectCtx.Done()
-	if err := connectCtx.Err(); !errors.Is(err, context.Canceled) {
+	// swap secret key
+	if key, err := cfg.SwapKey.SecretKey(ctx, tcp); err != nil {
 		ctx.Cancel(err)
+		return nil
+	} else {
+		if key != (Key{}) {
+			conn.crypter, err = crypto.NewTCPCrypt(key)
+			if err != nil {
+				ctx.Cancel(err)
+				return nil
+			}
+		}
 	}
 
+	if err := tcp.Close(); err != nil {
+		ctx.Cancel(err)
+		return nil
+	}
+
+	seq, ack := tcp.SeqAck()
+	conn.fake = fake.NewFakeTCP(raw.LocalAddr().Port, raw.RemoteAddr().Port, seq, ack)
+	conn.state = transport
 	return conn
 }

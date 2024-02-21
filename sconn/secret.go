@@ -11,7 +11,7 @@ import (
 )
 
 type SecretKeyClient interface {
-	SecretKey
+	secretKey
 	client()
 }
 type clientImpl struct{}
@@ -19,7 +19,7 @@ type clientImpl struct{}
 func (clientImpl) client() {}
 
 type SecretKeyServer interface {
-	SecretKey
+	secretKey
 	server()
 }
 
@@ -27,9 +27,8 @@ type serverImpl struct{}
 
 func (serverImpl) server() {}
 
-type SecretKey interface {
-
-	// return [crypto.Bytes]byte{} mean not crypto
+type secretKey interface {
+	// SecretKey  get crypto secret key, return Key{} mean not crypto
 	SecretKey(ctx context.Context, conn net.Conn) (Key, error)
 }
 
@@ -38,7 +37,7 @@ type Key = [crypto.Bytes]byte
 type NotCryptoClient struct{ clientImpl }
 type NotCryptoServer struct{ serverImpl }
 
-var _ SecretKey = (*NotCryptoClient)(nil)
+var _ secretKey = (*NotCryptoClient)(nil)
 
 func (c *NotCryptoClient) SecretKey(ctx context.Context, conn net.Conn) (Key, error) {
 	var key = Key{}
@@ -88,7 +87,6 @@ func (c *NotCryptoServer) SecretKey(ctx context.Context, conn net.Conn) (Key, er
 	return key, nil
 }
 
-// jwt etc.
 type TokenClient struct {
 	clientImpl
 	Tokener interface {
@@ -103,11 +101,6 @@ type TokenServer struct {
 	}
 }
 
-type TokenResp struct {
-	OK  bool
-	Err string
-}
-
 func (c *TokenClient) SecretKey(ctx context.Context, conn net.Conn) (Key, error) {
 	tk, key, err := c.Tokener.Token()
 	if err != nil {
@@ -119,37 +112,32 @@ func (c *TokenClient) SecretKey(ctx context.Context, conn net.Conn) (Key, error)
 		return Key{}, err
 	}
 
-	var resp = &TokenResp{}
-	err = gob.NewEncoder(conn).Encode(&resp)
+	var resp string
+	err = gob.NewDecoder(conn).Decode(&resp)
 	if err != nil {
 		return Key{}, err
 	}
 
-	if !resp.OK {
-		return Key{}, fmt.Errorf("SecretKey Token faild, %s", resp.Err)
+	if resp != "" {
+		return Key{}, fmt.Errorf("SecretKey Token faild, %s", resp)
 	}
 	return key, nil
 }
 
 func (c *TokenServer) SecretKey(ctx context.Context, conn net.Conn) (Key, error) {
 	var req []byte
-	err := gob.NewEncoder(conn).Encode(&req)
+	err := gob.NewDecoder(conn).Decode(&req)
 	if err != nil {
 		return Key{}, err
 	}
 
-	var resp *TokenResp
+	var resp string
 	key, err := c.Valider.Valid(req)
 	if err != nil {
-		resp = &TokenResp{
-			OK:  false,
-			Err: err.Error(),
-		}
-	} else {
-		resp = &TokenResp{OK: true}
+		resp = err.Error()
 	}
 
-	err = gob.NewDecoder(conn).Decode(resp)
+	err = gob.NewEncoder(conn).Encode(resp)
 	if err != nil {
 		return Key{}, err
 	}

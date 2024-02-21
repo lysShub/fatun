@@ -2,57 +2,129 @@ package sconn
 
 import (
 	"context"
+	"fmt"
 	"net/netip"
 	"testing"
 	"time"
 
 	"github.com/lysShub/itun"
 	"github.com/lysShub/itun/cctx"
+	"github.com/lysShub/itun/segment"
 	"github.com/lysShub/relraw/test"
 	"github.com/stretchr/testify/require"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
+
+type tkClient struct{}
+
+func (c *tkClient) Token() (tk []byte, key Key, err error) {
+	return []byte("hello"), Key{1: 1}, nil
+}
+
+type tkServer struct{}
+
+func (c *tkServer) Valid(tk []byte) (key Key, err error) {
+	if string(tk) == "hello" {
+		return Key{1: 1}, nil
+	}
+	return Key{}, fmt.Errorf("invalid token")
+}
 
 func Test_Sconn(t *testing.T) {
 	var (
 		caddr = netip.AddrPortFrom(test.LocIP, test.RandPort())
 		saddr = netip.AddrPortFrom(test.LocIP, test.RandPort())
 	)
-	var craw, sraw = func() (*itun.RawConn, *itun.RawConn) {
-		c, s := test.NewMockRaw(
-			t, header.TCPProtocolNumber,
-			caddr, saddr,
-			test.ValidAddr, test.ValidChecksum,
-		)
-		return itun.WrapRawConn(c, 1536),
-			itun.WrapRawConn(s, 1536)
-	}()
-	var prev = []header.TCP{
+	var pps = PrevPackets{
 		header.TCP("hello"),
 		header.TCP("world"),
 	}
 
-	go func() {
+	var suit = []struct {
+		pps    PrevPackets
+		client SecretKeyClient
+		server SecretKeyServer
+		data   []byte
+	}{
+		{
+			pps:    pps,
+			client: &NotCryptoClient{},
+			server: &NotCryptoServer{},
+		},
+		{
+			pps:    PrevPackets{},
+			client: &NotCryptoClient{},
+			server: &NotCryptoServer{},
+			data:   []byte("0123456789abcdef"),
+		},
+		{
+			pps:    pps,
+			client: &TokenClient{Tokener: &tkClient{}},
+			server: &TokenServer{Valider: &tkServer{}},
+			data:   []byte("0123456789abcdef"),
+		},
+	}
+
+	for _, s := range suit {
+
+		var craw, sraw = func() (*itun.RawConn, *itun.RawConn) {
+			c, s := test.NewMockRaw(
+				t, header.TCPProtocolNumber,
+				caddr, saddr,
+				test.ValidAddr, test.ValidChecksum,
+			)
+			return itun.WrapRawConn(c, 1536),
+				itun.WrapRawConn(s, 1536)
+		}()
+
+		go func() {
+			cfg := Config{
+				PrevPackets: s.pps,
+				SwapKey:     s.server,
+			}
+
+			ctx := cctx.WithTimeout(context.Background(), time.Second*10)
+			sconn := Accept(ctx, sraw, &cfg)
+			require.NoError(t, ctx.Err())
+			defer sconn.Close()
+
+			if len(s.data) > 0 {
+				seg := segment.NewSegment(1536)
+				err := sconn.RecvSeg(ctx, seg)
+				require.NoError(t, err)
+
+				rdata := seg.Payload()
+				require.Equal(t, s.data, rdata)
+
+				err = sconn.SendSeg(ctx, seg)
+				require.NoError(t, err)
+			}
+		}()
+		time.Sleep(time.Second)
+
+		// client
 		cfg := Config{
-			PrevPackets: prev,
-			SwapKey:     &NotCryptoClient{},
+			PrevPackets: s.pps,
+			SwapKey:     s.client,
 		}
 
 		ctx := cctx.WithTimeout(context.Background(), time.Second*10)
-		sconn := Accept(ctx, sraw, &cfg)
+		sconn := Connect(ctx, craw, &cfg)
 		require.NoError(t, ctx.Err())
-		sconn.Close()
-	}()
-	time.Sleep(time.Second)
+		defer sconn.Close()
 
-	cfg := Config{
-		PrevPackets: prev,
-		SwapKey:     &NotCryptoClient{},
+		if len(s.data) > 0 {
+			seg := segment.FromData(s.data)
+			seg.SetID(1)
+
+			err := sconn.SendSeg(ctx, seg)
+			require.NoError(t, err)
+
+			seg.Packet().Sets(0, seg.Packet().Len())
+			err = sconn.RecvSeg(ctx, seg)
+			require.NoError(t, err)
+
+			require.Equal(t, s.data, seg.Payload())
+		}
 	}
-
-	ctx := cctx.WithTimeout(context.Background(), time.Second*10)
-	sconn := Connect(ctx, craw, &cfg)
-	require.NoError(t, ctx.Err())
-	sconn.Close()
-
 }

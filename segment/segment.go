@@ -26,6 +26,13 @@ func ToSegment(p *relraw.Packet) *Segment {
 	return &Segment{p: p}
 }
 
+func FromData(data []byte) *Segment {
+	p := relraw.NewPacket(64, len(data)+HdrSize)
+
+	copy(p.Data()[HdrSize:], data)
+	return &Segment{p: p}
+}
+
 const CtrSegID uint16 = 0xffff
 const (
 	idOffset1 = 0

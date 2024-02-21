@@ -51,7 +51,8 @@ func (f *FakeTCP) AttachSend(p *relraw.Packet) {
 	})
 	f.seq.Add(uint32(p.Len()))
 
-	b.SetChecksum(^checksum.Checksum(b, 0))
+	sum := checksum.Checksum(p.Data(), 0)
+	b.SetChecksum(^checksum.Checksum(b, sum)) // todo: optimize
 
 	p.Attach(b)
 }

@@ -29,7 +29,7 @@ func withHdr(b header.TCP) header.TCP {
 
 func Test_TCP_Crypter(t *testing.T) {
 
-	t.Run("crypter", func(t *testing.T) {
+	t.Run("encrypt-decrypt", func(t *testing.T) {
 		var key [16]byte
 		crand.Read(key[:])
 

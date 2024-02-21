@@ -17,7 +17,7 @@ type Config struct {
 	PrevPackets PrevPackets //todo: support mutiple data set
 
 	// swap secret key, not crypto if nil
-	SwapKey SecretKey
+	SwapKey secretKey
 }
 
 func (pps PrevPackets) Client(ctx cctx.CancelCtx, conn net.Conn) {

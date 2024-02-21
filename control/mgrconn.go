@@ -148,7 +148,7 @@ func (mc *CtrConn) downlink(ctx cctx.CancelCtx, conn *sconn.Conn) {
 		}
 		iphdr := header.IPv4(pkb.ToView().AsSlice())
 
-		p := relraw.ToPacket(int(iphdr.HeaderLength())-segment.HdrSize, iphdr)
+		p := relraw.ToPacket(int(iphdr.HeaderLength()), iphdr) // todo: optimize
 
 		seg := segment.ToSegment(p)
 		seg.SetID(segment.CtrSegID)
