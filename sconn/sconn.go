@@ -23,6 +23,8 @@ type Conn struct {
 
 	tinyCnt    uint8
 	tinyCntErr error
+
+	psosum1 uint16
 }
 
 type state uint8
@@ -30,6 +32,8 @@ type state uint8
 const (
 	_ state = iota
 	handshake
+
+	// if sconn crypter!=nil, next stage packet will encrypto
 	transport
 	closeing
 )
@@ -49,7 +53,9 @@ func (e ErrManyDecryptFailSegment) Error() string {
 }
 
 func (s *Conn) RecvSeg(ctx context.Context, seg *segment.Segment) (err error) {
-
+	if s.tinyCnt > tinyCntLimit {
+		return err
+	}
 	p := seg.Packet()
 	oldH, oldN := p.Head(), p.Len()
 
@@ -67,7 +73,7 @@ func (s *Conn) RecvSeg(ctx context.Context, seg *segment.Segment) (err error) {
 		return s.RecvSeg(ctx, seg)
 	}
 
-	if s.state == transport && s.crypter != nil {
+	if s.crypter != nil {
 		s.tinyCnt++
 		err = s.crypter.Decrypt(p)
 
@@ -78,10 +84,11 @@ func (s *Conn) RecvSeg(ctx context.Context, seg *segment.Segment) (err error) {
 			return s.RecvSeg(ctx, seg)
 		}
 	}
+
 	s.fake.AttachRecv(p)
 
-	tcphdr := header.TCP(p.Data())
-	p.SetHead(p.Head() + int(tcphdr.DataOffset())) // remove tcp header
+	// tcphdr := header.TCP(p.Data())
+	// p.SetHead(p.Head() + int(tcphdr.DataOffset())) // remove tcp header
 
 	s.tinyCnt = 0
 	return nil
@@ -92,13 +99,8 @@ func (s *Conn) SendSeg(ctx context.Context, seg *segment.Segment) (err error) {
 
 	s.fake.AttachSend(p)
 
-	// todo: 1. not need state, 2. add impostor handle
-	// todo:
-	// 	if crypto, crypter calc checksum and fake not calc checksum,
-	// otherwise, fake checksum
-
-	if s.state == transport && s.crypter != nil {
-		s.crypter.Encrypt(p)
+	if s.crypter != nil {
+		s.crypter.EncryptChecksum(p, s.psosum1)
 	}
 
 	return s.raw.WriteCtx(ctx, p)

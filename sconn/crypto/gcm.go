@@ -61,16 +61,14 @@ func (g *TCPCrypt) EncryptChecksum(tcp *relraw.Packet, pseudoSum1 uint16) {
 
 	tcphdr = tcphdr[:len(tcphdr)+Bytes]
 	tcphdr.SetChecksum(0)
-	ps := checksum.Combine(pseudoSum1, uint16(len(tcphdr)))
-	tcphdr.SetChecksum(^checksum.Checksum(tcphdr, ps))
+	psosum := checksum.Combine(pseudoSum1, uint16(len(tcphdr)))
+	tcphdr.SetChecksum(^checksum.Checksum(tcphdr, psosum))
 
 	tcp.SetLen(len(tcphdr))
 }
 
 func (g *TCPCrypt) Decrypt(tcp *relraw.Packet) error {
 	tcphdr := header.TCP(tcp.Data())
-
-	// todo: de-crypto should valid tcp packet integrity
 
 	i := tcphdr.DataOffset()
 	_, err := g.c.Open(tcphdr[i:i], tcphdr[:g.nonceLen], tcphdr[i:], tcphdr[:header.TCPChecksumOffset])
@@ -95,7 +93,8 @@ func (g *TCPCrypt) DecryptChecksum(tcp *relraw.Packet, pseudoSum1 uint16) error 
 
 	tcphdr = tcphdr[:len(tcphdr)-Bytes]
 	tcphdr.SetChecksum(0)
-	tcphdr.SetChecksum(^checksum.Checksum(tcphdr, checksum.Combine(pseudoSum1, uint16(len(tcphdr)))))
+	psosum := checksum.Combine(pseudoSum1, uint16(len(tcphdr)))
+	tcphdr.SetChecksum(^checksum.Checksum(tcphdr, psosum))
 
 	tcp.SetLen(len(tcphdr))
 	return nil

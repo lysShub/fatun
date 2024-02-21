@@ -9,6 +9,7 @@ import (
 	"github.com/lysShub/itun/cctx"
 	"github.com/lysShub/itun/fake"
 	"github.com/lysShub/itun/sconn/crypto"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
 type ErrPrevPacketInvalid int
@@ -80,8 +81,17 @@ func accept(ctx cctx.CancelCtx, raw *itun.RawConn, cfg *Config) (conn *Conn) {
 	}
 
 	seq, ack := tcp.SeqAck()
-	conn.fake = fake.NewFakeTCP(raw.LocalAddr().Port, raw.RemoteAddr().Port, seq, ack)
+	conn.fake = fake.NewFakeTCP(
+		raw.LocalAddr().Port,
+		raw.RemoteAddr().Port,
+		seq, ack, conn.crypter == nil,
+	)
 	conn.state = transport
+	conn.psosum1 = header.PseudoHeaderChecksum(
+		header.TCPProtocolNumber,
+		conn.raw.LocalAddr().Addr, conn.raw.RemoteAddr().Addr,
+		0,
+	)
 	return conn
 }
 
@@ -122,7 +132,16 @@ func connect(ctx cctx.CancelCtx, raw *itun.RawConn, cfg *Config) (conn *Conn) {
 	}
 
 	seq, ack := tcp.SeqAck()
-	conn.fake = fake.NewFakeTCP(raw.LocalAddr().Port, raw.RemoteAddr().Port, seq, ack)
+	conn.fake = fake.NewFakeTCP(
+		raw.LocalAddr().Port,
+		raw.RemoteAddr().Port,
+		seq, ack, conn.crypter == nil,
+	)
 	conn.state = transport
+	conn.psosum1 = header.PseudoHeaderChecksum(
+		header.TCPProtocolNumber,
+		conn.raw.LocalAddr().Addr, conn.raw.RemoteAddr().Addr,
+		0,
+	)
 	return conn
 }

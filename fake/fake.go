@@ -9,36 +9,32 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
-/*
-	tcp 伪装栈：会模仿传输过程中tcp的栈, 关心seq和ack，不会有wnd的管理，
-				不会有阻塞流控，不会有handshake，close步骤， 不会有缓存，
-				不会异步操作, tcp头不会有option.
-				checksum是没有计算pso的。
-
-*/
-
 type FakeTCP struct {
 	lport, rport uint16
 	seq          atomic.Uint32
 	ack          atomic.Uint32
 
 	// todo:
-	// raw []byte
+	// header []byte
+
+	checksum bool
 }
 
 // NewFakeTCP set fake tcp header
-func NewFakeTCP(localPort, remotePort uint16, initSeq, initAck uint32) *FakeTCP {
+func NewFakeTCP(locPort, remPort uint16, initSeq, initAck uint32, checksum bool) *FakeTCP {
 	f := &FakeTCP{
-		lport: localPort,
-		rport: remotePort,
+		lport: locPort,
+		rport: remPort,
 	}
 	f.seq.Store(initSeq)
 	f.ack.Store(initAck)
 	return f
 }
 
+// AttachSend input tcp payload, attach tcp header, and return
+// tcp packet.
 func (f *FakeTCP) AttachSend(p *relraw.Packet) {
-	var b = make(header.TCP, header.TCPMinimumSize) // todo: global
+	var b = make(header.TCP, header.TCPMinimumSize)
 	b.Encode(&header.TCPFields{
 		SrcPort:    f.lport,
 		DstPort:    f.rport,
@@ -49,14 +45,17 @@ func (f *FakeTCP) AttachSend(p *relraw.Packet) {
 		WindowSize: 0xff32, // todo: rand
 		Checksum:   0,
 	})
+	if f.checksum {
+		sum := checksum.Checksum(p.Data(), 0)
+		b.SetChecksum(^checksum.Checksum(b, sum))
+	}
+
 	f.seq.Add(uint32(p.Len()))
-
-	sum := checksum.Checksum(p.Data(), 0)
-	b.SetChecksum(^checksum.Checksum(b, sum)) // todo: optimize
-
 	p.Attach(b)
 }
 
+// AttachRecv input a tcp packet, update ack, and return
+// tcp payload.
 func (f *FakeTCP) AttachRecv(tcp *relraw.Packet) {
 	tcphdr := header.TCP(tcp.Data())
 
@@ -66,4 +65,7 @@ func (f *FakeTCP) AttachRecv(tcp *relraw.Packet) {
 	if new > old {
 		f.ack.Store(new)
 	}
+
+	// remove tcp header
+	tcp.SetHead(tcp.Head() + int(tcphdr.DataOffset()))
 }
