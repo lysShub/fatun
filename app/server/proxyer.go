@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"net/netip"
-	"time"
 
 	"github.com/lysShub/itun"
 	"github.com/lysShub/itun/cctx"
@@ -24,54 +23,33 @@ type proxyer struct {
 	SrcAddr netip.AddrPort
 	conn    *sconn.Conn // 连接 Client <----> ProxyServer 的安全conn
 
-	ctrConn *control.CtrConn
-	ctr     *control.Server
+	ctrRaw control.CtrInject
 }
 
-// todo: 这个conn是fack tcp, 它不是可靠的, 我们按照数据报来接受处理他
-// 它最开始几个数据包的行为符合正常的tcp
-
 func Proxy(c context.Context, srv *Server, raw *itun.RawConn) {
-	ctx := cctx.WithContext(c)
-	var h = &proxyer{
-		ctx:     ctx,
+	var p = &proxyer{
+		ctx:     cctx.WithContext(c),
 		srv:     srv,
 		SrcAddr: raw.RemoteAddrPort(),
 	}
-	h.sessionMgr = NewSessionMgr(h)
+	p.sessionMgr = NewSessionMgr(p)
 
-	// build secret conn and control-conn
-	h.conn = sconn.Accept(ctx, raw, &h.srv.cfg.Sconn)
-	if err := ctx.Err(); err != nil {
-		fmt.Println(err)
-		return
+	p.conn = sconn.Accept(p.ctx, srv.cfg.TCPHandshakeTimeout, raw, &p.srv.cfg.Sconn)
+	if err := p.ctx.Err(); err != nil {
+		panic(err)
 	}
 
-	// control
-	h.ctrConn = control.Accept(ctx, h.conn)
-	if err := ctx.Err(); err != nil {
-		fmt.Println(err)
-		return
-	}
-	h.ctr = control.NewServer(ctx, h.ctrConn, proxyerImplPtr(h))
-	if err := ctx.Err(); err != nil {
-		fmt.Println(err)
-		return
+	p.ctrRaw = control.Serve(p.ctx, srv.cfg.TCPHandshakeTimeout, srv.cfg.InitCfgTimeout, p.conn, proxyerImplPtr(p))
+	if err := p.ctx.Err(); err != nil {
+		panic(err)
 	}
 
 	// start uplink handler
-	go h.uplink()
+	go p.uplink()
 
-	// start control handler
-	go h.control()
-
-	<-ctx.Done()
-	fmt.Println("proxy closed: ", ctx.Err())
-
-}
-
-func (p *proxyer) control() {
-	p.ctr.Serve(time.Second * 5) // todo: from config
+	<-p.ctx.Done()
+	e := p.ctx.Err()
+	fmt.Println("proxy closed: ", e)
 }
 
 func (p *proxyer) uplink() {
@@ -88,7 +66,11 @@ func (p *proxyer) uplink() {
 		}
 
 		if id := seg.ID(); id == segment.CtrSegID {
-			p.ctrConn.Inject(seg)
+			// remove ip header and segment header
+			pkg := seg.Packet()
+			pkg.SetHead(pkg.Head() + segment.HdrSize)
+
+			p.ctrRaw.Inject(pkg)
 		} else {
 			s := p.sessionMgr.Get(id)
 			if s != nil {

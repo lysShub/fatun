@@ -11,13 +11,25 @@ import (
 
 type PrevPackets []header.TCP
 
-type Config struct {
+type BaseConfig struct {
 	// client set first tcp packet, server recv and check it, then replay
 	// second tcp packet, etc.
 	PrevPackets PrevPackets //todo: support mutiple data set
 
-	// swap secret key, not crypto if nil
-	SwapKey secretKey
+}
+
+type Client struct {
+	BaseConfig
+
+	// swap secret key
+	SwapKey SecretKeyClient
+}
+
+type Server struct {
+	BaseConfig
+
+	// swap secret key
+	SwapKey SecretKeyServer
 }
 
 func (pps PrevPackets) Client(ctx cctx.CancelCtx, conn net.Conn) {

@@ -78,13 +78,15 @@ func Test_Sconn(t *testing.T) {
 		}()
 
 		go func() {
-			cfg := Config{
-				PrevPackets: s.pps,
-				SwapKey:     s.server,
+			cfg := Server{
+				BaseConfig: BaseConfig{
+					PrevPackets: pps,
+				},
+				SwapKey: s.server,
 			}
 
 			ctx := cctx.WithTimeout(context.Background(), time.Second*10)
-			sconn := Accept(ctx, sraw, &cfg)
+			sconn := Accept(ctx, time.Second*5, sraw, &cfg)
 			require.NoError(t, ctx.Err())
 			defer sconn.Close()
 
@@ -103,12 +105,14 @@ func Test_Sconn(t *testing.T) {
 		time.Sleep(time.Second)
 
 		// client
-		cfg := Config{
-			PrevPackets: s.pps,
-			SwapKey:     s.client,
+		cfg := Client{
+			BaseConfig: BaseConfig{
+				PrevPackets: pps,
+			},
+			SwapKey: s.client,
 		}
 
-		ctx := cctx.WithTimeout(context.Background(), time.Second*10)
+		ctx := cctx.WithContext(context.Background())
 		sconn := Connect(ctx, craw, &cfg)
 		require.NoError(t, ctx.Err())
 		defer sconn.Close()

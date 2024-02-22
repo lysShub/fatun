@@ -11,11 +11,12 @@ import (
 	"github.com/lysShub/itun/control"
 	"github.com/lysShub/itun/sconn"
 	"github.com/lysShub/itun/segment"
+	"github.com/lysShub/relraw"
 )
 
 type Config struct {
-	sconn.Config
-	MTU uint16
+	Sconn sconn.Client
+	MTU   uint16
 }
 
 type Client struct {
@@ -27,47 +28,46 @@ type Client struct {
 
 	conn *sconn.Conn
 
-	// todo: merge
-	ctrConn *control.CtrConn
-	ctr     *control.Client
+	ctrRaw control.CtrInject
+	ctr    *control.Client
 }
 
-func NewClient(ctx context.Context, localAddr, pxySrvAddr netip.AddrPort, cfg *Config) (*Client, error) {
+func NewClient(ctx context.Context, raw relraw.RawConn, cfg *Config) (*Client, error) {
 	var c = &Client{
-		ctx: cctx.WithContext(ctx),
-		cfg: cfg,
+		ctx:  cctx.WithContext(ctx),
+		cfg:  cfg,
+		addr: raw.LocalAddrPort(),
 	}
 
-	if err := c.Connect(pxySrvAddr); err != nil {
+	if err := c.connect(raw); err != nil {
 		return nil, err
 	}
 
-	return nil, nil
+	go c.downlink()
+	return c, nil
 }
 
-func (c *Client) Connect(server netip.AddrPort) error {
+func (c *Client) connect(raw relraw.RawConn) error {
 	ctx := cctx.WithTimeout(c.ctx, time.Second*10) // todo: from cfg
 	defer ctx.Cancel(nil)
 
-	raw, err := connectRaw(server)
-	if err != nil {
-		return err
-	}
 	conn := itun.WrapRawConn(raw, c.cfg.MTU)
 
-	c.conn = sconn.Connect(ctx, conn, &c.cfg.Config)
+	c.conn = sconn.Connect(ctx, conn, &c.cfg.Sconn)
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 
-	c.ctrConn = control.Connect(ctx, c.conn)
+	c.ctr, c.ctrRaw = control.NewClient(ctx, time.Hour, c.conn)
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	c.ctr = control.NewCtrClient(ctx, c.ctrConn)
-	if err := ctx.Err(); err != nil {
-		return err
-	}
+
+	go c.downlink()
+
+	// todo: client 需要传入ctx
+	// init config
+	c.ctr.EndConfig()
 
 	return nil
 }
@@ -75,6 +75,10 @@ func (c *Client) Connect(server netip.AddrPort) error {
 func (c *Client) AddProxy(s itun.Session) error {
 	if !s.IsValid() {
 		return itun.ErrInvalidSession(s)
+	} else if s.SrcAddr.Addr() != c.addr.Addr() {
+		return fmt.Errorf("client %s can't proxy ip %s", c.addr.Addr(), s.SrcAddr.Addr())
+	} else if s.SrcAddr.Port() == c.addr.Port() {
+		return fmt.Errorf("can't proxy self")
 	}
 
 	switch s.Proto {
@@ -102,7 +106,7 @@ func (c *Client) downlink() {
 		}
 
 		if id := seg.ID(); id == segment.CtrSegID {
-			c.ctrConn.Inject(seg)
+			c.ctrRaw.Inject(seg)
 		} else {
 			s := c.sessionMgr.Get(id)
 			if s != nil {
@@ -114,18 +118,6 @@ func (c *Client) downlink() {
 	}
 }
 
-// var server netip.AddrPort
-// if a, err := net.ResolveTCPAddr("tcp", pxySrvAddr); err != nil {
-// 	return nil, err
-// } else {
-// 	if a.Port == 0 {
-// 		a.Port = itun.DefaultPort
-// 	}
-// 	addr, ok := netip.AddrFromSlice(a.IP)
-// 	if !ok {
-// 		return nil, fmt.Errorf("invalid proxy server address %s", pxySrvAddr)
-// 	} else if addr.Is4In6() {
-// 		addr = netip.AddrFrom4(addr.As4())
-// 	}
-// 	server = netip.AddrPortFrom(addr, uint16(a.Port))
-// }
+func (c *Client) Close() error {
+	return nil
+}

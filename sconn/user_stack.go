@@ -30,12 +30,12 @@ func (t *TCP) Close() error {
 	return errors.Join(t.Conn.Close(), t.ustack.Close())
 }
 
-func AcceptTCP(ctx cctx.CancelCtx, raw *itun.RawConn) *TCP {
+func AcceptTCP(ctx cctx.CancelCtx, raw *itun.RawConn, tcpHandshakeTimeout time.Duration) *TCP {
 	var tcp = &TCP{}
 
 	var err error
 	if tcp.ustack, err = newUserStack(
-		ctx, raw.MTU(),
+		"server", ctx, raw.MTU(),
 		raw.LocalAddr(), raw.RemoteAddr(),
 		raw.NetworkProtocolNumber(),
 	); err != nil {
@@ -46,7 +46,7 @@ func AcceptTCP(ctx cctx.CancelCtx, raw *itun.RawConn) *TCP {
 	go tcp.ustack.uplink(raw)
 	go tcp.ustack.downlink(raw)
 
-	tcp.Conn = tcp.ustack.accept(ctx)
+	tcp.Conn = tcp.ustack.accept(ctx, tcpHandshakeTimeout)
 	if err := ctx.Err(); err != nil {
 		ctx.Cancel(err)
 		return nil
@@ -60,7 +60,7 @@ func ConnectTCP(ctx cctx.CancelCtx, raw *itun.RawConn) *TCP {
 
 	var err error
 	if tcp.ustack, err = newUserStack(
-		ctx, raw.MTU(),
+		"client", ctx, raw.MTU(),
 		raw.LocalAddr(), raw.RemoteAddr(),
 		raw.NetworkProtocolNumber(),
 	); err != nil {
@@ -71,7 +71,7 @@ func ConnectTCP(ctx cctx.CancelCtx, raw *itun.RawConn) *TCP {
 	go tcp.ustack.uplink(raw)
 	go tcp.ustack.downlink(raw)
 
-	tcp.Conn = tcp.ustack.connect(ctx)
+	tcp.Conn = tcp.ustack.connect(ctx, time.Second*5)
 	if err := ctx.Err(); err != nil {
 		ctx.Cancel(err)
 		return nil
@@ -81,6 +81,7 @@ func ConnectTCP(ctx cctx.CancelCtx, raw *itun.RawConn) *TCP {
 }
 
 type ustack struct {
+	id           string
 	ctx          cctx.CancelCtx
 	laddr, raddr tcpip.FullAddress
 	proto        tcpip.NetworkProtocolNumber
@@ -92,7 +93,11 @@ type ustack struct {
 	closedCh chan struct{}
 }
 
-func newUserStack(ctx cctx.CancelCtx, mtu int, laddr, raddr tcpip.FullAddress, proto tcpip.NetworkProtocolNumber) (*ustack, error) {
+func newUserStack(
+	id string, ctx cctx.CancelCtx, mtu int,
+	laddr, raddr tcpip.FullAddress,
+	proto tcpip.NetworkProtocolNumber,
+) (*ustack, error) {
 
 	st := stack.New(stack.Options{
 		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol},
@@ -112,6 +117,7 @@ func newUserStack(ctx cctx.CancelCtx, mtu int, laddr, raddr tcpip.FullAddress, p
 	st.SetRouteTable([]tcpip.Route{{Destination: header.IPv4EmptySubnet, NIC: nicid}})
 
 	var u = &ustack{
+		id:    id,
 		ctx:   cctx.WithContext(ctx),
 		laddr: laddr,
 		raddr: raddr,
@@ -170,14 +176,14 @@ func (s *ustack) SeqAck() (seg, ack uint32) {
 	return s.link.SeqAck()
 }
 
-func (s *ustack) accept(ctx cctx.CancelCtx) (conn net.Conn) {
+func (s *ustack) accept(ctx cctx.CancelCtx, tcpHandshakeTimeout time.Duration) (conn net.Conn) {
 	l, err := gonet.ListenTCP(s.stack, s.laddr, s.proto)
 	if err != nil {
 		ctx.Cancel(err)
 		return nil
 	}
 
-	acceptCtx := cctx.WithTimeout(ctx, time.Second*5) // todo: from config
+	acceptCtx := cctx.WithTimeout(ctx, tcpHandshakeTimeout)
 
 	go func() {
 		var err error
@@ -194,8 +200,8 @@ func (s *ustack) accept(ctx cctx.CancelCtx) (conn net.Conn) {
 	return conn // todo: validate remote addr
 }
 
-func (s *ustack) connect(ctx cctx.CancelCtx) (conn net.Conn) {
-	connectCtx, cancel := context.WithTimeout(ctx, time.Second*5) // todo: from config
+func (s *ustack) connect(ctx cctx.CancelCtx, tcpHandshakeTimeout time.Duration) (conn net.Conn) {
+	connectCtx, cancel := context.WithTimeout(ctx, tcpHandshakeTimeout)
 	defer cancel()
 
 	var err error

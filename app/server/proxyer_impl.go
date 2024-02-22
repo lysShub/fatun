@@ -4,6 +4,7 @@
 package server
 
 import (
+	"fmt"
 	"net/netip"
 
 	"github.com/lysShub/itun"
@@ -14,13 +15,15 @@ type proxyerImpl proxyer
 
 type proxyerImplPtr = *proxyerImpl
 
-var _ control.MgrHander = (proxyerImplPtr)(nil)
+var _ control.CtrServer = (proxyerImplPtr)(nil)
 
 func (pi *proxyerImpl) IPv6() bool {
 	return false
 }
 
-func (pi *proxyerImpl) EndConfig() {}
+func (pi *proxyerImpl) EndConfig() {
+	fmt.Println("完成初始化配置")
+}
 
 func (pi *proxyerImpl) AddTCP(addr netip.AddrPort) (uint16, error) {
 	s, err := pi.sessionMgr.Add(

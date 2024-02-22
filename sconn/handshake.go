@@ -1,6 +1,7 @@
 package sconn
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
@@ -18,11 +19,11 @@ func (e ErrPrevPacketInvalid) Error() string {
 	return fmt.Sprintf("previous pakcet %d is invalid", e)
 }
 
-func Accept(parentCtx cctx.CancelCtx, raw *itun.RawConn, cfg *Config) (s *Conn) {
-	ctx := cctx.WithTimeout(parentCtx, time.Second*15) // todo: from cfg
+func Accept(parentCtx cctx.CancelCtx, tcpHandshakeTimeout time.Duration, raw *itun.RawConn, cfg *Server) (s *Conn) {
+	ctx := cctx.WithTimeout(parentCtx, tcpHandshakeTimeout)
 	defer ctx.Cancel(nil)
 
-	s = accept(ctx, raw, cfg)
+	s = accept(ctx, raw, cfg, tcpHandshakeTimeout)
 	if err := ctx.Err(); err != nil {
 		parentCtx.Cancel(err)
 		return nil
@@ -30,19 +31,19 @@ func Accept(parentCtx cctx.CancelCtx, raw *itun.RawConn, cfg *Config) (s *Conn) 
 	return s
 }
 
-func Connect(parentCtx cctx.CancelCtx, raw *itun.RawConn, cfg *Config) (s *Conn) {
+func Connect(parentCtx cctx.CancelCtx, raw *itun.RawConn, cfg *Client) (s *Conn) {
 	ctx := cctx.WithTimeout(parentCtx, time.Second*15)
 	defer ctx.Cancel(nil)
 
 	s = connect(ctx, raw, cfg)
-	if err := ctx.Err(); err != nil {
+	if err := ctx.Err(); err != nil && !errors.Is(err, context.Canceled) {
 		parentCtx.Cancel(err)
 	}
 	return s
 }
 
-func accept(ctx cctx.CancelCtx, raw *itun.RawConn, cfg *Config) (conn *Conn) {
-	tcp := AcceptTCP(ctx, raw)
+func accept(ctx cctx.CancelCtx, raw *itun.RawConn, cfg *Server, tcpHandshakeTimeout time.Duration) (conn *Conn) {
+	tcp := AcceptTCP(ctx, raw, tcpHandshakeTimeout)
 	if err := ctx.Err(); err != nil {
 		ctx.Cancel(err)
 		return nil
@@ -95,7 +96,7 @@ func accept(ctx cctx.CancelCtx, raw *itun.RawConn, cfg *Config) (conn *Conn) {
 	return conn
 }
 
-func connect(ctx cctx.CancelCtx, raw *itun.RawConn, cfg *Config) (conn *Conn) {
+func connect(ctx cctx.CancelCtx, raw *itun.RawConn, cfg *Client) (conn *Conn) {
 	tcp := ConnectTCP(ctx, raw)
 	if err := ctx.Err(); err != nil {
 		ctx.Cancel(err)

@@ -30,7 +30,10 @@ func (sm *SessionMgr) Add(s itun.Session, id uint16) error {
 		return fmt.Errorf("id %d exist", id)
 	}
 
-	session := NewSession(sm.client.ctx, sm.client.conn, id, s)
+	session, err := NewSession(sm.client.ctx, sm.client.conn, id, s)
+	if err != nil {
+		return err
+	}
 
 	sm.sess[id] = session
 
@@ -48,21 +51,29 @@ type Session struct {
 	s   itun.Session
 	id  uint16
 
+	// todo: add idle
+
 	cpt Capture
 }
 
 func NewSession(
 	ctx cctx.CancelCtx, conn *sconn.Conn,
 	id uint16, session itun.Session,
-) *Session {
+) (*Session, error) {
 	var s = &Session{
 		ctx: ctx,
 		id:  id,
 		s:   session,
 	}
 
+	var err error
+	s.cpt, err = NewCapture(session)
+	if err != nil {
+		return nil, err
+	}
+
 	go s.uplink(conn)
-	return s
+	return s, nil
 }
 
 func (s *Session) uplink(conn *sconn.Conn) {

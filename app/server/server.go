@@ -5,21 +5,22 @@ package server
 
 import (
 	"context"
-	"fmt"
-	"net"
 	"net/netip"
+	"time"
 
 	"github.com/lysShub/itun"
 	"github.com/lysShub/itun/sconn"
 
 	"github.com/lysShub/relraw"
-	"github.com/lysShub/relraw/tcp/bpf"
 )
 
 type Config struct {
-	Sconn sconn.Config
+	Sconn sconn.Server
 
-	MTU uint16
+	MTU                 uint16
+	TCPHandshakeTimeout time.Duration
+	InitCfgTimeout      time.Duration
+	ProxyerIdeleTimeout time.Duration
 }
 
 type Server struct {
@@ -32,36 +33,12 @@ type Server struct {
 	ap *PortAdapter
 }
 
-func ListenAndServe(ctx context.Context, addr string, cfg *Config) (err error) {
-	var addrPort netip.AddrPort
-	if a, err := net.ResolveTCPAddr("tcp", addr); err != nil {
-		return err
-	} else {
-		if a.Port == 0 {
-			a.Port = itun.DefaultPort
-		}
-
-		addr, ok := netip.AddrFromSlice(a.IP)
-		if !ok {
-			if len(a.IP) == 0 {
-				addr = relraw.LocalAddr()
-			} else {
-				return fmt.Errorf("invalid address %s", a.IP)
-			}
-		} else if addr.Is4In6() {
-			addr = netip.AddrFrom4(addr.As4())
-		}
-		addrPort = netip.AddrPortFrom(addr, uint16(a.Port))
-	}
-
+func ListenAndServe(ctx context.Context, l relraw.Listener, cfg *Config) (err error) {
 	var s = &Server{
 		cfg:  cfg,
-		Addr: addrPort,
-		ap:   NewPortAdapter(addrPort.Addr()),
-	}
-	s.l, err = bpf.Listen(addrPort)
-	if err != nil {
-		return err
+		l:    l,
+		Addr: l.Addr(),
+		ap:   NewPortAdapter(l.Addr().Addr()),
 	}
 
 	for {

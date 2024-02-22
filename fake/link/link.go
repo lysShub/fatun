@@ -27,7 +27,9 @@ func New(size int, mtu uint32) *Endpoint {
 }
 
 func (e *Endpoint) setSeq(seq uint32) {
-	e.seq.Store(seq) // todo: only store bigger than
+	if seq > e.seq.Load() {
+		e.seq.Store(seq)
+	}
 }
 
 func (e *Endpoint) setAck(ack uint32) {

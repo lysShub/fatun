@@ -1,63 +1,51 @@
 package control
 
 import (
-	"net"
-	"sync/atomic"
+	"time"
 
 	"github.com/lysShub/itun/cctx"
-	"google.golang.org/grpc/grpclog"
+	"github.com/lysShub/itun/sconn"
 )
 
-type nullWriter struct{}
+const (
+	client = "client"
+	server = "server"
+)
 
-func (nullWriter) Write(p []byte) (n int, err error) {
-	return len(p), nil
-}
-
-func init() {
-	// todo: take over log
-	grpclog.SetLoggerV2(grpclog.NewLoggerV2(
-		nullWriter{}, nullWriter{}, nullWriter{},
-	))
-
-}
-
-type listenerWrap struct {
-	ctx      cctx.CancelCtx
-	accetped atomic.Bool
-	conn     net.Conn
-}
-
-func newListenerWrap(ctx cctx.CancelCtx, conn net.Conn) *listenerWrap {
-	return &listenerWrap{ctx: ctx, conn: conn}
-}
-
-var _ net.Listener = (*listenerWrap)(nil)
-
-func (l *listenerWrap) Accept() (net.Conn, error) {
-	select {
-	case <-l.ctx.Done():
-		return nil, &net.OpError{
-			Op:     "accept",
-			Net:    l.conn.LocalAddr().Network(),
-			Source: l.conn.LocalAddr(),
-			Err:    l.ctx.Err(),
-		}
-	default:
+func NewClient(ctx cctx.CancelCtx, tcpHandshakeTimeout time.Duration, conn *sconn.Conn) (*Client, CtrInject) {
+	us := newUserStack(ctx, client, conn)
+	if ctx.Err() != nil {
+		return nil, nil
 	}
 
-	if l.accetped.CompareAndSwap(false, true) {
-		return l.conn, nil
-	} else {
-		<-l.ctx.Done()
-		return nil, &net.OpError{
-			Op:     "accept",
-			Net:    l.conn.LocalAddr().Network(),
-			Source: l.conn.LocalAddr(),
-			Err:    l.ctx.Err(),
-		}
+	tcp := connect(
+		ctx, tcpHandshakeTimeout, us,
+		conn.Raw().LocalAddr(), conn.Raw().RemoteAddr(),
+	)
+	if ctx.Err() != nil {
+		return nil, nil
 	}
+
+	return newClient(ctx, tcp), us
 }
 
-func (l *listenerWrap) Close() error   { return nil }
-func (l *listenerWrap) Addr() net.Addr { return l.conn.LocalAddr() }
+func Serve(ctx cctx.CancelCtx, tcpHandshakeTimeout, initConfigTimeout time.Duration, conn *sconn.Conn, hdl CtrServer) CtrInject {
+	us := newUserStack(ctx, server, conn)
+	if ctx.Err() != nil {
+		return nil
+	}
+
+	go func() {
+		tcp := accept(
+			ctx, tcpHandshakeTimeout, us,
+			conn.Raw().LocalAddr(), conn.Raw().RemoteAddr(),
+		)
+		if ctx.Err() != nil {
+			return
+		}
+
+		serve(ctx, initConfigTimeout, tcp, hdl)
+	}()
+
+	return us
+}

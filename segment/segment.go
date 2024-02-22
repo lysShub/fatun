@@ -49,6 +49,7 @@ func (s *Segment) ID() uint16 {
 func (s *Segment) SetID(id uint16) {
 	s.p.AllocHead(HdrSize)
 
+	s.SetHead(s.Head() - HdrSize)
 	b := s.p.Data()
 	binary.BigEndian.PutUint16(b[idOffset1:idOffset2], id)
 }

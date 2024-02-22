@@ -1,9 +1,11 @@
 package control
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net"
+	"time"
 
 	"github.com/lysShub/itun/cctx"
 	"github.com/lysShub/itun/sconn"
@@ -21,10 +23,13 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 )
 
-// manager connection
-type CtrConn struct {
-	net.Conn
+type CtrInject interface {
+	Inject(tcp *relraw.Packet)
+}
 
+// todo： merge sconn user stack
+type Ustack struct {
+	id    string
 	link  *channel.Endpoint
 	stack *stack.Stack
 
@@ -32,49 +37,10 @@ type CtrConn struct {
 	ipstack *relraw.IPStack
 }
 
-func Accept(ctx cctx.CancelCtx, conn *sconn.Conn) *CtrConn {
-	mc := newCtrConn(ctx, conn)
-	if ctx.Err() != nil {
-		return nil
-	}
+var _ CtrInject = (*Ustack)(nil)
 
-	l, err := gonet.ListenTCP(mc.stack, conn.Raw().LocalAddr(), mc.proto)
-	if err != nil {
-		ctx.Cancel(err)
-		return nil
-	}
-	mc.Conn, err = l.Accept()
-	if err != nil {
-		ctx.Cancel(err)
-		return nil
-	}
-
-	return mc
-}
-
-func Connect(ctx cctx.CancelCtx, conn *sconn.Conn) *CtrConn {
-	mc := newCtrConn(ctx, conn)
-	if ctx.Err() != nil {
-		return nil
-	}
-
-	var err error
-	mc.Conn, err = gonet.DialTCPWithBind(
-		ctx, mc.stack,
-		conn.Raw().LocalAddr(),
-		conn.Raw().RemoteAddr(),
-		mc.proto,
-	)
-	if err != nil {
-		ctx.Cancel(err)
-		return nil
-	}
-
-	return mc
-}
-
-func newCtrConn(ctx cctx.CancelCtx, conn *sconn.Conn) *CtrConn {
-	var mc = &CtrConn{}
+func newUserStack(ctx cctx.CancelCtx, id string, conn *sconn.Conn) *Ustack {
+	var mc = &Ustack{id: id}
 
 	var npf stack.NetworkProtocolFactory
 	switch p := conn.Raw().NetworkProtocolNumber(); p {
@@ -117,38 +83,65 @@ func newCtrConn(ctx cctx.CancelCtx, conn *sconn.Conn) *CtrConn {
 		ctx.Cancel(err)
 	}
 
-	go mc.downlink(ctx, conn)
+	go mc.outbound(ctx, conn)
 	return mc
 }
 
-func (mc *CtrConn) Inject(seg *segment.Segment) {
-	if seg.ID() != segment.CtrSegID {
-		panic(fmt.Sprintf("not MgrSeg with id %d", seg.ID()))
-	}
+func (mc *Ustack) Inject(tcp *relraw.Packet) {
+	// if seg.ID() != segment.CtrSegID {
+	// 	panic(fmt.Sprintf("not MgrSeg with id %d", seg.ID()))
+	// }
 
-	// remove ip header and segment header
-	p := seg.Packet()
-	p.SetHead(p.Head() + segment.HdrSize)
+	// // remove ip header and segment header
+	// p := seg.Packet()
+	// p.SetHead(p.Head() + segment.HdrSize)
 
-	mc.ipstack.AttachInbound(p)
+	mc.ipstack.AttachInbound(tcp)
 
 	// todo: validate ip packet
 
 	pkb := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Payload: buffer.MakeWithData(p.Data()),
+		Payload: buffer.MakeWithData(tcp.Data()),
 	})
 	mc.link.InjectInbound(header.IPv4ProtocolNumber, pkb)
 }
 
-func (mc *CtrConn) downlink(ctx cctx.CancelCtx, conn *sconn.Conn) {
+func (mc *Ustack) outbound(ctx cctx.CancelCtx, conn *sconn.Conn) {
 	for {
 		pkb := mc.link.ReadContext(ctx)
 		if pkb.IsNil() {
 			return
 		}
+
 		iphdr := header.IPv4(pkb.ToView().AsSlice())
 
 		p := relraw.ToPacket(int(iphdr.HeaderLength()), iphdr) // todo: optimize
+
+		{
+			tcphdr := header.TCP(p.Data())
+			if mc.id == server {
+				fmt.Printf(
+					"%s send %d-->%d	%s\n",
+					mc.id,
+					tcphdr.SourcePort(), tcphdr.DestinationPort(),
+					tcphdr.Flags(),
+				)
+
+				// opts := tcphdr.Options()
+				// fmt.Println(opts)
+
+				if tcphdr.Flags().Contains(header.TCPFlagSyn | header.TCPFlagAck) {
+					print()
+				}
+			} else {
+				fmt.Printf(
+					"%s send %d-->%d	%s\n",
+					mc.id,
+					tcphdr.SourcePort(), tcphdr.DestinationPort(),
+					tcphdr.Flags(),
+				)
+			}
+		}
 
 		seg := segment.ToSegment(p)
 		seg.SetID(segment.CtrSegID)
@@ -159,4 +152,49 @@ func (mc *CtrConn) downlink(ctx cctx.CancelCtx, conn *sconn.Conn) {
 		}
 		pkb.DecRef()
 	}
+}
+
+func connect(ctx cctx.CancelCtx, tcpHandshakeTimeout time.Duration, us *Ustack, laddr, raddr tcpip.FullAddress) (tcp net.Conn) {
+	connectCtx := cctx.WithTimeout(ctx, tcpHandshakeTimeout)
+	defer connectCtx.Cancel(nil)
+
+	tcp, err := gonet.DialTCPWithBind(
+		connectCtx, us.stack,
+		laddr, raddr,
+		us.proto,
+	)
+	if err != nil {
+		ctx.Cancel(err)
+		return nil
+	}
+
+	return tcp
+}
+
+func accept(
+	ctx cctx.CancelCtx, tcpHandshakeTimeout time.Duration,
+	us *Ustack,
+	laddr, raddr tcpip.FullAddress,
+) (tcp net.Conn) {
+	l, err := gonet.ListenTCP(us.stack, laddr, us.proto)
+	if err != nil {
+		ctx.Cancel(err)
+		return nil
+	}
+
+	acceptCtx := cctx.WithTimeout(ctx, tcpHandshakeTimeout)
+
+	go func() {
+		var err error
+		tcp, err = l.Accept()
+		acceptCtx.Cancel(err)
+	}()
+
+	<-acceptCtx.Done()
+	if err = acceptCtx.Err(); !errors.Is(err, context.Canceled) {
+		ctx.Cancel(errors.Join(err, l.Close()))
+		return nil
+	}
+
+	return tcp // todo: validate remote addr
 }

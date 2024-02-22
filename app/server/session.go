@@ -45,7 +45,7 @@ func NewSessionMgr(pxyer *proxyer) *SessionMgr {
 		ids:      make(map[itun.Session]uint16, 16),
 	}
 	var tick *time.Ticker
-	mgr.idle, tick = itun.NewIdle(time.Second * 30) // todo: from config
+	mgr.idle, tick = itun.NewIdle(pxyer.srv.cfg.ProxyerIdeleTimeout)
 
 	// todo: 把keepalive移出去
 	go mgr.keepalive(context.Background(), tick)

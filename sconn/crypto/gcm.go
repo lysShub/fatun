@@ -39,7 +39,7 @@ func NewTCPCrypt(key [Bytes]byte) (*TCPCrypt, error) {
 func (g *TCPCrypt) Encrypt(tcp *relraw.Packet) {
 	tcp.AllocTail(Bytes)
 
-	// todo: not strict nonce
+	// notice: not strict nonce
 
 	// additionalData can't contain tcp checksum flag
 	tcphdr := header.TCP(tcp.Data())

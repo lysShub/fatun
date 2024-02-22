@@ -12,7 +12,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
-func NewCtrClient(ctx cctx.CancelCtx, conn net.Conn) *Client {
+func newClient(ctx cctx.CancelCtx, conn net.Conn) *Client {
 	opts := []grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.FailOnNonTempDialError(true),

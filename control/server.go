@@ -13,7 +13,7 @@ import (
 	"google.golang.org/grpc"
 )
 
-type MgrHander interface {
+type CtrServer interface {
 	IPv6() bool
 	EndConfig()
 	AddTCP(addr netip.AddrPort) (uint16, error)
@@ -24,17 +24,6 @@ type MgrHander interface {
 	Ping()
 }
 
-func NewServer(ctx cctx.CancelCtx, conn net.Conn, hdr MgrHander) *Server {
-	var s = &Server{
-		ctx:      ctx,
-		listener: newListenerWrap(ctx, conn),
-		srv:      grpc.NewServer(),
-		hdr:      hdr,
-	}
-	internal.RegisterControlServer(s.srv, s)
-	return s
-}
-
 type Server struct {
 	internal.UnimplementedControlServer
 
@@ -43,18 +32,21 @@ type Server struct {
 
 	srv *grpc.Server
 
-	hdr MgrHander
+	hdr CtrServer
 
 	initedConfig atomic.Bool
 }
 
-type ErrInitConfigTimeout time.Duration
+func serve(ctx cctx.CancelCtx, initCfgTimeout time.Duration, conn net.Conn, hdr CtrServer) {
+	var s = &Server{
+		ctx:      ctx,
+		listener: newListenerWrap(ctx, conn),
+		srv:      grpc.NewServer(),
+		hdr:      hdr,
+	}
+	internal.RegisterControlServer(s.srv, s)
 
-func (e ErrInitConfigTimeout) Error() string {
-	return fmt.Sprintf("control init config exceed %s", time.Duration(e))
-}
-
-func (s *Server) Serve(initCfgTimeout time.Duration) {
+	// todo: maybe not need, has keepalive
 	go func() {
 		time.Sleep(initCfgTimeout)
 		if !s.initedConfig.Load() {
@@ -62,10 +54,17 @@ func (s *Server) Serve(initCfgTimeout time.Duration) {
 		}
 	}()
 
+	// serve
 	err := s.srv.Serve(s.listener)
 	if err != nil {
 		s.ctx.Cancel(err)
 	}
+}
+
+type ErrInitConfigTimeout time.Duration
+
+func (e ErrInitConfigTimeout) Error() string {
+	return fmt.Sprintf("control init config exceed %s", time.Duration(e))
 }
 
 func (s *Server) IPv6(_ context.Context, in *internal.Null) (*internal.Bool, error) {
