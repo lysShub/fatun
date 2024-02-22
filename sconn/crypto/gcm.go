@@ -67,6 +67,7 @@ func (g *TCPCrypt) EncryptChecksum(tcp *relraw.Packet, pseudoSum1 uint16) {
 	tcp.SetLen(len(tcphdr))
 }
 
+// todo: segment type
 func (g *TCPCrypt) Decrypt(tcp *relraw.Packet) error {
 	tcphdr := header.TCP(tcp.Data())
 

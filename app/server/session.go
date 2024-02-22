@@ -16,6 +16,7 @@ import (
 	"github.com/lysShub/itun/cctx"
 	"github.com/lysShub/itun/sconn"
 	"github.com/lysShub/itun/segment"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 
 	"github.com/lysShub/relraw"
 	"github.com/lysShub/relraw/tcp/bpf"
@@ -175,21 +176,29 @@ func (s *Session) ID() uint16 {
 	return s.id
 }
 
-// recv from s and write to raw
+// recv from server and write to raw
 func (s *Session) downlink(conn *sconn.Conn) {
-	n := conn.Raw().MTU()
-	seg := segment.NewSegment(n)
+	mtu := conn.Raw().MTU()
+	seg := segment.ToSegment(relraw.NewPacket(
+		64, mtu, 16,
+	))
 
 	for {
-		seg.Packet().Sets(0, n)
+		seg.Sets(0, mtu)
 		err := s.pxy.ReadCtx(s.ctx, seg.Packet())
 		if err != nil {
 			s.ctx.Cancel(err)
 			return
 		}
 
-		// todo: 更改dst port, 或者在client注入之前更改
-		seg.Packet().AllocHead(seg.Packet().Head() + segment.HdrSize)
+		switch s.session.Proto {
+		case itun.TCP:
+			header.TCP(seg.Data()).SetDestinationPortWithChecksumUpdate(s.session.SrcAddr.Port())
+		case itun.UDP:
+			header.UDP(seg.Data()).SetDestinationPortWithChecksumUpdate(s.session.SrcAddr.Port())
+		default:
+		}
+
 		seg.SetID(s.id)
 
 		err = conn.SendSeg(s.ctx, seg)

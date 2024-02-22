@@ -1,12 +1,14 @@
 package client
 
 import (
+	"fmt"
 	"sync"
 
 	"github.com/lysShub/itun"
 	"github.com/lysShub/itun/cctx"
 	"github.com/lysShub/itun/sconn"
 	"github.com/lysShub/itun/segment"
+	"github.com/lysShub/relraw"
 )
 
 type SessionMgr struct {
@@ -24,8 +26,11 @@ func NewSessionMgr(c *Client) *SessionMgr {
 func (sm *SessionMgr) Add(s itun.Session, id uint16) error {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
+	if _, has := sm.sess[id]; has {
+		return fmt.Errorf("id %d exist", id)
+	}
 
-	session := NewSession(sm.client.conn)
+	session := NewSession(sm.client.ctx, sm.client.conn, id, s)
 
 	sm.sess[id] = session
 
@@ -41,36 +46,54 @@ func (sm *SessionMgr) Get(id uint16) *Session {
 type Session struct {
 	ctx cctx.CancelCtx
 	s   itun.Session
+	id  uint16
 
-	capture Capture
+	cpt Capture
 }
 
 func NewSession(
-
-	conn *sconn.Conn,
-
+	ctx cctx.CancelCtx, conn *sconn.Conn,
+	id uint16, session itun.Session,
 ) *Session {
-	var s = &Session{}
+	var s = &Session{
+		ctx: ctx,
+		id:  id,
+		s:   session,
+	}
 
 	go s.uplink(conn)
 	return s
 }
 
 func (s *Session) uplink(conn *sconn.Conn) {
-	// var b = make([]byte, conn.Raw().MTU())
+	var mtu = conn.Raw().MTU()
+	p := relraw.NewPacket(64, mtu)
 
-	// for {
-	// n, err := s.capture.RecvCtx(s.ctx, b)
-	// if err != nil {
-	// 	s.ctx.Cancel(err)
-	// 	return
-	// }
+	for {
+		p.Sets(64, mtu)
+		if err := s.cpt.RecvCtx(s.ctx, p); err != nil {
+			s.ctx.Cancel(err)
+			return
+		}
 
-	// conn.SendSeg(b[:n], 0)
-	// }
+		// todo: reset tcp mss
 
+		seg := segment.ToSegment(p)
+		seg.SetID(s.id)
+		if err := conn.SendSeg(s.ctx, seg); err != nil {
+			s.ctx.Cancel(err)
+			return
+		}
+	}
 }
 
 func (s *Session) Inject(seg *segment.Segment) error {
-	return s.capture.Inject(nil) // todo:
+	if seg.ID() != s.id {
+		return fmt.Errorf("expect session %d, got %d", s.id, seg.ID())
+	}
+
+	// decode segment
+	seg.SetHead(seg.Head() + segment.HdrSize)
+
+	return s.cpt.Inject(seg.Packet())
 }

@@ -48,7 +48,7 @@ func Proxy(c context.Context, srv *Server, raw *itun.RawConn) {
 	}
 
 	// control
-	h.ctrConn = control.AcceptCtrConn(ctx, h.conn)
+	h.ctrConn = control.Accept(ctx, h.conn)
 	if err := ctx.Err(); err != nil {
 		fmt.Println(err)
 		return

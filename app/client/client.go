@@ -3,8 +3,8 @@ package client
 import (
 	"context"
 	"fmt"
-	"net"
 	"net/netip"
+	"time"
 
 	"github.com/lysShub/itun"
 	"github.com/lysShub/itun/cctx"
@@ -19,47 +19,36 @@ type Config struct {
 }
 
 type Client struct {
-	ctx        cctx.CancelCtx
-	cfg        *Config
+	ctx  cctx.CancelCtx
+	cfg  *Config
+	addr netip.AddrPort
+
 	sessionMgr *SessionMgr
 
 	conn *sconn.Conn
 
+	// todo: merge
 	ctrConn *control.CtrConn
 	ctr     *control.Client
 }
 
-func NewClient(proxyServer string, cfg *Config) (*Client, error) {
+func NewClient(ctx context.Context, localAddr, pxySrvAddr netip.AddrPort, cfg *Config) (*Client, error) {
 	var c = &Client{
-		cfg: &Config{},
+		ctx: cctx.WithContext(ctx),
+		cfg: cfg,
 	}
 
-	var server netip.AddrPort
-	if a, err := net.ResolveTCPAddr("tcp", proxyServer); err != nil {
-		return nil, err
-	} else {
-		if a.Port == 0 {
-			a.Port = itun.DefaultPort
-		}
-		addr, ok := netip.AddrFromSlice(a.IP)
-		if !ok {
-			return nil, fmt.Errorf("invalid proxy server address %s", proxyServer)
-		} else if addr.Is4In6() {
-			addr = netip.AddrFrom4(addr.As4())
-		}
-		server = netip.AddrPortFrom(addr, uint16(a.Port))
-	}
-
-	ctx := cctx.WithContext(context.Background())
-
-	if err := c.Connect(ctx, server); err != nil {
+	if err := c.Connect(pxySrvAddr); err != nil {
 		return nil, err
 	}
 
 	return nil, nil
 }
 
-func (c *Client) Connect(ctx cctx.CancelCtx, server netip.AddrPort) error {
+func (c *Client) Connect(server netip.AddrPort) error {
+	ctx := cctx.WithTimeout(c.ctx, time.Second*10) // todo: from cfg
+	defer ctx.Cancel(nil)
+
 	raw, err := connectRaw(server)
 	if err != nil {
 		return err
@@ -71,7 +60,7 @@ func (c *Client) Connect(ctx cctx.CancelCtx, server netip.AddrPort) error {
 		return err
 	}
 
-	c.ctrConn = control.ConnectCtrConn(ctx, c.conn)
+	c.ctrConn = control.Connect(ctx, c.conn)
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -124,3 +113,19 @@ func (c *Client) downlink() {
 		}
 	}
 }
+
+// var server netip.AddrPort
+// if a, err := net.ResolveTCPAddr("tcp", pxySrvAddr); err != nil {
+// 	return nil, err
+// } else {
+// 	if a.Port == 0 {
+// 		a.Port = itun.DefaultPort
+// 	}
+// 	addr, ok := netip.AddrFromSlice(a.IP)
+// 	if !ok {
+// 		return nil, fmt.Errorf("invalid proxy server address %s", pxySrvAddr)
+// 	} else if addr.Is4In6() {
+// 		addr = netip.AddrFrom4(addr.As4())
+// 	}
+// 	server = netip.AddrPortFrom(addr, uint16(a.Port))
+// }

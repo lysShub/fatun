@@ -18,14 +18,6 @@ github.com/lysShub/divert-go v0.0.0-20240218100932-81d2021c033a h1:d3WDu7l/RBmXa
 github.com/lysShub/divert-go v0.0.0-20240218100932-81d2021c033a/go.mod h1:d1SuldlJJppacF/Dlks4BPjdxH301oYdC3dPoF+w2SU=
 github.com/lysShub/dll-go v0.0.0-20240131092034-3f09ae5eff72 h1:sVpTzdeme/y/csKBVz3yP6umbxrNbQBamUXgFXD7Z4Y=
 github.com/lysShub/dll-go v0.0.0-20240131092034-3f09ae5eff72/go.mod h1:Ww946b4py3gpmi5bGAyR6AUr3fFdalALEmk34/URCBM=
-github.com/lysShub/relraw v0.0.0-20240219185420-298348ad8049 h1:hn7whxQMk+mmdYDTYyw82Up7lqYKG2VWNh/T1vfJe3I=
-github.com/lysShub/relraw v0.0.0-20240219185420-298348ad8049/go.mod h1:xhJRMK7YjHnrX1Xyip3BEQzNk72PkVXqZH/dbnKhf/o=
-github.com/lysShub/relraw v0.0.0-20240220065458-effae0c3659d h1:KBnIB9V4S6yLbI2EcBSKvTbFsAuHxPu04b8WyaDVtF0=
-github.com/lysShub/relraw v0.0.0-20240220065458-effae0c3659d/go.mod h1:xhJRMK7YjHnrX1Xyip3BEQzNk72PkVXqZH/dbnKhf/o=
-github.com/lysShub/relraw v0.0.0-20240220072931-bcb1143dd4fe h1:p7qL+ol8fYPjk4XO4qcVdbkHl9av9zgMJhemahcRvHo=
-github.com/lysShub/relraw v0.0.0-20240220072931-bcb1143dd4fe/go.mod h1:xhJRMK7YjHnrX1Xyip3BEQzNk72PkVXqZH/dbnKhf/o=
-github.com/lysShub/relraw v0.0.0-20240220110120-b4877a79df44 h1:z0aH8bM0jTAz+23cIbzumyBDILIiFawLsehSXhc/kJA=
-github.com/lysShub/relraw v0.0.0-20240220110120-b4877a79df44/go.mod h1:xhJRMK7YjHnrX1Xyip3BEQzNk72PkVXqZH/dbnKhf/o=
 github.com/lysShub/relraw v0.0.0-20240221072856-64d28524f3b6 h1:0arQYuqm7Baf8ZXpjPl7/JnJMkOoH9y6WjxxrCvtCt0=
 github.com/lysShub/relraw v0.0.0-20240221072856-64d28524f3b6/go.mod h1:xhJRMK7YjHnrX1Xyip3BEQzNk72PkVXqZH/dbnKhf/o=
 github.com/lysShub/wintun-go v0.0.0-20240131112415-8f3bf638af49 h1:+BtJbmYw5V5Qd3TLsXwOmvnx+KcYmz5KqDM5av/T5vc=

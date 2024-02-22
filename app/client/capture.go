@@ -1,8 +1,17 @@
 package client
 
-import "context"
+import (
+	"context"
+
+	"github.com/lysShub/relraw"
+)
 
 type Capture interface {
-	RecvCtx(ctx context.Context, ip []byte) (n int, err error)
-	Inject(b []byte) error
+	// recv tcp/udp packet
+	RecvCtx(ctx context.Context, p *relraw.Packet) (err error)
+
+	// inject tcp/udp packet
+	Inject(p *relraw.Packet) error
+
+	Close() error
 }

@@ -31,9 +31,9 @@ func NewFakeTCP(locPort, remPort uint16, initSeq, initAck uint32, checksum bool)
 	return f
 }
 
-// AttachSend input tcp payload, attach tcp header, and return
+// SendAttach input tcp payload, attach tcp header, and return
 // tcp packet.
-func (f *FakeTCP) AttachSend(p *relraw.Packet) {
+func (f *FakeTCP) SendAttach(p *relraw.Packet) {
 	var b = make(header.TCP, header.TCPMinimumSize)
 	b.Encode(&header.TCPFields{
 		SrcPort:    f.lport,
@@ -54,9 +54,9 @@ func (f *FakeTCP) AttachSend(p *relraw.Packet) {
 	p.Attach(b)
 }
 
-// AttachRecv input a tcp packet, update ack, and return
+// RecvStrip input a tcp packet, update ack, and return
 // tcp payload.
-func (f *FakeTCP) AttachRecv(tcp *relraw.Packet) {
+func (f *FakeTCP) RecvStrip(tcp *relraw.Packet) {
 	tcphdr := header.TCP(tcp.Data())
 
 	new := tcphdr.SequenceNumber() + uint32(len(tcphdr.Payload()))

@@ -56,39 +56,35 @@ func (s *Conn) RecvSeg(ctx context.Context, seg *segment.Segment) (err error) {
 	if s.tinyCnt > tinyCntLimit {
 		return err
 	}
-	p := seg.Packet()
-	oldH, oldN := p.Head(), p.Len()
+	oldH, oldN := seg.Head(), seg.Len()
 
-	err = s.raw.ReadCtx(ctx, p)
+	err = s.raw.ReadCtx(ctx, seg.Packet())
 	if err != nil {
 		return err
 	}
 
 	// recved impostor/wrong packet
-	n := len(header.TCP(p.Data()).Payload())
+	n := len(header.TCP(seg.Data()).Payload())
 	if n < segment.HdrSize+header.UDPMinimumSize {
 		s.tinyCnt++
 		s.tinyCntErr = ErrManyInvalidSizeSegment(n)
-		p.Sets(oldH, oldN)
+		seg.Sets(oldH, oldN)
 		return s.RecvSeg(ctx, seg)
 	}
 
 	if s.crypter != nil {
 		s.tinyCnt++
-		err = s.crypter.Decrypt(p)
+		err = s.crypter.Decrypt(seg.Packet())
 
 		// recved impostor/wrong packet
 		if err != nil {
-			p.Sets(oldH, oldN)
+			seg.Sets(oldH, oldN)
 			s.tinyCntErr = ErrManyDecryptFailSegment(err.Error())
 			return s.RecvSeg(ctx, seg)
 		}
 	}
 
-	s.fake.AttachRecv(p)
-
-	// tcphdr := header.TCP(p.Data())
-	// p.SetHead(p.Head() + int(tcphdr.DataOffset())) // remove tcp header
+	s.fake.RecvStrip(seg.Packet())
 
 	s.tinyCnt = 0
 	return nil
@@ -97,12 +93,13 @@ func (s *Conn) RecvSeg(ctx context.Context, seg *segment.Segment) (err error) {
 func (s *Conn) SendSeg(ctx context.Context, seg *segment.Segment) (err error) {
 	p := seg.Packet()
 
-	s.fake.AttachSend(p)
+	s.fake.SendAttach(p)
 
 	if s.crypter != nil {
 		s.crypter.EncryptChecksum(p, s.psosum1)
 	}
 
+	// todo: raw not calc tcp checksum
 	return s.raw.WriteCtx(ctx, p)
 }
 

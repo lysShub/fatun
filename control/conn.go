@@ -32,7 +32,7 @@ type CtrConn struct {
 	ipstack *relraw.IPStack
 }
 
-func AcceptCtrConn(ctx cctx.CancelCtx, conn *sconn.Conn) *CtrConn {
+func Accept(ctx cctx.CancelCtx, conn *sconn.Conn) *CtrConn {
 	mc := newCtrConn(ctx, conn)
 	if ctx.Err() != nil {
 		return nil
@@ -52,7 +52,7 @@ func AcceptCtrConn(ctx cctx.CancelCtx, conn *sconn.Conn) *CtrConn {
 	return mc
 }
 
-func ConnectCtrConn(ctx cctx.CancelCtx, conn *sconn.Conn) *CtrConn {
+func Connect(ctx cctx.CancelCtx, conn *sconn.Conn) *CtrConn {
 	mc := newCtrConn(ctx, conn)
 	if ctx.Err() != nil {
 		return nil
