@@ -152,9 +152,6 @@ func serveGrpc(ctx cctx.CancelCtx, ctr *Controller, conn net.Conn, hdr SrvHandle
 		s.Close(),
 	)
 
-	ctxp := ctx.Ptr()
-	fmt.Println(ctxp)
-
 	s.ctx.Cancel(err)
 }
 

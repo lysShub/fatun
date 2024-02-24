@@ -99,10 +99,6 @@ func Test_Control_Client_Close(t *testing.T) {
 	// server
 	go func() {
 		ctx := cctx.WithContext(parentCtx)
-		{
-			ctxp := ctx.Ptr()
-			fmt.Println("init", ctxp)
-		}
 
 		ctr, err := NewController(saddr, caddr, s.Raw().MTU())
 		require.NoError(t, err)
@@ -139,11 +135,6 @@ func Test_Control_Client_Close(t *testing.T) {
 			Serve(ctx, ctr, &mockServer{})
 			returnCh <- 3
 		}()
-
-		{
-			ctxp := ctx.Ptr()
-			fmt.Println("serve", ctxp)
-		}
 
 		<-ctx.Done()
 		err = ctx.Err()
