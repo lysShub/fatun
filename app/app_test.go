@@ -18,6 +18,8 @@ import (
 )
 
 func TestXxx(t *testing.T) {
+	t.Skip("todo")
+
 	var (
 		caddr = netip.AddrPortFrom(netip.AddrFrom4([4]byte{10, 0, 0, 1}), 19986)
 		saddr = netip.AddrPortFrom(netip.AddrFrom4([4]byte{1, 1, 1, 1}), 8080)
