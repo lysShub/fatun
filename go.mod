@@ -23,6 +23,7 @@ require (
 	github.com/google/btree v1.1.2 // indirect
 	github.com/lysShub/dll-go v0.0.0-20240131092034-3f09ae5eff72 // indirect
 	github.com/lysShub/wintun-go v0.0.0-20240131112415-8f3bf638af49 // indirect
+	github.com/pkg/errors v0.9.1
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
 	golang.org/x/time v0.5.0 // indirect

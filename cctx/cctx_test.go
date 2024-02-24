@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func Test_Cancel_Ctx(t *testing.T) {
+func Test_CancelCtx_Cancel(t *testing.T) {
 
 	t.Run("cancel/repeate-cancel", func(t *testing.T) {
 		c := cctx.WithContext(context.Background())
@@ -51,7 +51,11 @@ func Test_Cancel_Ctx(t *testing.T) {
 		require.Greater(t, time.Since(s), time.Millisecond*500)
 	})
 
-	t.Run("err/ctx-cancel-nil", func(t *testing.T) {
+}
+
+func Test_CancelCtx_Err(t *testing.T) {
+
+	t.Run("ctx-cancel-nil", func(t *testing.T) {
 		c := cctx.WithContext(context.Background())
 		c.Cancel(nil)
 		c.Cancel(errors.New("2"))
@@ -60,7 +64,8 @@ func Test_Cancel_Ctx(t *testing.T) {
 		e := c.Err()
 		require.Equal(t, context.Canceled, e)
 	})
-	t.Run("err/timectx-cancel-nil", func(t *testing.T) {
+
+	t.Run("timectx-cancel-nil", func(t *testing.T) {
 		c := cctx.WithTimeout(context.Background(), time.Hour)
 		c.Cancel(nil)
 		c.Cancel(errors.New("2"))
@@ -70,7 +75,7 @@ func Test_Cancel_Ctx(t *testing.T) {
 		require.Equal(t, context.Canceled, e)
 	})
 
-	t.Run("err/ctx-cancel-error", func(t *testing.T) {
+	t.Run("ctx-cancel-error", func(t *testing.T) {
 		c := cctx.WithContext(context.Background())
 		c.Cancel(errors.New("1"))
 		c.Cancel(errors.New("2"))
@@ -78,7 +83,7 @@ func Test_Cancel_Ctx(t *testing.T) {
 		<-c.Done()
 		require.Equal(t, errors.New("1"), c.Err())
 	})
-	t.Run("err/timectx-cancel-error", func(t *testing.T) {
+	t.Run("timectx-cancel-error", func(t *testing.T) {
 		c := cctx.WithTimeout(context.Background(), time.Hour)
 		c.Cancel(errors.New("1"))
 		c.Cancel(errors.New("2"))
@@ -87,7 +92,7 @@ func Test_Cancel_Ctx(t *testing.T) {
 		require.Equal(t, errors.New("1"), c.Err())
 	})
 
-	t.Run("err/timectx-timeout", func(t *testing.T) {
+	t.Run("timectx-timeout", func(t *testing.T) {
 		c := cctx.WithTimeout(context.Background(), time.Second)
 
 		time.Sleep(time.Second * 2)
@@ -98,9 +103,21 @@ func Test_Cancel_Ctx(t *testing.T) {
 		e := c.Err()
 		require.Equal(t, context.DeadlineExceeded, e)
 	})
+
+	t.Run("parent-stdctx-cancel", func(t *testing.T) {
+		parentCtx, cancel := context.WithCancel(context.Background())
+
+		c := cctx.WithContext(parentCtx)
+
+		cancel()
+
+		<-c.Done()
+		require.Equal(t, context.Canceled, c.Err())
+	})
+
 }
 
-func Test_Cancel_Ctx_Inherit(t *testing.T) {
+func Test_CancelCtx_Inherit(t *testing.T) {
 
 	t.Run("child-ctx-err", func(t *testing.T) {
 

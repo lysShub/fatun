@@ -3,7 +3,9 @@ package control
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/netip"
+	"os"
 	"testing"
 	"time"
 
@@ -30,7 +32,6 @@ func Test_Control(t *testing.T) {
 
 		ctr, err := NewController(saddr, caddr, s.Raw().MTU())
 		require.NoError(t, err)
-		defer ctr.close()
 
 		go ctr.OutboundService(ctx, s)
 		go func() {
@@ -56,7 +57,6 @@ func Test_Control(t *testing.T) {
 
 		ctr, err := NewController(caddr, saddr, c.Raw().MTU())
 		require.NoError(t, err)
-		defer ctr.close()
 
 		go ctr.OutboundService(ctx, c)
 		go func() {
@@ -64,7 +64,8 @@ func Test_Control(t *testing.T) {
 			for {
 				seg.Sets(0, 1536)
 				err := c.RecvSeg(ctx, seg)
-				if errors.Is(err, context.Canceled) {
+				if errors.Is(err, context.Canceled) ||
+					errors.Is(err, os.ErrClosed) {
 					return
 				}
 				require.NoError(t, err)
@@ -83,8 +84,120 @@ func Test_Control(t *testing.T) {
 	}
 }
 
-func Test_Control_Close(t *testing.T) {
-	t.Skip("todo")
+func Test_Control_Client_Close(t *testing.T) {
+	t.Skip("todo: not work")
+
+	var (
+		caddr = netip.AddrPortFrom(test.LocIP, test.RandPort())
+		saddr = netip.AddrPortFrom(test.LocIP, test.RandPort())
+	)
+	parentCtx := cctx.WithContext(context.Background())
+	var returnCh = make(chan int, 6)
+
+	c, s := CreateSconns(t, caddr, saddr)
+
+	// server
+	go func() {
+		ctx := cctx.WithContext(parentCtx)
+		{
+			ctxp := ctx.Ptr()
+			fmt.Println("init", ctxp)
+		}
+
+		ctr, err := NewController(saddr, caddr, s.Raw().MTU())
+		require.NoError(t, err)
+
+		go func() {
+			ctr.OutboundService(ctx, s)
+			returnCh <- 1
+		}()
+		go func() {
+			seg := segment.NewSegment(1536)
+			for {
+				seg.Sets(0, 1536)
+				err := s.RecvSeg(ctx, seg)
+				if errors.Is(err, context.Canceled) ||
+					errors.Is(err, os.ErrClosed) {
+					returnCh <- 2
+					return
+				}
+				require.NoError(t, err)
+
+				{
+					b := seg.Data()
+					tcp := header.TCP(b[2:])
+					if tcp.Flags().Contains(header.TCPFlagFin) {
+						fmt.Println()
+					}
+				}
+
+				ctr.Inbound(seg)
+			}
+		}()
+
+		go func() {
+			Serve(ctx, ctr, &mockServer{})
+			returnCh <- 3
+		}()
+
+		{
+			ctxp := ctx.Ptr()
+			fmt.Println("serve", ctxp)
+		}
+
+		<-ctx.Done()
+		err = ctx.Err()
+		fmt.Println("sever err1: ", err)
+		returnCh <- 4
+	}()
+
+	// client
+	{
+		ctx := cctx.WithContext(parentCtx)
+
+		ctr, err := NewController(caddr, saddr, c.Raw().MTU())
+		require.NoError(t, err)
+
+		go func() {
+			ctr.OutboundService(ctx, c)
+			returnCh <- 5
+		}()
+		go func() {
+			seg := segment.NewSegment(1536)
+			for {
+				seg.Sets(0, 1536)
+				err := c.RecvSeg(ctx, seg)
+				if errors.Is(err, context.Canceled) {
+					returnCh <- 6
+					return
+				}
+				require.NoError(t, err)
+				ctr.Inbound(seg)
+			}
+		}()
+
+		client := Dial(ctx, ctr)
+		require.NoError(t, ctx.Err())
+		defer client.Close()
+
+		ipv6, err := client.IPv6(ctx)
+		require.NoError(t, err)
+		require.True(t, ipv6)
+
+		err = client.Close()
+		require.NoError(t, err)
+	}
+
+	var rets []int
+
+	time.Sleep(time.Second * 10)
+	for i := 0; i < len(returnCh); i++ {
+		rets = append(rets, <-returnCh)
+	}
+
+	fmt.Println(len(rets), rets)
+
+	time.Sleep(time.Hour)
 }
 
 func CreateSconns(t require.TestingT, caddr, saddr netip.AddrPort) (c, s *sconn.Conn) {

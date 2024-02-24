@@ -40,7 +40,7 @@ const (
 	closeing
 )
 
-const tinyCntLimit = 8 // todo: to config
+const tinyCntLimit = 4 // todo: to config
 
 type ErrManyInvalidSizeSegment int
 

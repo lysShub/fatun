@@ -7,7 +7,10 @@ import (
 	"io"
 	"net"
 	"net/netip"
+	"os"
 	"time"
+
+	pkge "github.com/pkg/errors"
 
 	"github.com/lysShub/itun/cctx"
 	"github.com/lysShub/itun/ustack/link"
@@ -112,7 +115,13 @@ func (u *Ustack) Inbound(b *relraw.Packet) error {
 func (u *Ustack) Outbound(ctx context.Context, ip *relraw.Packet) error {
 	pkb := u.link.ReadContext(ctx)
 	if pkb.IsNil() {
-		return ctx.Err() // ctx cancel/exceed
+		ip.SetLen(0)
+		select {
+		case <-ctx.Done():
+			return ctx.Err() // ctx cancel/exceed
+		default:
+			return pkge.Wrap(os.ErrClosed, "user stack outbound")
+		}
 	}
 
 	b := ip.Data()

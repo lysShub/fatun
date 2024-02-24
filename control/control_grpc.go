@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -38,6 +39,7 @@ func newGrpcClient(parentCtx cctx.CancelCtx, ctr *Controller, conn net.Conn, tim
 		tcp:   conn,
 		gconn: gconn,
 		cc:    internal.NewControlClient(gconn),
+		ctx:   parentCtx,
 	}
 }
 
@@ -46,6 +48,7 @@ type grpcClient struct {
 	tcp   net.Conn
 	gconn *grpc.ClientConn
 	cc    internal.ControlClient
+	ctx   cctx.CancelCtx
 }
 
 var _ Client = (*grpcClient)(nil)
@@ -56,6 +59,7 @@ func (c *grpcClient) Close() error {
 		c.tcp.Close(),
 		c.ctr.close(),
 	)
+	c.ctx.Cancel(nil)
 	return err
 }
 
@@ -108,28 +112,55 @@ func (c *grpcClient) Ping(ctx context.Context) error {
 type grpcServer struct {
 	internal.UnimplementedControlServer
 
-	ctx      cctx.CancelCtx
-	listener net.Listener
-
-	srv *grpc.Server
+	ctx cctx.CancelCtx
 
 	hdr SrvHandler
+
+	ctr *Controller
+
+	srv *grpc.Server
 }
 
-func serveGrpc(ctx cctx.CancelCtx, conn net.Conn, hdr SrvHandler) {
+func serveGrpc(ctx cctx.CancelCtx, ctr *Controller, conn net.Conn, hdr SrvHandler) {
 	var s = &grpcServer{
-		ctx:      ctx,
-		listener: newListenerWrap(ctx, conn),
-		srv:      grpc.NewServer(),
-		hdr:      hdr,
+		ctx: ctx,
+		hdr: hdr,
+
+		ctr: ctr,
+		srv: grpc.NewServer(),
 	}
 	internal.RegisterControlServer(s.srv, s)
+	tcp := wrapConn(conn)
 
-	// serve
-	err := s.srv.Serve(s.listener)
-	if err != nil {
-		s.ctx.Cancel(err)
+	var serveCh = make(chan struct{})
+	var serveErr error
+	go func() {
+		serveErr = s.srv.Serve(newListenerWrap(s.ctx, tcp))
+		close(serveCh)
+	}()
+
+	var err error
+	select {
+	case <-serveCh:
+		err = net.ErrClosed
+	case <-tcp.Done():
+		err = serveErr
 	}
+
+	err = errors.Join(
+		err,
+		s.Close(),
+	)
+
+	ctxp := ctx.Ptr()
+	fmt.Println(ctxp)
+
+	s.ctx.Cancel(err)
+}
+
+func (s *grpcServer) Close() error {
+	s.srv.Stop()
+	return s.ctr.close()
 }
 
 var _ internal.ControlServer = (*grpcServer)(nil)
@@ -199,13 +230,20 @@ func init() {
 }
 
 type listenerWrap struct {
-	ctx      cctx.CancelCtx
+	ctx    context.Context
+	cancel context.CancelFunc
+
 	accetped atomic.Bool
 	conn     net.Conn
 }
 
-func newListenerWrap(ctx cctx.CancelCtx, conn net.Conn) *listenerWrap {
-	return &listenerWrap{ctx: ctx, conn: conn}
+var _ net.Listener = (*listenerWrap)(nil)
+
+// newListenerWrap wrap the conn to a listener
+func newListenerWrap(ctx context.Context, conn net.Conn) *listenerWrap {
+	var l = &listenerWrap{conn: conn}
+	l.ctx, l.cancel = context.WithCancel(ctx)
+	return l
 }
 
 var _ net.Listener = (*listenerWrap)(nil)
@@ -235,5 +273,41 @@ func (l *listenerWrap) Accept() (net.Conn, error) {
 	}
 }
 
-func (l *listenerWrap) Close() error   { return nil }
-func (l *listenerWrap) Addr() net.Addr { return l.conn.LocalAddr() }
+func (l *listenerWrap) Close() error {
+	l.cancel()
+	return nil
+}
+
+func (l *listenerWrap) Addr() net.Addr {
+	return l.conn.LocalAddr()
+}
+
+type connWrap struct {
+	net.Conn
+	closed  chan struct{}
+	closeMu sync.RWMutex
+}
+
+func wrapConn(conn net.Conn) *connWrap {
+	return &connWrap{
+		Conn:   conn,
+		closed: make(chan struct{}),
+	}
+}
+
+func (c *connWrap) Close() (err error) {
+	c.closeMu.Lock()
+	defer c.closeMu.Unlock()
+
+	select {
+	case <-c.closed:
+	default:
+		err = c.Conn.Close()
+		close(c.closed)
+	}
+	return err
+}
+
+func (c *connWrap) Done() <-chan struct{} {
+	return c.closed
+}

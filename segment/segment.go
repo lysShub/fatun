@@ -6,6 +6,11 @@ import (
 	"github.com/lysShub/relraw"
 )
 
+/*
+	todo: deliver by Segment ID, then just accept SessionConn, not need
+		Segment type anymore
+*/
+
 // Segment include PxySeg and MgrSeg, identify by SessionID; MgrSeg is a TCP
 // packet, PxySeg indicate a transport layer packet, with header.
 //

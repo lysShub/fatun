@@ -23,5 +23,5 @@ func Serve(ctx cctx.CancelCtx, ctr *Controller, hander SrvHandler) {
 		return
 	}
 
-	serveGrpc(ctx, tcp, hander)
+	serveGrpc(ctx, ctr, tcp, hander)
 }

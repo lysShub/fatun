@@ -39,7 +39,7 @@ func (e *Endpoint) SeqAck() (seq, ack uint32) {
 func (e *Endpoint) ReadContext(ctx context.Context) stack.PacketBufferPtr {
 	pkt := e.Endpoint.ReadContext(ctx)
 
-	if pkt != nil && pkt.TransportProtocolNumber == header.TCPProtocolNumber {
+	if !pkt.IsNil() && pkt.TransportProtocolNumber == header.TCPProtocolNumber {
 		tcphdr := header.TCP(pkt.TransportHeader().Slice())
 
 		e.setSeq(tcphdr.SequenceNumber())
