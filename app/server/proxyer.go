@@ -21,9 +21,8 @@ type proxyer struct {
 	sessionMgr *SessionMgr
 
 	SrcAddr netip.AddrPort
-	conn    *sconn.Conn // 连接 Client <----> ProxyServer 的安全conn
 
-	ctrRaw control.CtrInject
+	conn *sconn.Conn
 }
 
 func Proxy(c context.Context, srv *Server, raw *itun.RawConn) {
@@ -34,25 +33,26 @@ func Proxy(c context.Context, srv *Server, raw *itun.RawConn) {
 	}
 	p.sessionMgr = NewSessionMgr(p)
 
-	p.conn = sconn.Accept(p.ctx, srv.cfg.TCPHandshakeTimeout, raw, &p.srv.cfg.Sconn)
+	p.conn = sconn.Accept(p.ctx, raw, &p.srv.cfg.Sconn)
 	if err := p.ctx.Err(); err != nil {
 		panic(err)
 	}
 
-	p.ctrRaw = control.Serve(p.ctx, srv.cfg.TCPHandshakeTimeout, srv.cfg.InitCfgTimeout, p.conn, proxyerImplPtr(p))
-	if err := p.ctx.Err(); err != nil {
+	ctr, err := control.NewController(raw.LocalAddrPort(), raw.RemoteAddrPort(), raw.MTU())
+	if err != nil {
 		panic(err)
 	}
 
-	// start uplink handler
-	go p.uplink()
+	go ctr.OutboundService(p.ctx, p.conn)
+	go p.uplink(ctr)
+	go control.Serve(p.ctx, ctr, proxyerImplPtr(p))
 
 	<-p.ctx.Done()
 	e := p.ctx.Err()
 	fmt.Println("proxy closed: ", e)
 }
 
-func (p *proxyer) uplink() {
+func (p *proxyer) uplink(ctrSessionInbound *control.Controller) {
 	n := p.conn.Raw().MTU()
 	seg := segment.NewSegment(n)
 
@@ -66,11 +66,7 @@ func (p *proxyer) uplink() {
 		}
 
 		if id := seg.ID(); id == segment.CtrSegID {
-			// remove ip header and segment header
-			pkg := seg.Packet()
-			pkg.SetHead(pkg.Head() + segment.HdrSize)
-
-			p.ctrRaw.Inject(pkg)
+			ctrSessionInbound.Inbound(seg)
 		} else {
 			s := p.sessionMgr.Get(id)
 			if s != nil {

@@ -1,50 +1,19 @@
 package sconn
 
 import (
-	"context"
 	"errors"
-	"fmt"
-	"time"
 
 	"github.com/lysShub/itun"
 	"github.com/lysShub/itun/cctx"
-	"github.com/lysShub/itun/fake"
 	"github.com/lysShub/itun/sconn/crypto"
+	"github.com/lysShub/itun/ustack"
+	"github.com/lysShub/itun/ustack/faketcp"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
-type ErrPrevPacketInvalid int
-
-func (e ErrPrevPacketInvalid) Error() string {
-	return fmt.Sprintf("previous pakcet %d is invalid", e)
-}
-
-func Accept(parentCtx cctx.CancelCtx, tcpHandshakeTimeout time.Duration, raw *itun.RawConn, cfg *Server) (s *Conn) {
-	ctx := cctx.WithTimeout(parentCtx, tcpHandshakeTimeout)
-	defer ctx.Cancel(nil)
-
-	s = accept(ctx, raw, cfg, tcpHandshakeTimeout)
-	if err := ctx.Err(); err != nil {
-		parentCtx.Cancel(err)
-		return nil
-	}
-	return s
-}
-
-func Connect(parentCtx cctx.CancelCtx, raw *itun.RawConn, cfg *Client) (s *Conn) {
-	ctx := cctx.WithTimeout(parentCtx, time.Second*15)
-	defer ctx.Cancel(nil)
-
-	s = connect(ctx, raw, cfg)
-	if err := ctx.Err(); err != nil && !errors.Is(err, context.Canceled) {
-		parentCtx.Cancel(err)
-	}
-	return s
-}
-
-func accept(ctx cctx.CancelCtx, raw *itun.RawConn, cfg *Server, tcpHandshakeTimeout time.Duration) (conn *Conn) {
-	tcp := AcceptTCP(ctx, raw, tcpHandshakeTimeout)
-	if err := ctx.Err(); err != nil {
+func Accept(ctx cctx.CancelCtx, raw *itun.RawConn, cfg *Server) (conn *Conn) {
+	tcp, err := ustack.AcceptNoFinTCP(ctx, raw, cfg.HandShakeTimeout)
+	if err != nil {
 		ctx.Cancel(err)
 		return nil
 	}
@@ -52,6 +21,7 @@ func accept(ctx cctx.CancelCtx, raw *itun.RawConn, cfg *Server, tcpHandshakeTime
 
 	conn = &Conn{
 		raw:   raw,
+		id:    "server",
 		state: handshake,
 	}
 
@@ -76,13 +46,14 @@ func accept(ctx cctx.CancelCtx, raw *itun.RawConn, cfg *Server, tcpHandshakeTime
 		}
 	}
 
+	// NO-FIN close
 	if err := tcp.Close(); err != nil {
 		ctx.Cancel(err)
 		return nil
 	}
 
 	seq, ack := tcp.SeqAck()
-	conn.fake = fake.NewFakeTCP(
+	conn.fake = faketcp.NewFakeTCP(
 		raw.LocalAddr().Port,
 		raw.RemoteAddr().Port,
 		seq, ack, conn.crypter == nil,
@@ -96,15 +67,15 @@ func accept(ctx cctx.CancelCtx, raw *itun.RawConn, cfg *Server, tcpHandshakeTime
 	return conn
 }
 
-func connect(ctx cctx.CancelCtx, raw *itun.RawConn, cfg *Client) (conn *Conn) {
-	tcp := ConnectTCP(ctx, raw)
-	if err := ctx.Err(); err != nil {
+func Connect(ctx cctx.CancelCtx, raw *itun.RawConn, cfg *Client) (conn *Conn) {
+	tcp, err := ustack.ConnectNoFinTCP(ctx, raw, cfg.HandShakeTimeout)
+	if err != nil {
 		ctx.Cancel(err)
 		return nil
 	}
 	defer tcp.Close()
 
-	conn = &Conn{raw: raw, state: handshake}
+	conn = &Conn{raw: raw, id: "clinet", state: handshake}
 
 	// previous packets
 	cfg.PrevPackets.Client(ctx, tcp)
@@ -127,13 +98,14 @@ func connect(ctx cctx.CancelCtx, raw *itun.RawConn, cfg *Client) (conn *Conn) {
 		}
 	}
 
+	// NO-FIN close
 	if err := tcp.Close(); err != nil {
 		ctx.Cancel(err)
 		return nil
 	}
 
 	seq, ack := tcp.SeqAck()
-	conn.fake = fake.NewFakeTCP(
+	conn.fake = faketcp.NewFakeTCP(
 		raw.LocalAddr().Port,
 		raw.RemoteAddr().Port,
 		seq, ack, conn.crypter == nil,

@@ -5,19 +5,21 @@ import (
 	"fmt"
 
 	"github.com/lysShub/itun"
-	"github.com/lysShub/itun/fake"
 	"github.com/lysShub/itun/sconn/crypto"
 	"github.com/lysShub/itun/segment"
+	"github.com/lysShub/itun/ustack/faketcp"
 
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
+// security datagram conn (fake tcp connn)
 type Conn struct {
 	raw *itun.RawConn
+	id  string
 
 	state state // todo: atomic
 
-	fake *fake.FakeTCP
+	fake *faketcp.FakeTCP
 
 	crypter *crypto.TCPCrypt
 
@@ -38,7 +40,7 @@ const (
 	closeing
 )
 
-const tinyCntLimit = 4 // todo: to config
+const tinyCntLimit = 8 // todo: to config
 
 type ErrManyInvalidSizeSegment int
 
@@ -54,7 +56,7 @@ func (e ErrManyDecryptFailSegment) Error() string {
 
 func (s *Conn) RecvSeg(ctx context.Context, seg *segment.Segment) (err error) {
 	if s.tinyCnt > tinyCntLimit {
-		return err
+		return s.tinyCntErr
 	}
 	oldH, oldN := seg.Head(), seg.Len()
 

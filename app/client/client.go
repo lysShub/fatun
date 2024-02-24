@@ -2,9 +2,9 @@ package client
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/netip"
-	"time"
 
 	"github.com/lysShub/itun"
 	"github.com/lysShub/itun/cctx"
@@ -28,8 +28,7 @@ type Client struct {
 
 	conn *sconn.Conn
 
-	ctrRaw control.CtrInject
-	ctr    *control.Client
+	ctr control.Client
 }
 
 func NewClient(ctx context.Context, raw relraw.RawConn, cfg *Config) (*Client, error) {
@@ -39,37 +38,26 @@ func NewClient(ctx context.Context, raw relraw.RawConn, cfg *Config) (*Client, e
 		addr: raw.LocalAddrPort(),
 	}
 
-	if err := c.connect(raw); err != nil {
+	conn := itun.WrapRawConn(raw, c.cfg.MTU)
+	c.conn = sconn.Connect(c.ctx, conn, &c.cfg.Sconn)
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 
-	go c.downlink()
+	ctr, err := control.NewController(conn.LocalAddrPort(), conn.RemoteAddrPort(), conn.MTU())
+	if err != nil {
+		return nil, err
+	}
+
+	go ctr.OutboundService(c.ctx, c.conn)
+	go c.downlink(ctr)
+
+	c.ctr = control.Dial(c.ctx, ctr)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	return c, nil
-}
-
-func (c *Client) connect(raw relraw.RawConn) error {
-	ctx := cctx.WithTimeout(c.ctx, time.Second*10) // todo: from cfg
-	defer ctx.Cancel(nil)
-
-	conn := itun.WrapRawConn(raw, c.cfg.MTU)
-
-	c.conn = sconn.Connect(ctx, conn, &c.cfg.Sconn)
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-
-	c.ctr, c.ctrRaw = control.NewClient(ctx, time.Hour, c.conn)
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-
-	go c.downlink()
-
-	// todo: client 需要传入ctx
-	// init config
-	c.ctr.EndConfig()
-
-	return nil
 }
 
 func (c *Client) AddProxy(s itun.Session) error {
@@ -83,7 +71,7 @@ func (c *Client) AddProxy(s itun.Session) error {
 
 	switch s.Proto {
 	case itun.TCP:
-		id, err := c.ctr.AddTCP(s.DstAddr)
+		id, err := c.ctr.AddTCP(c.ctx, s.DstAddr)
 		if err != nil {
 			return err
 		}
@@ -93,7 +81,7 @@ func (c *Client) AddProxy(s itun.Session) error {
 	}
 }
 
-func (c *Client) downlink() {
+func (c *Client) downlink(ctrSessionInbound *control.Controller) {
 	n := c.conn.Raw().MTU()
 
 	var seg = segment.NewSegment(n)
@@ -106,18 +94,23 @@ func (c *Client) downlink() {
 		}
 
 		if id := seg.ID(); id == segment.CtrSegID {
-			c.ctrRaw.Inject(seg)
+			ctrSessionInbound.Inbound(seg)
 		} else {
 			s := c.sessionMgr.Get(id)
 			if s != nil {
 				s.Inject(seg)
 			} else {
-				fmt.Println("回复了没有注册的")
+				// todo: log reply without registed
 			}
 		}
 	}
 }
 
 func (c *Client) Close() error {
-	return nil
+	err := errors.Join(
+		c.ctr.Close(),
+		c.conn.Close(),
+	)
+
+	return err
 }

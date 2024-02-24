@@ -55,18 +55,17 @@ func Test_Sconn(t *testing.T) {
 			pps:    PrevPackets{},
 			client: &NotCryptoClient{},
 			server: &NotCryptoServer{},
-			data:   []byte("0123456789abcdef"),
+			data:   []byte("0123456789"),
 		},
 		{
 			pps:    pps,
 			client: &TokenClient{Tokener: &tkClient{}},
 			server: &TokenServer{Valider: &tkServer{}},
-			data:   []byte("0123456789abcdef"),
+			data:   []byte("0123456789"),
 		},
 	}
 
 	for _, s := range suit {
-
 		var craw, sraw = func() (*itun.RawConn, *itun.RawConn) {
 			c, s := test.NewMockRaw(
 				t, header.TCPProtocolNumber,
@@ -80,13 +79,14 @@ func Test_Sconn(t *testing.T) {
 		go func() {
 			cfg := Server{
 				BaseConfig: BaseConfig{
-					PrevPackets: pps,
+					PrevPackets:      pps,
+					HandShakeTimeout: time.Second * 3,
 				},
 				SwapKey: s.server,
 			}
 
-			ctx := cctx.WithTimeout(context.Background(), time.Second*10)
-			sconn := Accept(ctx, time.Second*5, sraw, &cfg)
+			ctx := cctx.WithContext(context.Background())
+			sconn := Accept(ctx, sraw, &cfg)
 			require.NoError(t, ctx.Err())
 			defer sconn.Close()
 
@@ -107,7 +107,8 @@ func Test_Sconn(t *testing.T) {
 		// client
 		cfg := Client{
 			BaseConfig: BaseConfig{
-				PrevPackets: pps,
+				PrevPackets:      pps,
+				HandShakeTimeout: time.Second * 3,
 			},
 			SwapKey: s.client,
 		}
@@ -118,7 +119,9 @@ func Test_Sconn(t *testing.T) {
 		defer sconn.Close()
 
 		if len(s.data) > 0 {
-			seg := segment.FromData(s.data)
+			seg := segment.NewSegment(1536)
+			n := copy(seg.Data(), s.data)
+			seg.SetLen(n)
 			seg.SetID(1)
 
 			err := sconn.SendSeg(ctx, seg)

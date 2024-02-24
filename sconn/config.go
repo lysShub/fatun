@@ -2,8 +2,10 @@ package sconn
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"net"
+	"time"
 
 	"github.com/lysShub/itun/cctx"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -11,11 +13,18 @@ import (
 
 type PrevPackets []header.TCP
 
+type ErrPrevPacketInvalid int
+
+func (e ErrPrevPacketInvalid) Error() string {
+	return fmt.Sprintf("previous pakcet %d is invalid", e)
+}
+
 type BaseConfig struct {
 	// client set first tcp packet, server recv and check it, then replay
 	// second tcp packet, etc.
 	PrevPackets PrevPackets //todo: support mutiple data set
 
+	HandShakeTimeout time.Duration
 }
 
 type Client struct {

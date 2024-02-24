@@ -1,4 +1,4 @@
-package link_test
+package nofin_test
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lysShub/itun/fake/link"
+	"github.com/lysShub/itun/ustack/link/nofin"
 
 	"github.com/stretchr/testify/require"
 	"gvisor.dev/gvisor/pkg/buffer"
@@ -23,10 +23,10 @@ import (
 func Test_Custom_Network_Stack(t *testing.T) {
 
 	// user stack
-	var cconn, sconn, links = func() (net.Conn, net.Conn, []*link.Endpoint) {
+	var cconn, sconn, links = func() (net.Conn, net.Conn, []*nofin.Endpoint) {
 		var (
 			cconn, sconn net.Conn
-			links        []*link.Endpoint
+			links        []*nofin.Endpoint
 		)
 
 		var (
@@ -42,7 +42,7 @@ func Test_Custom_Network_Stack(t *testing.T) {
 				TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol},
 				// HandleLocal:        true,
 			})
-			l := link.New(4, uint32(1500))
+			l := nofin.New(4, uint32(1500))
 			require.Nil(t, s.CreateNIC(nic, l))
 			s.AddProtocolAddress(nic, tcpip.ProtocolAddress{
 				Protocol: header.IPv4ProtocolNumber,
@@ -59,7 +59,7 @@ func Test_Custom_Network_Stack(t *testing.T) {
 			links = append(links, l)
 		}
 
-		var linkUnicom = func(a, b *link.Endpoint) {
+		var linkUnicom = func(a, b *nofin.Endpoint) {
 			for {
 				pkb := a.ReadContext(context.Background())
 				if pkb.IsNil() {

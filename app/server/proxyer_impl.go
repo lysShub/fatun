@@ -15,7 +15,7 @@ type proxyerImpl proxyer
 
 type proxyerImplPtr = *proxyerImpl
 
-var _ control.CtrServer = (proxyerImplPtr)(nil)
+var _ control.SrvHandler = (proxyerImplPtr)(nil)
 
 func (pi *proxyerImpl) IPv6() bool {
 	return false

@@ -3,7 +3,6 @@ package control
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/netip"
 	"testing"
 	"time"
@@ -17,26 +16,25 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
-func TestXxx(t *testing.T) {
-
-	c, s := Sconns(t)
-
-	t.Log(c, s)
-}
-
 func Test_Control(t *testing.T) {
+	var (
+		caddr = netip.AddrPortFrom(test.LocIP, test.RandPort())
+		saddr = netip.AddrPortFrom(test.LocIP, test.RandPort())
+	)
 	parentCtx := cctx.WithContext(context.Background())
-	c, s := Sconns(t)
-	t.Log("start")
+	c, s := CreateSconns(t, caddr, saddr)
 
-	{ // server
+	// server
+	go func() {
 		ctx := cctx.WithContext(parentCtx)
 
-		raw := Serve(ctx, time.Hour, time.Hour, s, &mockServer{})
+		ctr, err := NewController(saddr, caddr, s.Raw().MTU())
+		require.NoError(t, err)
+		defer ctr.close()
 
+		go ctr.OutboundService(ctx, s)
 		go func() {
 			seg := segment.NewSegment(1536)
-
 			for {
 				seg.Sets(0, 1536)
 				err := s.RecvSeg(ctx, seg)
@@ -45,38 +43,24 @@ func Test_Control(t *testing.T) {
 				}
 				require.NoError(t, err)
 
-				pkg := seg.Packet()
-				pkg.SetHead(pkg.Head() + segment.HdrSize)
-
-				{
-					tcphdr := header.TCP(pkg.Data())
-					fmt.Printf(
-						"%s %d-->%d	%s\n",
-						"server recv",
-						tcphdr.SourcePort(), tcphdr.DestinationPort(),
-						tcphdr.Flags(),
-					)
-
-				}
-
-				raw.Inject(pkg)
+				ctr.Inbound(seg)
 			}
 		}()
-	}
+
+		Serve(ctx, ctr, &mockServer{})
+	}()
 
 	// client
 	{
 		ctx := cctx.WithContext(parentCtx)
 
-		var raw CtrInject
-		{
-			raw = newUserStack(ctx, client, c)
-			require.NoError(t, ctx.Err())
-		}
+		ctr, err := NewController(caddr, saddr, c.Raw().MTU())
+		require.NoError(t, err)
+		defer ctr.close()
 
+		go ctr.OutboundService(ctx, c)
 		go func() {
 			seg := segment.NewSegment(1536)
-
 			for {
 				seg.Sets(0, 1536)
 				err := c.RecvSeg(ctx, seg)
@@ -85,51 +69,25 @@ func Test_Control(t *testing.T) {
 				}
 				require.NoError(t, err)
 
-				pkg := seg.Packet()
-				pkg.SetHead(pkg.Head() + segment.HdrSize)
-
-				{
-					tcphdr := header.TCP(pkg.Data())
-					fmt.Printf(
-						"%s %d-->%d	%s\n",
-						"client recv",
-						tcphdr.SourcePort(), tcphdr.DestinationPort(),
-						tcphdr.Flags(),
-					)
-				}
-
-				raw.Inject(pkg)
+				ctr.Inbound(seg)
 			}
 		}()
 
-		// todo: 不对, NewClient阻塞， 只有先启动协程才可能完成
-		var ct *Client
-		{
-			tcp := connect(
-				ctx, time.Hour, raw.(*Ustack),
-				c.Raw().LocalAddr(), c.Raw().RemoteAddr(),
-			)
-			require.NoError(t, ctx.Err())
+		client := Dial(ctx, ctr)
+		require.NoError(t, ctx.Err())
+		defer client.Close()
 
-			ct = newClient(ctx, tcp)
-
-			// ct, raw := NewClient(ctx, time.Hour, c)
-			// e := ctx.Err().Error()
-			// require.Empty(t, e)
-		}
-
-		ipv6 := ct.IPv6()
-
-		t.Log(ipv6)
+		ipv6, err := client.IPv6(ctx)
+		require.NoError(t, err)
+		require.True(t, ipv6)
 	}
-
 }
 
-func Sconns(t require.TestingT) (c, s *sconn.Conn) {
-	var (
-		caddr = netip.AddrPortFrom(test.LocIP, test.RandPort())
-		saddr = netip.AddrPortFrom(test.LocIP, test.RandPort())
-	)
+func Test_Control_Close(t *testing.T) {
+	t.Skip("todo")
+}
+
+func CreateSconns(t require.TestingT, caddr, saddr netip.AddrPort) (c, s *sconn.Conn) {
 	var craw, sraw = func() (*itun.RawConn, *itun.RawConn) {
 		c, s := test.NewMockRaw(
 			t, header.TCPProtocolNumber,
@@ -145,18 +103,20 @@ func Sconns(t require.TestingT) (c, s *sconn.Conn) {
 	}
 
 	ctx := cctx.WithTimeout(context.Background(), time.Second*10)
+	defer ctx.Cancel(nil)
 	acceptCh := make(chan struct{})
 
 	go func() {
 		s = func() *sconn.Conn {
 			cfg := sconn.Server{
 				BaseConfig: sconn.BaseConfig{
-					PrevPackets: pps,
+					PrevPackets:      pps,
+					HandShakeTimeout: time.Hour,
 				},
 				SwapKey: &sconn.NotCryptoServer{},
 			}
 
-			sconn := sconn.Accept(ctx, time.Hour, sraw, &cfg)
+			sconn := sconn.Accept(ctx, sraw, &cfg)
 			require.NoError(t, ctx.Err())
 
 			return sconn
@@ -167,7 +127,8 @@ func Sconns(t require.TestingT) (c, s *sconn.Conn) {
 	c = func() *sconn.Conn {
 		cfg := sconn.Client{
 			BaseConfig: sconn.BaseConfig{
-				PrevPackets: pps,
+				PrevPackets:      pps,
+				HandShakeTimeout: time.Hour,
 			},
 			SwapKey: &sconn.NotCryptoClient{},
 		}
@@ -187,9 +148,11 @@ type mockServer struct {
 	InitedCfg bool
 }
 
-var _ CtrServer = (*mockServer)(nil)
+var _ SrvHandler = (*mockServer)(nil)
 
-func (h *mockServer) IPv6() bool { return true }
+func (h *mockServer) IPv6() bool {
+	return true
+}
 func (h *mockServer) EndConfig() {
 	h.InitedCfg = true
 }

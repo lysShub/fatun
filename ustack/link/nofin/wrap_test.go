@@ -1,4 +1,4 @@
-package link
+package nofin
 
 import (
 	"math/rand"
