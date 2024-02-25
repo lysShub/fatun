@@ -4,8 +4,6 @@ import (
 	"context"
 	"sync/atomic"
 
-	"github.com/lysShub/itun/ustack/link"
-
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
@@ -17,9 +15,6 @@ type Endpoint struct {
 
 	seq, ack atomic.Uint32
 }
-
-var _ link.LinkEndpoint = (*Endpoint)(nil)
-var _ link.LinkEndpoint = (*channel.Endpoint)(nil)
 
 func (e *Endpoint) setSeq(seq uint32) {
 	if seq > e.seq.Load() {

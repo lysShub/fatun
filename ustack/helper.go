@@ -78,22 +78,24 @@ func newTcpStack(ctx cctx.CancelCtx, raw *itun.RawConn, id string) *TCP {
 	return t
 }
 
+func (t *TCP) destroy() {
+	t.stack.Destroy()
+	t.link.Close()
+}
+
 func (t *TCP) Close() error {
 	if !t.closed.CompareAndSwap(false, true) {
 		return nil // closed
 	}
+	defer t.destroy()
 
 	err := t.Conn.Close()
-
-	err = errors.Join(
-		err,
-		t.stack.Close(),
-	)
-	t.link.Close()
 
 	if e := t.ctx.Err(); e != nil {
 		err = errors.Join(err, e) // cancel/exceed
 	} else {
+		err = errors.Join(err, WaitTCPClose(t.Conn))
+
 		t.ctx.Cancel(nil)
 	}
 

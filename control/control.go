@@ -78,12 +78,11 @@ func (c *Controller) Inbound(seg *segment.Segment) {
 	c.stack.Inbound(seg.Packet())
 }
 
-func (c *Controller) close() error {
+func (c *Controller) Destroy() {
 	if !c.closed.CompareAndSwap(false, true) {
-		return nil
+		return
 	}
 
-	err := c.stack.Close()
+	c.stack.Destroy()
 	c.link.Close()
-	return err
 }

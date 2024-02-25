@@ -1,6 +1,8 @@
 package nofin
 
-import "gvisor.dev/gvisor/pkg/tcpip/link/channel"
+import (
+	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
+)
 
 // implement link.LinkEndpoint, the link endpoint can close
 // tcp connection without FIN flag, replace by 104 bit

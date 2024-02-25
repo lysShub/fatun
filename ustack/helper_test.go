@@ -2,6 +2,7 @@ package ustack
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand"
@@ -119,4 +120,42 @@ func Test_Ustack_TCP_Close(t *testing.T) {
 
 	msg := fmt.Sprintf("%d->%d->%d", initNum, runNum, closedNum)
 	require.Equal(t, initNum, closedNum, msg)
+}
+
+func Test_Read_TCP_Client_Close(t *testing.T) {
+	var (
+		caddr = netip.AddrPortFrom(test.LocIP, test.RandPort())
+		saddr = netip.AddrPortFrom(test.LocIP, test.RandPort())
+	)
+	c, s := test.NewMockRaw(
+		t, header.TCPProtocolNumber,
+		caddr, saddr,
+		test.ValidAddr, test.ValidChecksum,
+	)
+
+	// client
+	go func() {
+		tcp, err := ConnectNoFinTCP(context.Background(), itun.WrapRawConn(c, 1536), time.Second)
+		require.NoError(t, err)
+
+		_, err = tcp.Write([]byte("hello"))
+		require.NoError(t, err)
+		err = tcp.Close()
+		require.NoError(t, err)
+	}()
+
+	tcp, err := AcceptNoFinTCP(context.Background(), itun.WrapRawConn(s, 1536), time.Second)
+	require.NoError(t, err)
+	defer tcp.Close()
+
+	var b = make([]byte, 64)
+
+	n, err := tcp.Read(b)
+	require.NoError(t, err)
+	require.Equal(t, "hello", string(b[:n]))
+
+	time.Sleep(time.Second)
+	n, err = tcp.Read(b)
+	require.True(t, errors.Is(err, io.EOF))
+	require.Zero(t, n)
 }

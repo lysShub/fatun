@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -281,8 +280,8 @@ func (l *listenerWrap) Addr() net.Addr {
 
 type connWrap struct {
 	net.Conn
-	closed  chan struct{}
-	closeMu sync.RWMutex
+	closed chan struct{}
+	// closeMu sync.RWMutex
 }
 
 func wrapConn(conn net.Conn) *connWrap {
@@ -293,8 +292,8 @@ func wrapConn(conn net.Conn) *connWrap {
 }
 
 func (c *connWrap) Close() (err error) {
-	c.closeMu.Lock()
-	defer c.closeMu.Unlock()
+	// c.closeMu.Lock()
+	// defer c.closeMu.Unlock()
 
 	select {
 	case <-c.closed:

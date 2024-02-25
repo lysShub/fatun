@@ -71,7 +71,6 @@ func NewUstack(
 		HandleLocal:        false,
 	})
 
-	const nicid tcpip.NICID = 1234
 	if err := u.stack.CreateNIC(nicid, link); err != nil {
 		return nil, errors.New(err.String())
 	}
@@ -86,6 +85,8 @@ func NewUstack(
 
 	return u, nil
 }
+
+const nicid tcpip.NICID = 1234
 
 func (u *Ustack) SetID(id string) { u.id = id }
 func (u *Ustack) ID() string      { return u.id }
@@ -183,7 +184,28 @@ func (u *Ustack) Connect(ctx cctx.CancelCtx, handshakeTimeout time.Duration) (co
 	return conn
 }
 
-func (s *Ustack) Close() error {
-	s.stack.Close()
-	return nil
+// Destroy destroy user stack, avoid goroutine leak, ensure call after
+// connect closed
+func (s *Ustack) Destroy() {
+	s.stack.Destroy()
+}
+
+func WaitTCPClose(conn net.Conn) error {
+	err := conn.SetReadDeadline(time.Now().Add(time.Second * 3))
+	if err == nil {
+		_, e := conn.Read([]byte{})
+		if errors.Is(e, io.EOF) {
+		} else if errors.Is(e, os.ErrDeadlineExceeded) {
+			err = errors.Join(err, errors.New("close connection timeout"))
+		} else {
+			err = errors.Join(err, e)
+		}
+	} else if errors.Is(err, io.EOF) {
+		err = nil
+	}
+
+	if err == nil {
+		time.Sleep(time.Second) // todo: really need this?
+	}
+	return err
 }

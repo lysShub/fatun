@@ -28,7 +28,7 @@ type Client struct {
 
 	conn *sconn.Conn
 
-	ctr control.Client
+	ctr control.Client2
 }
 
 func NewClient(ctx context.Context, raw relraw.RawConn, cfg *Config) (*Client, error) {
@@ -71,11 +71,13 @@ func (c *Client) AddProxy(s itun.Session) error {
 
 	switch s.Proto {
 	case itun.TCP:
-		id, err := c.ctr.AddTCP(c.ctx, s.DstAddr)
+		resp, err := c.ctr.AddTCP(s.DstAddr)
 		if err != nil {
 			return err
+		} else if resp.Err != nil {
+			panic(err)
 		}
-		return c.sessionMgr.Add(s, id)
+		return c.sessionMgr.Add(s, resp.ID)
 	default:
 		panic("impossible")
 	}
