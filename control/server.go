@@ -29,31 +29,9 @@ func Serve(ctx cctx.CancelCtx, ctr *Controller, hander SrvHandler) {
 		return
 	}
 
-	// serveGrpc(ctx, ctr, tcp, hander)
-
 	srv := newGobServer(tcp, hander)
 	srv.Serve(ctx)
 }
-
-/*
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
- */
 
 type gobServer struct {
 	hdr SrvHandler

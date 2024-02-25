@@ -28,7 +28,7 @@ type Client struct {
 
 	conn *sconn.Conn
 
-	ctr control.Client2
+	ctr control.Client
 }
 
 func NewClient(ctx context.Context, raw relraw.RawConn, cfg *Config) (*Client, error) {

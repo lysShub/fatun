@@ -1,7 +1,6 @@
 package control
 
 import (
-	"context"
 	"encoding/gob"
 	"errors"
 	"net"
@@ -15,19 +14,6 @@ import (
 type Client interface {
 	Close() error
 
-	IPv6(ctx context.Context) (bool, error)
-	EndConfig(ctx context.Context) error
-	AddTCP(ctx context.Context, addr netip.AddrPort) (uint16, error)
-	DelTCP(ctx context.Context, id uint16) error
-	AddUDP(ctx context.Context, addr netip.AddrPort) (uint16, error)
-	DelUDP(ctx context.Context, id uint16) error
-	PackLoss(ctx context.Context) (float32, error)
-	Ping(ctx context.Context) error
-}
-
-type Client2 interface {
-	Close() error
-
 	IPv6() (bool, error)
 	EndConfig() error
 	AddTCP(addr netip.AddrPort) (*AddTCP, error)
@@ -38,34 +24,15 @@ type Client2 interface {
 	Ping() error
 }
 
-func Dial(ctx cctx.CancelCtx, ctr *Controller) Client2 {
+func Dial(ctx cctx.CancelCtx, ctr *Controller) Client {
 	tcp := ctr.stack.Connect(ctx, ctr.handshakeTimeout)
 	if ctx.Err() != nil {
 		return nil
 	}
 
-	// return newGrpcClient(ctx, ctr, tcp, ctr.handshakeTimeout*3) // todo: from cfg
-
 	return newGobClient(ctx, tcp)
 
 }
-
-/*
-
-
-
-
-
-
-
-
-
-
-
-
-
-
- */
 
 type gobClient struct {
 	ctx cctx.CancelCtx
@@ -85,7 +52,7 @@ func newGobClient(parentCtx cctx.CancelCtx, tcp net.Conn) *gobClient {
 	}
 }
 
-var _ Client2 = (*gobClient)(nil)
+var _ Client = (*gobClient)(nil)
 
 func (c *gobClient) Close() error {
 	err := c.conn.Close()
