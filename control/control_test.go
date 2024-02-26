@@ -104,7 +104,7 @@ func Test_Control_Client_Close(t *testing.T) {
 
 		ctr, err := NewController(saddr, caddr, s.Raw().MTU())
 		require.NoError(t, err)
-		defer ctr.Destroy()
+		// defer ctr.Destroy()
 
 		go func() {
 			ctr.OutboundService(ctx, s)
@@ -124,11 +124,9 @@ func Test_Control_Client_Close(t *testing.T) {
 					return
 				}
 
-				{
-					tcp := header.TCP(seg.Data()[2:])
-					if tcp.Flags().Contains(header.TCPFlagFin) {
-						recvFin = true
-					}
+				if header.TCP(seg.Data()[segment.HdrSize:]).
+					Flags().Contains(header.TCPFlagFin) {
+					recvFin = true
 				}
 
 				require.NoError(t, err)
@@ -149,8 +147,6 @@ func Test_Control_Client_Close(t *testing.T) {
 
 		ctr, err := NewController(caddr, saddr, c.Raw().MTU())
 		require.NoError(t, err)
-		defer ctr.Destroy()
-
 		go func() {
 			ctr.OutboundService(ctx, c)
 			rets = append(rets, 4)
@@ -187,7 +183,7 @@ func Test_Control_Client_Close(t *testing.T) {
 		rets = append(rets, 6)
 	}()
 
-	time.Sleep(time.Second * 10)
+	time.Sleep(time.Second * 5)
 	endNum := runtime.NumGoroutine()
 
 	require.Equal(t, 6, len(rets), rets)

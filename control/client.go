@@ -5,10 +5,11 @@ import (
 	"errors"
 	"net"
 	"net/netip"
+	"time"
 
 	"github.com/lysShub/itun/cctx"
 	"github.com/lysShub/itun/control/internal"
-	"github.com/lysShub/itun/ustack"
+	"github.com/lysShub/itun/ustack/link"
 )
 
 type Client interface {
@@ -30,12 +31,12 @@ func Dial(ctx cctx.CancelCtx, ctr *Controller) Client {
 		return nil
 	}
 
-	return newGobClient(ctx, tcp)
-
+	return newGobClient(ctx, ctr, tcp)
 }
 
 type gobClient struct {
 	ctx cctx.CancelCtx
+	ctr *Controller
 
 	conn net.Conn
 
@@ -43,9 +44,10 @@ type gobClient struct {
 	dec *gob.Decoder
 }
 
-func newGobClient(parentCtx cctx.CancelCtx, tcp net.Conn) *gobClient {
+func newGobClient(parentCtx cctx.CancelCtx, ctr *Controller, tcp net.Conn) *gobClient {
 	return &gobClient{
 		ctx:  parentCtx,
+		ctr:  ctr,
 		conn: tcp,
 		enc:  gob.NewEncoder(tcp),
 		dec:  gob.NewDecoder(tcp),
@@ -54,15 +56,24 @@ func newGobClient(parentCtx cctx.CancelCtx, tcp net.Conn) *gobClient {
 
 var _ Client = (*gobClient)(nil)
 
-func (c *gobClient) Close() error {
-	err := c.conn.Close()
+func (c *gobClient) Close() (err error) {
+	select {
+	case <-c.ctx.Done():
+		err = c.ctx.Err()
+	default:
+		err = c.conn.Close()
+		select {
+		case <-c.ctr.stack.Closed():
+		case <-time.After(time.Second * 3):
+			err = errors.Join(err, link.ErrTCPCloseTimeout{})
+		}
 
-	err = errors.Join(
-		err,
-		ustack.WaitTCPClose(c.conn),
-	)
+		c.ctx.Cancel(nil)
+		// todo: wait downlink/OutboundService return
 
-	c.ctx.Cancel(nil)
+	}
+
+	c.ctr.Destroy()
 	return err
 }
 

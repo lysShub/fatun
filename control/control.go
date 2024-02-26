@@ -9,13 +9,13 @@ import (
 	"github.com/lysShub/itun/sconn"
 	"github.com/lysShub/itun/segment"
 	"github.com/lysShub/itun/ustack"
+	"github.com/lysShub/itun/ustack/link/channel"
 	"github.com/lysShub/relraw"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
-	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 )
 
 type Controller struct {
-	link  *channel.Endpoint
+	link  *channel.Endpoint // todo: link store in Ustack
 	stack *ustack.Ustack
 
 	handshakeTimeout time.Duration

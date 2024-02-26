@@ -183,28 +183,12 @@ func (u *Ustack) Connect(ctx cctx.CancelCtx, handshakeTimeout time.Duration) (co
 	return conn
 }
 
+func (s *Ustack) Closed() <-chan struct{} {
+	return s.link.FinRstFlag()
+}
+
 // Destroy destroy user stack, avoid goroutine leak, ensure call after
 // connect closed
 func (s *Ustack) Destroy() {
 	s.stack.Destroy()
-}
-
-func WaitTCPClose(conn net.Conn) error {
-	err := conn.SetReadDeadline(time.Now().Add(time.Second * 3))
-	if err == nil {
-		_, e := conn.Read([]byte{})
-		if errors.Is(e, io.EOF) {
-		} else if errors.Is(e, os.ErrDeadlineExceeded) {
-			err = errors.Join(err, errors.New("close connection timeout"))
-		} else {
-			err = errors.Join(err, e)
-		}
-	} else if errors.Is(err, io.EOF) {
-		err = nil
-	}
-
-	if err == nil {
-		time.Sleep(time.Second) // todo: really need this?
-	}
-	return err
 }

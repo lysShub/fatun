@@ -5,10 +5,11 @@ import (
 	"errors"
 	"net"
 	"net/netip"
+	"time"
 
 	"github.com/lysShub/itun/cctx"
 	"github.com/lysShub/itun/control/internal"
-	"github.com/lysShub/itun/ustack"
+	"github.com/lysShub/itun/ustack/link"
 	pkge "github.com/pkg/errors"
 )
 
@@ -29,11 +30,13 @@ func Serve(ctx cctx.CancelCtx, ctr *Controller, hander SrvHandler) {
 		return
 	}
 
-	srv := newGobServer(tcp, hander)
+	srv := newGobServer(ctx, ctr, tcp, hander)
 	srv.Serve(ctx)
 }
 
 type gobServer struct {
+	ctx cctx.CancelCtx
+	ctr *Controller
 	hdr SrvHandler
 
 	conn net.Conn
@@ -42,8 +45,10 @@ type gobServer struct {
 	dec *gob.Decoder
 }
 
-func newGobServer(tcp net.Conn, hdr SrvHandler) *gobServer {
+func newGobServer(ctx cctx.CancelCtx, ctr *Controller, tcp net.Conn, hdr SrvHandler) *gobServer {
 	var s = &gobServer{
+		ctx:  ctx,
+		ctr:  ctr,
 		hdr:  hdr,
 		conn: tcp,
 		enc:  gob.NewEncoder(tcp),
@@ -91,20 +96,33 @@ func (s *gobServer) Serve(ctx cctx.CancelCtx) {
 		}
 
 		if err != nil {
-			err = errors.Join(
-				err,
-				s.conn.Close(),
-			)
-
-			err = errors.Join(
-				err,
-				ustack.WaitTCPClose(s.conn),
-			)
-
-			ctx.Cancel(err)
+			s.abort(err)
 			return
 		}
 	}
+}
+
+func (s *gobServer) abort(err error) {
+	select {
+	case <-s.ctx.Done():
+	default:
+		err = errors.Join(
+			err,
+
+			// todo: this case, usual can't close
+			s.conn.Close(),
+		)
+
+		select {
+		case <-s.ctr.stack.Closed():
+		case <-time.After(time.Second * 3):
+			err = errors.Join(err, link.ErrTCPCloseTimeout{})
+		}
+
+		s.ctx.Cancel(pkge.WithStack(err))
+	}
+
+	s.ctr.Destroy()
 }
 
 func (s *gobServer) nextType() (t internal.CtrType, err error) {

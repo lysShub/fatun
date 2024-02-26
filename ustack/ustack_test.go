@@ -9,11 +9,11 @@ import (
 	"time"
 
 	"github.com/lysShub/itun/cctx"
+	"github.com/lysShub/itun/ustack/link/channel"
 	"github.com/lysShub/relraw"
 	"github.com/lysShub/relraw/test"
 	"github.com/stretchr/testify/require"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
-	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 )
 
 func Test_Ustack(t *testing.T) {
@@ -32,6 +32,7 @@ func Test_Ustack(t *testing.T) {
 	)
 
 	// server
+	srvRet := make(chan struct{})
 	go func() {
 		ctx := cctx.WithContext(context.Background())
 		link := channel.New(4, 1536, "")
@@ -40,7 +41,6 @@ func Test_Ustack(t *testing.T) {
 
 		go func() {
 			p := relraw.NewPacket(0, 1536)
-
 			for {
 				p.Sets(0, 1536)
 
@@ -53,10 +53,8 @@ func Test_Ustack(t *testing.T) {
 		}()
 		go func() {
 			p := relraw.NewPacket(0, 1536)
-
 			for {
 				p.Sets(0, 1536)
-
 				err := ss.Outbound(ctx, p)
 				require.NoError(t, err)
 
@@ -66,8 +64,11 @@ func Test_Ustack(t *testing.T) {
 		}()
 
 		conn := ss.Accept(ctx, time.Second)
+		require.NoError(t, ctx.Err())
 
-		io.Copy(conn, conn)
+		_, err = io.Copy(conn, conn)
+		require.NoError(t, err)
+		close(srvRet)
 	}()
 
 	{ // client
@@ -79,10 +80,8 @@ func Test_Ustack(t *testing.T) {
 
 		go func() {
 			p := relraw.NewPacket(0, 1536)
-
 			for {
 				p.Sets(0, 1536)
-
 				err := c.ReadCtx(ctx, p)
 				require.NoError(t, err)
 
@@ -92,10 +91,8 @@ func Test_Ustack(t *testing.T) {
 		}()
 		go func() {
 			p := relraw.NewPacket(0, 1536)
-
 			for {
 				p.Sets(0, 1536)
-
 				err := cs.Outbound(ctx, p)
 				require.NoError(t, err)
 
@@ -105,6 +102,7 @@ func Test_Ustack(t *testing.T) {
 		}()
 
 		conn := cs.Connect(ctx, time.Second)
+		require.NoError(t, ctx.Err())
 
 		for i := 0; i < 64; i++ {
 			var msg = make([]byte, r.Int31()%1024+1)
@@ -118,6 +116,16 @@ func Test_Ustack(t *testing.T) {
 			require.NoError(t, err)
 
 			require.Equal(t, string(msg), string(b), i)
+		}
+
+		err = conn.Close()
+		require.NoError(t, err)
+
+		select {
+		case <-srvRet:
+		case <-time.After(time.Second * 3):
+			t.Log("server return timeout")
+			t.FailNow()
 		}
 	}
 }

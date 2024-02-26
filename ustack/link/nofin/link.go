@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync/atomic"
 
+	"github.com/lysShub/itun/ustack/link"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
@@ -14,6 +15,18 @@ type Endpoint struct {
 	*channel.Endpoint
 
 	seq, ack atomic.Uint32
+	finRst   chan struct{}
+}
+
+var _ link.LinkEndpoint = (*Endpoint)(nil)
+
+// implement link.LinkEndpoint, the link endpoint can close
+// tcp connection without FIN flag, replace by 104 bit
+func New(size int, mtu uint32) *Endpoint {
+	return &Endpoint{
+		Endpoint: channel.New(size, mtu, ""),
+		finRst:   make(chan struct{}),
+	}
 }
 
 func (e *Endpoint) setSeq(seq uint32) {
@@ -30,105 +43,55 @@ func (e *Endpoint) SeqAck() (seq, ack uint32) {
 	return e.seq.Load(), e.ack.Load()
 }
 
+func (e *Endpoint) FinRstFlag() <-chan struct{} {
+	return e.finRst
+}
+
 // Read read gvisor's outboud ip packet
 func (e *Endpoint) ReadContext(ctx context.Context) stack.PacketBufferPtr {
-	pkt := e.Endpoint.ReadContext(ctx)
+	pkt := e.Endpoint.ReadContext(ctx) // avoid memcpy
 
-	if !pkt.IsNil() && pkt.TransportProtocolNumber == header.TCPProtocolNumber {
-		tcphdr := header.TCP(pkt.TransportHeader().Slice())
+	if !pkt.IsNil() {
 
-		e.setSeq(tcphdr.SequenceNumber())
-		EncodeCustomFIN(tcphdr)
+		link.HandleTCPHdr(pkt.AsSlices(), e.encode)
 	}
 
 	return pkt
 }
 
+func (e *Endpoint) encode(hdr header.TCP) (update bool) {
+	if hdr.Flags().Intersects(link.FlagFinRst) {
+		select {
+		case <-e.finRst:
+		default:
+			close(e.finRst)
+		}
+	}
+
+	update = EncodeCustomFin(hdr)
+	e.setSeq(hdr.SequenceNumber())
+	return
+}
+
 // Inject inject tcp packet to gvistor stack.
 func (e *Endpoint) InjectInbound(protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBufferPtr) {
-	ss := pkt.AsSlices() // avoid memcpy
-	if len(ss) == 1 {
-		var tcphdr header.TCP
-		switch header.IPVersion(ss[0]) {
-		case 4:
-			iphdr := header.IPv4(ss[0])
-			if iphdr.TransportProtocol() == header.TCPProtocolNumber {
-				tcphdr = iphdr.Payload()
-			}
-		case 6:
-			iphdr := header.IPv6(ss[0])
-			if iphdr.TransportProtocol() == header.TCPProtocolNumber {
-				tcphdr = iphdr.Payload()
-			}
-		default:
-		}
-		if len(tcphdr) > 0 {
-			DecodeCustomFIN(tcphdr)
-			e.setAck(tcphdr.SequenceNumber())
-		}
-	} else {
-		e.decodeSlices(ss, protocol)
-	}
+	ip := pkt.AsSlices() // avoid memcpy
+
+	link.HandleTCPHdr(ip, e.decode)
 
 	e.Endpoint.InjectInbound(protocol, pkt)
 }
 
-func (e *Endpoint) decodeSlices(bs [][]byte, proto tcpip.NetworkProtocolNumber) {
-	var trans tcpip.TransportProtocolNumber
-	var tcpIdx int
-	switch proto {
-	case header.IPv4ProtocolNumber:
-		tcpIdx = int(header.IPv4(bs[0]).HeaderLength())
-		if t, ok := getSlices(bs, 9); !ok {
-			return
-		} else {
-			trans = tcpip.TransportProtocolNumber(t)
-		}
-	case header.IPv6ProtocolNumber:
-		tcpIdx = header.IPv6MinimumSize
-		if t, ok := getSlices(bs, header.IPv6NextHeaderOffset); !ok {
-			return
-		} else {
-			trans = tcpip.TransportProtocolNumber(t)
-		}
-	default:
-		return
-	}
-	if trans != header.TCPProtocolNumber {
-		return
-	}
-
-	s, s2 := slicesIdx(bs, tcpIdx)
-	var tcphdr = make(header.TCP, 0, header.TCPMinimumSize)
-
-	tcphdr = append(tcphdr, bs[s][s2:]...)
-	for i := s + 1; i < len(bs) && len(tcphdr) > header.TCPMinimumSize; i++ {
-		tcphdr = append(tcphdr, bs[i]...)
-	}
-
-	if DecodeCustomFIN(tcphdr) {
-		j := copy(bs[s][s2:], tcphdr)
-		for i := s + 1; i < len(bs) && j < len(tcphdr); i++ {
-			j += copy(bs[i], tcphdr[j:])
+func (e *Endpoint) decode(hdr header.TCP) (update bool) {
+	if hdr.Flags().Intersects(link.FlagFinRst) {
+		select {
+		case <-e.finRst:
+		default:
+			close(e.finRst)
 		}
 	}
-}
 
-func slicesIdx(ss [][]byte, I int) (idx, idx2 int) {
-	for i := 0; idx < len(ss); idx++ {
-		i += len(ss[idx])
-		if i > I {
-			idx2 = len(ss[idx]) - (i - I)
-			return
-		}
-	}
-	return -1, -1
-}
-
-func getSlices(ss [][]byte, idx int) (byte, bool) {
-	i, i2 := slicesIdx(ss, idx)
-	if i < 0 {
-		return 0, false
-	}
-	return ss[i][i2], true
+	update = DecodeCustomFin(hdr)
+	e.setAck(hdr.SequenceNumber())
+	return
 }

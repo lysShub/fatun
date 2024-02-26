@@ -9,6 +9,7 @@ import (
 
 	"github.com/lysShub/itun"
 	"github.com/lysShub/itun/cctx"
+	"github.com/lysShub/itun/ustack/link"
 	"github.com/lysShub/itun/ustack/link/nofin"
 	"github.com/lysShub/relraw"
 	pkge "github.com/pkg/errors"
@@ -23,7 +24,7 @@ type TCP struct {
 	stack *Ustack
 
 	closed   atomic.Bool
-	closedCh chan struct{}
+	closedCh chan struct{} // ensure goroutine is returned
 }
 
 func AcceptNoFinTCP(paretnCtx context.Context, raw *itun.RawConn, handshakeTimeout time.Duration) (*TCP, error) {
@@ -56,9 +57,8 @@ func ConnectNoFinTCP(paretnCtx context.Context, raw *itun.RawConn, handshakeTime
 
 func newTcpStack(ctx cctx.CancelCtx, raw *itun.RawConn, id string) *TCP {
 	var t = &TCP{
-		ctx:  ctx,
-		link: nofin.New(8, uint32(raw.MTU())),
-		// link:     channel.New(8, 1536, ""),
+		ctx:      ctx,
+		link:     nofin.New(8, uint32(raw.MTU())),
 		closedCh: make(chan struct{}, 2),
 	}
 
@@ -78,46 +78,38 @@ func newTcpStack(ctx cctx.CancelCtx, raw *itun.RawConn, id string) *TCP {
 	return t
 }
 
-func (t *TCP) destroy() {
-	t.stack.Destroy()
-	t.link.Close()
-}
-
-func (t *TCP) Close() error {
+func (t *TCP) Close() (err error) {
 	if !t.closed.CompareAndSwap(false, true) {
 		return nil // closed
 	}
-	defer t.destroy()
-
-	err := t.Conn.Close()
 
 	if e := t.ctx.Err(); e != nil {
-		err = errors.Join(err, e) // cancel/exceed
+		err = e // cancel/exceed
 	} else {
-		err = errors.Join(err, WaitTCPClose(t.Conn))
 
+		err = t.Conn.Close()
+		select {
+		case <-t.link.FinRstFlag():
+		case <-time.After(time.Second * 3):
+			err = errors.Join(err, link.ErrTCPCloseTimeout{})
+		}
+
+		// must cancel after send SYN/RST tcp packet
 		t.ctx.Cancel(nil)
+		for i := 0; i < 2; i++ {
+			select {
+			case <-t.closedCh:
+			case <-time.After(time.Second * 3):
+				err = errors.Join(err,
+					pkge.Errorf("user stack close timeout"),
+				)
+			}
+		}
+		close(t.closedCh)
 	}
 
-	select {
-	case <-t.closedCh:
-	case <-time.After(time.Second * 3):
-		return errors.Join(
-			err,
-			pkge.Errorf("user stack close timeout"),
-		)
-	}
-
-	select {
-	case <-t.closedCh:
-	case <-time.After(time.Second * 3):
-		return errors.Join(
-			err,
-			pkge.Errorf("user stack close timeout"),
-		)
-	}
-
-	close(t.closedCh)
+	t.stack.Destroy()
+	t.link.Close()
 	return err
 }
 

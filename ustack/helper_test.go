@@ -114,7 +114,7 @@ func Test_Ustack_TCP_Close(t *testing.T) {
 	}
 
 	<-serverCloseCh
-	time.Sleep(time.Second * 2)
+	// time.Sleep(time.Second * 2)
 
 	closedNum := runtime.NumGoroutine()
 
