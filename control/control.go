@@ -15,7 +15,7 @@ import (
 )
 
 type Controller struct {
-	link  *channel.Endpoint // todo: link store in Ustack
+	link  *channel.Endpoint
 	stack *ustack.Ustack
 
 	handshakeTimeout time.Duration

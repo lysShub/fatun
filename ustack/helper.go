@@ -24,7 +24,7 @@ type TCP struct {
 	stack *Ustack
 
 	closed   atomic.Bool
-	closedCh chan struct{} // ensure goroutine is returned
+	closedCh chan struct{} // ensure in/out bound goroutine is returned
 }
 
 func AcceptNoFinTCP(paretnCtx context.Context, raw *itun.RawConn, handshakeTimeout time.Duration) (*TCP, error) {

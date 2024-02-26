@@ -70,7 +70,6 @@ func (c *gobClient) Close() (err error) {
 
 		c.ctx.Cancel(nil)
 		// todo: wait downlink/OutboundService return
-
 	}
 
 	c.ctr.Destroy()

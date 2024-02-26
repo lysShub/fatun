@@ -34,7 +34,7 @@ type SessionMgr struct {
 	// filter reduplicate add session
 	ids map[itun.Session]uint16
 
-	idle *itun.Idle
+	idle *itun.Keepalive
 }
 
 func NewSessionMgr(pxyer *proxyer) *SessionMgr {
@@ -45,7 +45,7 @@ func NewSessionMgr(pxyer *proxyer) *SessionMgr {
 		ids:      make(map[itun.Session]uint16, 16),
 	}
 	var tick *time.Ticker
-	mgr.idle, tick = itun.NewIdle(pxyer.srv.cfg.ProxyerIdeleTimeout)
+	mgr.idle, tick = itun.NewKeepalive(pxyer.srv.cfg.ProxyerIdeleTimeout)
 
 	// todo: 把keepalive移出去
 	go mgr.keepalive(context.Background(), tick)
@@ -142,7 +142,7 @@ type Session struct {
 
 	pxy relraw.RawConn
 
-	idle *itun.Idle
+	idle *itun.Keepalive
 }
 
 func NewSession(

@@ -20,40 +20,46 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
-func TestXxx(t *testing.T) {
-	t.Skip("todo")
+func Test_Handshake(t *testing.T) {
 
 	var (
 		caddr = netip.AddrPortFrom(netip.AddrFrom4([4]byte{10, 0, 0, 1}), 19986)
 		saddr = netip.AddrPortFrom(netip.AddrFrom4([4]byte{1, 1, 1, 1}), 8080)
 	)
-	c, s := test.NewMockRaw(
+	rawc, raws := test.NewMockRaw(
 		t, header.TCPProtocolNumber,
 		caddr, saddr,
 		test.ValidAddr, test.ValidChecksum,
 	)
+	ht := time.Hour
 
 	// server
 	go func() {
-		l := &listenerWrap{conn: s}
+		l := &listenerWrap{conn: raws}
 		cfg := &server.Config{
 			Sconn: sconn.Server{
 				BaseConfig: sconn.BaseConfig{
-					PrevPackets: pps,
+					PrevPackets:      pps,
+					HandShakeTimeout: ht,
 				},
 				SwapKey: &sconn.TokenServer{Valider: &tkServer{}},
 			},
-			MTU: 1536,
+			MTU:                 1536,
+			TCPHandshakeTimeout: ht,
+			InitCfgTimeout:      ht,
+			ProxyerIdeleTimeout: ht,
 		}
 
 		server.ListenAndServe(context.Background(), l, cfg)
 	}()
+	time.Sleep(time.Second)
 
 	{ // client
 		cfg := &client.Config{
 			Sconn: sconn.Client{
 				BaseConfig: sconn.BaseConfig{
-					PrevPackets: pps,
+					PrevPackets:      pps,
+					HandShakeTimeout: ht,
 				},
 				SwapKey: &sconn.TokenClient{Tokener: &tkClient{}},
 			},
@@ -62,13 +68,10 @@ func TestXxx(t *testing.T) {
 
 		ctx := context.Background()
 
-		ct, err := client.NewClient(ctx, c, cfg)
+		c, err := client.NewClient(ctx, rawc, cfg)
 		require.NoError(t, err)
 
-		ct.Close()
-
-		// err = ct.AddProxy(itun.Session{})
-		// require.NoError(t, err)
+		defer c.Close()
 	}
 
 }

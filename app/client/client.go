@@ -28,7 +28,7 @@ type Client struct {
 
 	conn *sconn.Conn
 
-	ctr control.Client
+	c control.Client
 }
 
 func NewClient(ctx context.Context, raw relraw.RawConn, cfg *Config) (*Client, error) {
@@ -52,7 +52,7 @@ func NewClient(ctx context.Context, raw relraw.RawConn, cfg *Config) (*Client, e
 	go ctr.OutboundService(c.ctx, c.conn)
 	go c.downlink(ctr)
 
-	c.ctr = control.Dial(c.ctx, ctr)
+	c.c = control.Dial(c.ctx, ctr)
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -71,7 +71,7 @@ func (c *Client) AddProxy(s itun.Session) error {
 
 	switch s.Proto {
 	case itun.TCP:
-		resp, err := c.ctr.AddTCP(s.DstAddr)
+		resp, err := c.c.AddTCP(s.DstAddr)
 		if err != nil {
 			return err
 		} else if resp.Err != nil {
@@ -110,7 +110,7 @@ func (c *Client) downlink(ctrSessionInbound *control.Controller) {
 
 func (c *Client) Close() error {
 	err := errors.Join(
-		c.ctr.Close(),
+		c.c.Close(),
 		c.conn.Close(),
 	)
 
