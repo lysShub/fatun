@@ -2,12 +2,12 @@ package server
 
 import (
 	"errors"
-	"fmt"
 	"net/netip"
 	"sort"
 	"sync"
 
 	"github.com/lysShub/itun"
+	pkge "github.com/pkg/errors"
 )
 
 type PortAdapter struct {
@@ -122,7 +122,7 @@ func (a *PortAdapter) GetPort(proto itun.Proto, dst netip.AddrPort) (port uint16
 				return 0, err
 			}
 		default:
-			return 0, fmt.Errorf("unknown transport itun code %d", proto)
+			return 0, pkge.Errorf("unknown transport itun code %d", proto)
 		}
 	}
 

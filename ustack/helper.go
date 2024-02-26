@@ -3,7 +3,6 @@ package ustack
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net"
 	"sync/atomic"
 	"time"
@@ -12,6 +11,7 @@ import (
 	"github.com/lysShub/itun/cctx"
 	"github.com/lysShub/itun/ustack/link/nofin"
 	"github.com/lysShub/relraw"
+	pkge "github.com/pkg/errors"
 )
 
 type TCP struct {
@@ -104,7 +104,7 @@ func (t *TCP) Close() error {
 	case <-time.After(time.Second * 3):
 		return errors.Join(
 			err,
-			fmt.Errorf("user stack close timeout"),
+			pkge.Errorf("user stack close timeout"),
 		)
 	}
 
@@ -113,7 +113,7 @@ func (t *TCP) Close() error {
 	case <-time.After(time.Second * 3):
 		return errors.Join(
 			err,
-			fmt.Errorf("user stack close timeout"),
+			pkge.Errorf("user stack close timeout"),
 		)
 	}
 

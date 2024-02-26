@@ -5,7 +5,6 @@ package app
 
 import (
 	"context"
-	"fmt"
 	"net/netip"
 	"sync/atomic"
 	"testing"
@@ -16,6 +15,7 @@ import (
 	"github.com/lysShub/itun/sconn"
 	"github.com/lysShub/relraw"
 	"github.com/lysShub/relraw/test"
+	pkge "github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
@@ -108,7 +108,7 @@ func (c *tkServer) Valid(tk []byte) (key sconn.Key, err error) {
 	if string(tk) == "hello" {
 		return sconn.Key{1: 1}, nil
 	}
-	return sconn.Key{}, fmt.Errorf("invalid token")
+	return sconn.Key{}, pkge.Errorf("invalid token")
 }
 
 var pps = sconn.PrevPackets{

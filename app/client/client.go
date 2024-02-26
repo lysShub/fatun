@@ -3,7 +3,6 @@ package client
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/netip"
 
 	"github.com/lysShub/itun"
@@ -12,6 +11,7 @@ import (
 	"github.com/lysShub/itun/sconn"
 	"github.com/lysShub/itun/segment"
 	"github.com/lysShub/relraw"
+	pkge "github.com/pkg/errors"
 )
 
 type Config struct {
@@ -64,9 +64,9 @@ func (c *Client) AddProxy(s itun.Session) error {
 	if !s.IsValid() {
 		return itun.ErrInvalidSession(s)
 	} else if s.SrcAddr.Addr() != c.addr.Addr() {
-		return fmt.Errorf("client %s can't proxy ip %s", c.addr.Addr(), s.SrcAddr.Addr())
+		return pkge.Errorf("client %s can't proxy ip %s", c.addr.Addr(), s.SrcAddr.Addr())
 	} else if s.SrcAddr.Port() == c.addr.Port() {
-		return fmt.Errorf("can't proxy self")
+		return pkge.Errorf("can't proxy self")
 	}
 
 	switch s.Proto {

@@ -3,11 +3,11 @@ package sconn
 import (
 	"context"
 	"encoding/gob"
-	"fmt"
 	"io"
 	"net"
 
 	"github.com/lysShub/itun/sconn/crypto"
+	pkge "github.com/pkg/errors"
 )
 
 type SecretKeyClient interface {
@@ -46,18 +46,18 @@ func (c *NotCryptoClient) SecretKey(ctx context.Context, conn net.Conn) (Key, er
 	if err != nil {
 		return key, err
 	} else if n != crypto.Bytes {
-		return key, fmt.Errorf("SecretKey write interrupt")
+		return key, pkge.Errorf("SecretKey write interrupt")
 	}
 
 	n, err = io.ReadFull(conn, key[:])
 	if err != nil {
 		return key, err
 	} else if n != crypto.Bytes {
-		return key, fmt.Errorf("SecretKey read interrupt")
+		return key, pkge.Errorf("SecretKey read interrupt")
 	}
 
 	if key != (Key{}) {
-		return key, fmt.Errorf("SecretKey NotCrypto faild")
+		return key, pkge.Errorf("SecretKey NotCrypto faild")
 	}
 
 	return key, nil
@@ -70,18 +70,18 @@ func (c *NotCryptoServer) SecretKey(ctx context.Context, conn net.Conn) (Key, er
 	if err != nil {
 		return key, err
 	} else if n != crypto.Bytes {
-		return key, fmt.Errorf("SecretKey read interrupt")
+		return key, pkge.Errorf("SecretKey read interrupt")
 	}
 
 	if key != (Key{}) {
-		return key, fmt.Errorf("SecretKey NotCrypto faild")
+		return key, pkge.Errorf("SecretKey NotCrypto faild")
 	}
 
 	n, err = conn.Write(key[:])
 	if err != nil {
 		return key, err
 	} else if n != crypto.Bytes {
-		return key, fmt.Errorf("SecretKey write interrupt")
+		return key, pkge.Errorf("SecretKey write interrupt")
 	}
 
 	return key, nil
@@ -119,7 +119,7 @@ func (c *TokenClient) SecretKey(ctx context.Context, conn net.Conn) (Key, error)
 	}
 
 	if resp != "" {
-		return Key{}, fmt.Errorf("SecretKey Token faild, %s", resp)
+		return Key{}, pkge.Errorf("SecretKey Token faild, %s", resp)
 	}
 	return key, nil
 }

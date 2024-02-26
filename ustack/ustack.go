@@ -3,7 +3,6 @@ package ustack
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"net"
 	"net/netip"
@@ -67,7 +66,7 @@ func NewUstack(
 
 	u.stack = stack.New(stack.Options{
 		NetworkProtocols:   []stack.NetworkProtocolFactory{npf},
-		TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol},
+		TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol}, // todo: set nProcessors 1
 		HandleLocal:        false,
 	})
 
@@ -132,7 +131,7 @@ func (u *Ustack) Outbound(ctx context.Context, ip *relraw.Packet) error {
 		n += m
 
 		if m < len(c) {
-			return fmt.Errorf("user stack outbound %s", io.ErrShortBuffer)
+			return pkge.Errorf("user stack outbound %s", io.ErrShortBuffer)
 		}
 	}
 	ip.SetLen(n)

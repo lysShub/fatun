@@ -3,9 +3,9 @@ package crypto
 import (
 	"crypto/aes"
 	"crypto/cipher"
-	"fmt"
 
 	"github.com/lysShub/relraw"
+	pkge "github.com/pkg/errors"
 	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
@@ -30,7 +30,7 @@ func NewTCPCrypt(key [Bytes]byte) (*TCPCrypt, error) {
 	}
 	g.nonceLen = g.c.NonceSize()
 	if g.nonceLen > header.TCPChecksumOffset {
-		return nil, fmt.Errorf("not support nonce length greater than header.TCPChecksumOffset")
+		return nil, pkge.Errorf("not support nonce length greater than header.TCPChecksumOffset")
 	}
 
 	return g, nil

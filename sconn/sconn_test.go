@@ -2,7 +2,6 @@ package sconn
 
 import (
 	"context"
-	"fmt"
 	"net/netip"
 	"testing"
 	"time"
@@ -11,6 +10,7 @@ import (
 	"github.com/lysShub/itun/cctx"
 	"github.com/lysShub/itun/segment"
 	"github.com/lysShub/relraw/test"
+	pkge "github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
@@ -27,7 +27,7 @@ func (c *tkServer) Valid(tk []byte) (key Key, err error) {
 	if string(tk) == "hello" {
 		return Key{1: 1}, nil
 	}
-	return Key{}, fmt.Errorf("invalid token")
+	return Key{}, pkge.Errorf("invalid token")
 }
 
 func Test_Sconn(t *testing.T) {

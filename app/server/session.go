@@ -6,7 +6,6 @@ package server
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/netip"
 	"slices"
 	"sync"
@@ -20,6 +19,7 @@ import (
 
 	"github.com/lysShub/relraw"
 	"github.com/lysShub/relraw/tcp/bpf"
+	pkge "github.com/pkg/errors"
 )
 
 type SessionMgr struct {
@@ -165,7 +165,7 @@ func NewSession(
 		}
 	default:
 		// todo: udp
-		return nil, fmt.Errorf("not support itun number %d", s.Proto)
+		return nil, pkge.Errorf("not support itun number %d", s.Proto)
 	}
 
 	go se.downlink(conn)
@@ -266,7 +266,7 @@ func (m *IdMgr) getLocked() (id uint16, err error) {
 		}
 	}
 
-	return 0, fmt.Errorf("unknown error")
+	return 0, pkge.Errorf("unknown error")
 }
 
 func (m *IdMgr) Put(id uint16) {

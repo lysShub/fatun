@@ -1,8 +1,9 @@
 package internal
 
 import (
-	"fmt"
 	"net/netip"
+
+	pkge "github.com/pkg/errors"
 )
 
 //go:generate stringer -output gob_gen.go -trimprefix=CtrType -type=CtrType
@@ -10,7 +11,7 @@ type CtrType uint16
 
 func (c CtrType) Valid() error {
 	if c <= start || c >= end {
-		return fmt.Errorf("invalid control type %s", c)
+		return pkge.Errorf("invalid control type %s", c)
 	}
 	return nil
 }

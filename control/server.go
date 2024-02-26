@@ -3,13 +3,13 @@ package control
 import (
 	"encoding/gob"
 	"errors"
-	"fmt"
 	"net"
 	"net/netip"
 
 	"github.com/lysShub/itun/cctx"
 	"github.com/lysShub/itun/control/internal"
 	"github.com/lysShub/itun/ustack"
+	pkge "github.com/pkg/errors"
 )
 
 type SrvHandler interface {
@@ -86,7 +86,7 @@ func (s *gobServer) Serve(ctx cctx.CancelCtx) {
 			case internal.Ping:
 				err = s.Ping()
 			default:
-				err = fmt.Errorf("not support control type %d", int(t))
+				err = pkge.Errorf("not support control type %d", int(t))
 			}
 		}
 

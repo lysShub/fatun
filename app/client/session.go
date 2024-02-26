@@ -1,7 +1,6 @@
 package client
 
 import (
-	"fmt"
 	"sync"
 
 	"github.com/lysShub/itun"
@@ -9,6 +8,7 @@ import (
 	"github.com/lysShub/itun/sconn"
 	"github.com/lysShub/itun/segment"
 	"github.com/lysShub/relraw"
+	pkge "github.com/pkg/errors"
 )
 
 type SessionMgr struct {
@@ -27,7 +27,7 @@ func (sm *SessionMgr) Add(s itun.Session, id uint16) error {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 	if _, has := sm.sess[id]; has {
-		return fmt.Errorf("id %d exist", id)
+		return pkge.Errorf("id %d exist", id)
 	}
 
 	session, err := NewSession(sm.client.ctx, sm.client.conn, id, s)
@@ -100,7 +100,7 @@ func (s *Session) uplink(conn *sconn.Conn) {
 
 func (s *Session) Inject(seg *segment.Segment) error {
 	if seg.ID() != s.id {
-		return fmt.Errorf("expect session %d, got %d", s.id, seg.ID())
+		return pkge.Errorf("expect session %d, got %d", s.id, seg.ID())
 	}
 
 	// decode segment
