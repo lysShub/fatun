@@ -9,7 +9,6 @@ import (
 	"net/netip"
 	"slices"
 	"sync"
-	"time"
 
 	"github.com/lysShub/itun"
 	"github.com/lysShub/itun/cctx"
@@ -29,59 +28,57 @@ type SessionMgr struct {
 	sync.RWMutex
 
 	// record mapping session id and Session
-	sessions map[uint16]*Session
+	sessionMap map[uint16]*Session
 
 	// filter reduplicate add session
-	ids map[itun.Session]uint16
+	idMap map[itun.Session]uint16
 
-	idle *itun.Keepalive
+	ka *itun.Keepalive
 }
 
 func NewSessionMgr(pxyer *proxyer) *SessionMgr {
 	mgr := &SessionMgr{
 		proxyer: pxyer,
 
-		sessions: make(map[uint16]*Session, 16),
-		ids:      make(map[itun.Session]uint16, 16),
+		sessionMap: make(map[uint16]*Session, 16),
+		idMap:      make(map[itun.Session]uint16, 16),
+		ka:         itun.NewKeepalive(pxyer.srv.cfg.ProxyerIdeleTimeout),
 	}
-	var tick *time.Ticker
-	mgr.idle, tick = itun.NewKeepalive(pxyer.srv.cfg.ProxyerIdeleTimeout)
 
-	// todo: 把keepalive移出去
-	go mgr.keepalive(context.Background(), tick)
+	go mgr.keepalive(context.Background())
 	return mgr
 }
 
-// todo: session 应该包括localAddr， 如果同一个机器的两个程序同时访问了相同的地址时
-func (sm *SessionMgr) Add(ctx cctx.CancelCtx, s itun.Session) (*Session, error) {
+func (sm *SessionMgr) Add(ctx cctx.CancelCtx, session itun.Session) (*Session, error) {
 	sm.RLock()
-	id, has := sm.ids[s]
+	sessionId, has := sm.idMap[session]
 	sm.RUnlock()
 	if has {
-		return sm.Get(id), nil
+		return sm.Get(sessionId), nil
 	}
 
-	id, err := sm.idmgr.Get()
+	sessionId, err := sm.idmgr.Get()
 	if err != nil {
 		return nil, err
 	}
-	port, err := sm.proxyer.srv.ap.GetPort(s.Proto, s.DstAddr)
+	port, err := sm.proxyer.srv.ap.GetPort(session.Proto, session.DstAddr)
 	if err != nil {
 		return nil, err
 	}
-	session, err := NewSession(
-		ctx, id, sm.proxyer.conn, s,
-		netip.AddrPortFrom(sm.proxyer.srv.Addr.Addr(), port),
+	locAddr := netip.AddrPortFrom(sm.proxyer.srv.Addr.Addr(), port)
+	s, err := NewSession(
+		ctx, sm.proxyer.conn, sessionId, session,
+		locAddr, sm.ka.Task(),
 	)
 	if err != nil {
 		return nil, err
 	}
 
 	sm.Lock()
-	sm.sessions[id] = session
-	sm.ids[s] = id
+	sm.sessionMap[sessionId] = s
+	sm.idMap[session] = sessionId
 	sm.Unlock()
-	return session, nil
+	return s, nil
 }
 
 func (sm *SessionMgr) Del(id uint16) (err error) {
@@ -91,8 +88,8 @@ func (sm *SessionMgr) Del(id uint16) (err error) {
 		sm.idmgr.Put(s.ID())
 
 		sm.Lock()
-		delete(sm.ids, s.session)
-		delete(sm.sessions, id)
+		delete(sm.idMap, s.session)
+		delete(sm.sessionMap, id)
 		sm.Unlock()
 	}
 	return err
@@ -101,33 +98,37 @@ func (sm *SessionMgr) Del(id uint16) (err error) {
 func (sm *SessionMgr) Get(id uint16) *Session {
 	sm.RLock()
 	defer sm.RUnlock()
-	return sm.sessions[id]
+	return sm.sessionMap[id]
 }
 
-func (sm *SessionMgr) keepalive(ctx context.Context, ticker *time.Ticker) {
-	var ids = make([]uint16, 0, 16)
+func (sm *SessionMgr) keepalive(ctx context.Context) {
+	var idleSessions = make([]uint16, 0, 16)
+
+	ticker := sm.ka.Ticker()
 	for {
 		select {
-		case <-ticker.C:
+		case <-ticker:
 		case <-ctx.Done():
 			return
 		}
 
 		sm.RLock()
-		for id, s := range sm.sessions {
-			if s.Idled() {
-				ids = append(ids, id)
-				break
+		for id, s := range sm.sessionMap {
+			if s.Idle() {
+				idleSessions = append(idleSessions, id)
+				if len(idleSessions) == cap(idleSessions) {
+					break
+				}
 			}
 		}
 		sm.RUnlock()
 
-		for _, id := range ids {
+		for _, id := range idleSessions {
 			if err := sm.Del(id); err != nil {
 				panic(err)
 			}
 		}
-		ids = ids[:0]
+		idleSessions = idleSessions[:0]
 	}
 }
 
@@ -140,32 +141,34 @@ type Session struct {
 	id      uint16
 	session itun.Session
 
-	pxy relraw.RawConn
+	capture relraw.RawConn
 
-	idle *itun.Keepalive
+	task *itun.Task
 }
 
 func NewSession(
-	ctx cctx.CancelCtx, id uint16,
-	conn *sconn.Conn,
-	s itun.Session, laddr netip.AddrPort,
+	ctx cctx.CancelCtx, conn *sconn.Conn,
+	sessionId uint16, session itun.Session,
+	locAddr netip.AddrPort, task *itun.Task,
 ) (*Session, error) {
 
 	var se = &Session{
-		ctx: cctx.WithContext(ctx),
-		id:  id,
+		ctx:     cctx.WithContext(ctx),
+		id:      sessionId,
+		session: session,
+		task:    task,
 	}
 
 	var err error
-	switch s.Proto {
+	switch session.Proto {
 	case itun.TCP:
-		se.pxy, err = bpf.Connect(laddr, s.DstAddr, relraw.UsedPort())
+		se.capture, err = bpf.Connect(locAddr, session.DstAddr, relraw.UsedPort())
 		if err != nil {
 			return nil, err
 		}
 	default:
 		// todo: udp
-		return nil, pkge.Errorf("not support itun number %d", s.Proto)
+		return nil, pkge.Errorf("not support itun number %d", session.Proto)
 	}
 
 	go se.downlink(conn)
@@ -185,7 +188,7 @@ func (s *Session) downlink(conn *sconn.Conn) {
 
 	for {
 		seg.Sets(0, mtu)
-		err := s.pxy.ReadCtx(s.ctx, seg.Packet())
+		err := s.capture.ReadCtx(s.ctx, seg.Packet())
 		if err != nil {
 			s.ctx.Cancel(err)
 			return
@@ -206,23 +209,23 @@ func (s *Session) downlink(conn *sconn.Conn) {
 			s.ctx.Cancel(err)
 			return
 		}
-		s.idle.Action()
+		s.task.Action()
 	}
 }
 
 // Write write uplink proxy-data
 func (s *Session) Write(pxy []byte) error {
-	s.idle.Action()
-	_, err := s.pxy.Write(pxy)
+	s.task.Action()
+	_, err := s.capture.Write(pxy)
 	return err
 }
 
-func (s *Session) Idled() bool {
-	return s.idle.Idled()
+func (s *Session) Idle() bool {
+	return s.task.Idle()
 }
 
 func (s *Session) Close() error {
-	err := s.pxy.Close()
+	err := s.capture.Close()
 	s.ctx.Cancel(nil)
 	return err
 }

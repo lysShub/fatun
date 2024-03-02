@@ -4,6 +4,8 @@ import (
 	"sync/atomic"
 
 	"github.com/lysShub/relraw"
+	"github.com/lysShub/relraw/test"
+	"github.com/lysShub/relraw/test/debug"
 	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
@@ -18,14 +20,15 @@ type FakeTCP struct {
 	// todo: use alloce tcp header bytes
 	// header []byte
 
-	checksum bool
+	pseudoSum1 *uint16
 }
 
 // NewFakeTCP set fake tcp header
-func NewFakeTCP(locPort, remPort uint16, initSeq, initAck uint32, checksum bool) *FakeTCP {
+func NewFakeTCP(locPort, remPort uint16, initSeq, initAck uint32, pseudoSum1 *uint16) *FakeTCP {
 	f := &FakeTCP{
-		lport: locPort,
-		rport: remPort,
+		lport:      locPort,
+		rport:      remPort,
+		pseudoSum1: pseudoSum1,
 	}
 	f.seq.Store(initSeq)
 	f.ack.Store(initAck)
@@ -35,24 +38,32 @@ func NewFakeTCP(locPort, remPort uint16, initSeq, initAck uint32, checksum bool)
 // SendAttach input tcp payload, attach tcp header, and return
 // tcp packet.
 func (f *FakeTCP) SendAttach(p *relraw.Packet) {
-	var b = make(header.TCP, header.TCPMinimumSize)
-	b.Encode(&header.TCPFields{
-		SrcPort:    f.lport,
-		DstPort:    f.rport,
-		SeqNum:     f.seq.Load(),
-		AckNum:     f.ack.Load(),
-		DataOffset: header.TCPMinimumSize,
-		Flags:      header.TCPFlagPsh | header.TCPFlagAck,
-		WindowSize: 0xff32, // todo: rand
-		Checksum:   0,
+	var hdr = make(header.TCP, header.TCPMinimumSize)
+	hdr.Encode(&header.TCPFields{
+		SrcPort:       f.lport,
+		DstPort:       f.rport,
+		SeqNum:        f.seq.Load(),
+		AckNum:        f.ack.Load(),
+		DataOffset:    header.TCPMinimumSize,
+		Flags:         header.TCPFlagPsh | header.TCPFlagAck,
+		WindowSize:    0xff32, // todo: mock
+		Checksum:      0,
+		UrgentPointer: 0,
 	})
-	if f.checksum {
-		sum := checksum.Checksum(p.Data(), 0)
-		b.SetChecksum(^checksum.Checksum(b, sum))
-	}
 
 	f.seq.Add(uint32(p.Len()))
-	p.Attach(b)
+	p.Attach(hdr)
+
+	if f.pseudoSum1 != nil {
+		tcp := header.TCP(p.Data())
+		psum := checksum.Combine(*f.pseudoSum1, uint16(len(tcp)))
+		sum := checksum.Checksum(tcp, psum)
+		tcp.SetChecksum(^sum)
+	}
+
+	if debug.Debug() {
+		test.ValidTCP(test.T(), p.Data(), *f.pseudoSum1)
+	}
 }
 
 // RecvStrip input a tcp packet, update ack, and return

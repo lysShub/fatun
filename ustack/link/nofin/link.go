@@ -5,6 +5,8 @@ import (
 	"sync/atomic"
 
 	"github.com/lysShub/itun/ustack/link"
+	"github.com/lysShub/relraw"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
@@ -47,16 +49,24 @@ func (e *Endpoint) FinRstFlag() <-chan struct{} {
 	return e.finRst
 }
 
-// Read read gvisor's outboud ip packet
-func (e *Endpoint) ReadContext(ctx context.Context) stack.PacketBufferPtr {
+func (e *Endpoint) Outbound(ctx context.Context, ip *relraw.Packet) {
 	pkt := e.Endpoint.ReadContext(ctx) // avoid memcpy
-
 	if !pkt.IsNil() {
+		defer pkt.DecRef()
 
-		link.HandleTCPHdr(pkt.AsSlices(), e.encode)
+		ip.SetLen(pkt.Size())
+		b := ip.Data()
+
+		n := 0
+		for _, e := range pkt.AsSlices() {
+			n += copy(b[n:], e)
+		}
+
+		link.HandleTCPHdr([][]byte{b}, e.encode)
+	} else {
+		// todo: maybe return error
+		ip.SetLen(0)
 	}
-
-	return pkt
 }
 
 func (e *Endpoint) encode(hdr header.TCP) (update bool) {
@@ -73,13 +83,24 @@ func (e *Endpoint) encode(hdr header.TCP) (update bool) {
 	return
 }
 
-// Inject inject tcp packet to gvistor stack.
-func (e *Endpoint) InjectInbound(protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBufferPtr) {
-	ip := pkt.AsSlices() // avoid memcpy
+func (e *Endpoint) Inbound(ip *relraw.Packet) {
+	var proto tcpip.NetworkProtocolNumber
+	switch ver := header.IPVersion(ip.Data()); ver {
+	case 4:
+		proto = header.IPv4ProtocolNumber
+	case 6:
+		proto = header.IPv6ProtocolNumber
+	default:
+		panic(ver)
+	}
 
-	link.HandleTCPHdr(ip, e.decode)
+	// todo: not need
+	link.HandleTCPHdr([][]byte{ip.Data()}, e.decode)
 
-	e.Endpoint.InjectInbound(protocol, pkt)
+	pkb := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		Payload: buffer.MakeWithData(ip.Data()),
+	})
+	e.Endpoint.InjectInbound(proto, pkb)
 }
 
 func (e *Endpoint) decode(hdr header.TCP) (update bool) {

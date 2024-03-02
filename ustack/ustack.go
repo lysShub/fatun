@@ -3,7 +3,6 @@ package ustack
 import (
 	"context"
 	"errors"
-	"io"
 	"net"
 	"net/netip"
 	"os"
@@ -14,7 +13,8 @@ import (
 	"github.com/lysShub/itun/cctx"
 	"github.com/lysShub/itun/ustack/link"
 	"github.com/lysShub/relraw"
-	"gvisor.dev/gvisor/pkg/buffer"
+	"github.com/lysShub/relraw/test"
+	"github.com/lysShub/relraw/test/debug"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -91,11 +91,8 @@ func (u *Ustack) SetID(id string) { u.id = id }
 func (u *Ustack) ID() string      { return u.id }
 
 func (u *Ustack) InboundRaw(ip *relraw.Packet) error {
-	pkb := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Payload: buffer.MakeWithData(ip.Data()),
-	})
 
-	u.link.InjectInbound(u.proto, pkb)
+	u.link.Inbound(ip)
 
 	return nil
 }
@@ -103,18 +100,18 @@ func (u *Ustack) InboundRaw(ip *relraw.Packet) error {
 func (u *Ustack) Inbound(b *relraw.Packet) error {
 	u.ipstack.AttachInbound(b)
 
-	pkb := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Payload: buffer.MakeWithData(b.Data()),
-	})
+	if debug.Debug() {
+		test.ValidIP(test.T(), b.Data())
+	}
 
-	u.link.InjectInbound(u.proto, pkb)
+	u.link.Inbound(b)
 
 	return nil
 }
 
 func (u *Ustack) Outbound(ctx context.Context, ip *relraw.Packet) error {
-	pkb := u.link.ReadContext(ctx)
-	if pkb.IsNil() {
+	u.link.Outbound(ctx, ip)
+	if ip.Len() == 0 {
 		ip.SetLen(0)
 		select {
 		case <-ctx.Done():
@@ -124,18 +121,9 @@ func (u *Ustack) Outbound(ctx context.Context, ip *relraw.Packet) error {
 		}
 	}
 
-	b := ip.Data()
-	n := 0
-	for _, c := range pkb.AsSlices() {
-		m := copy(b[n:], c)
-		n += m
-
-		if m < len(c) {
-			return pkge.Errorf("user stack outbound %s", io.ErrShortBuffer)
-		}
+	if debug.Debug() {
+		test.ValidIP(test.T(), ip.Data())
 	}
-	ip.SetLen(n)
-	pkb.DecRef()
 
 	return nil
 }

@@ -8,8 +8,9 @@ import (
 	"github.com/lysShub/itun/sconn/crypto"
 	"github.com/lysShub/itun/segment"
 	"github.com/lysShub/itun/ustack/faketcp"
-
-	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"github.com/lysShub/relraw/test"
+	"github.com/lysShub/relraw/test/debug"
+	"github.com/stretchr/testify/require"
 )
 
 // security datagram conn (fake tcp connn)
@@ -17,28 +18,13 @@ type Conn struct {
 	raw *itun.RawConn
 	id  string
 
-	state state // todo: atomic
-
 	fake *faketcp.FakeTCP
 
-	crypter *crypto.TCPCrypt
+	crypter *crypto.TCP
 
 	tinyCnt    uint8
 	tinyCntErr error
-
-	psosum1 uint16
 }
-
-type state uint8
-
-const (
-	_ state = iota
-	handshake
-
-	// if sconn crypter!=nil, next stage packet will encrypto
-	transport
-	closeing
-)
 
 const tinyCntLimit = 4 // todo: to config
 
@@ -65,15 +51,6 @@ func (s *Conn) RecvSeg(ctx context.Context, seg *segment.Segment) (err error) {
 		return err
 	}
 
-	// recved impostor/wrong packet
-	n := len(header.TCP(seg.Data()).Payload())
-	if n < segment.HdrSize+header.UDPMinimumSize {
-		s.tinyCnt++
-		s.tinyCntErr = ErrManyInvalidSizeSegment(n)
-		seg.Sets(oldH, oldN)
-		return s.RecvSeg(ctx, seg)
-	}
-
 	if s.crypter != nil {
 		s.tinyCnt++
 		err = s.crypter.Decrypt(seg.Packet())
@@ -98,7 +75,13 @@ func (s *Conn) SendSeg(ctx context.Context, seg *segment.Segment) (err error) {
 	s.fake.SendAttach(p)
 
 	if s.crypter != nil {
-		s.crypter.EncryptChecksum(p, s.psosum1)
+		s.crypter.Encrypt(p)
+
+		if debug.Debug() {
+			tp := p.Copy()
+			err := s.crypter.Decrypt(tp)
+			require.NoError(test.T(), err)
+		}
 	}
 
 	// todo: raw not calc tcp checksum

@@ -2,6 +2,7 @@ package client
 
 import (
 	"sync"
+	"time"
 
 	"github.com/lysShub/itun"
 	"github.com/lysShub/itun/cctx"
@@ -14,19 +15,24 @@ import (
 type SessionMgr struct {
 	client *Client
 
-	mu sync.RWMutex
+	keepalive *itun.Keepalive
+	ticker    *time.Ticker
 
-	sess map[uint16]*Session
+	mu       sync.RWMutex
+	sessions map[uint16]*Session
 }
 
 func NewSessionMgr(c *Client) *SessionMgr {
-	return &SessionMgr{}
+	return &SessionMgr{
+		client: c,
+		// keepalive: itun.NewKeepalive(),
+	}
 }
 
 func (sm *SessionMgr) Add(s itun.Session, id uint16) error {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
-	if _, has := sm.sess[id]; has {
+	if _, has := sm.sessions[id]; has {
 		return pkge.Errorf("id %d exist", id)
 	}
 
@@ -35,7 +41,7 @@ func (sm *SessionMgr) Add(s itun.Session, id uint16) error {
 		return err
 	}
 
-	sm.sess[id] = session
+	sm.sessions[id] = session
 
 	return nil
 }
@@ -43,17 +49,15 @@ func (sm *SessionMgr) Add(s itun.Session, id uint16) error {
 func (sm *SessionMgr) Get(id uint16) *Session {
 	sm.mu.RLock()
 	defer sm.mu.RLock()
-	return sm.sess[id]
+	return sm.sessions[id]
 }
 
 type Session struct {
-	ctx cctx.CancelCtx
-	s   itun.Session
-	id  uint16
+	ctx     cctx.CancelCtx
+	session itun.Session
+	id      uint16
 
-	// todo: add idle
-
-	cpt Capture
+	capture Capture
 }
 
 func NewSession(
@@ -61,13 +65,13 @@ func NewSession(
 	id uint16, session itun.Session,
 ) (*Session, error) {
 	var s = &Session{
-		ctx: ctx,
-		id:  id,
-		s:   session,
+		ctx:     ctx,
+		id:      id,
+		session: session,
 	}
 
 	var err error
-	s.cpt, err = NewCapture(session)
+	s.capture, err = NewCapture(session)
 	if err != nil {
 		return nil, err
 	}
@@ -82,7 +86,7 @@ func (s *Session) uplink(conn *sconn.Conn) {
 
 	for {
 		p.Sets(64, mtu)
-		if err := s.cpt.RecvCtx(s.ctx, p); err != nil {
+		if err := s.capture.RecvCtx(s.ctx, p); err != nil {
 			s.ctx.Cancel(err)
 			return
 		}
@@ -106,5 +110,5 @@ func (s *Session) Inject(seg *segment.Segment) error {
 	// decode segment
 	seg.SetHead(seg.Head() + segment.HdrSize)
 
-	return s.cpt.Inject(seg.Packet())
+	return s.capture.Inject(seg.Packet())
 }

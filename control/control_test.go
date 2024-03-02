@@ -22,8 +22,8 @@ import (
 
 func Test_Control(t *testing.T) {
 	var (
-		caddr = netip.AddrPortFrom(test.LocIP, test.RandPort())
-		saddr = netip.AddrPortFrom(test.LocIP, test.RandPort())
+		caddr = netip.AddrPortFrom(test.LocIP(), test.RandPort())
+		saddr = netip.AddrPortFrom(test.LocIP(), test.RandPort())
 	)
 	parentCtx := cctx.WithContext(context.Background())
 	c, s := CreateSconns(t, caddr, saddr)
@@ -89,8 +89,8 @@ func Test_Control(t *testing.T) {
 func Test_Control_Client_Close(t *testing.T) {
 
 	var (
-		caddr = netip.AddrPortFrom(test.LocIP, test.RandPort())
-		saddr = netip.AddrPortFrom(test.LocIP, test.RandPort())
+		caddr = netip.AddrPortFrom(test.LocIP(), test.RandPort())
+		saddr = netip.AddrPortFrom(test.LocIP(), test.RandPort())
 	)
 	parentCtx := cctx.WithContext(context.Background())
 	var rets []int

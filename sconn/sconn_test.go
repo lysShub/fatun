@@ -32,8 +32,8 @@ func (c *tkServer) Valid(tk []byte) (key Key, err error) {
 
 func Test_Sconn(t *testing.T) {
 	var (
-		caddr = netip.AddrPortFrom(test.LocIP, test.RandPort())
-		saddr = netip.AddrPortFrom(test.LocIP, test.RandPort())
+		caddr = netip.AddrPortFrom(test.LocIP(), test.RandPort())
+		saddr = netip.AddrPortFrom(test.LocIP(), test.RandPort())
 	)
 	var pps = PrevPackets{
 		header.TCP("hello"),

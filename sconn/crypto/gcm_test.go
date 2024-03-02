@@ -1,224 +1,274 @@
-package crypto
+package crypto_test
 
 import (
-	crand "crypto/rand"
+	"context"
+	"io"
 	"math/rand"
+	"net"
+	"net/netip"
 	"testing"
-	"unsafe"
+	"time"
 
+	"github.com/lysShub/itun"
+	"github.com/lysShub/itun/sconn/crypto"
+	"github.com/lysShub/itun/ustack"
+	"github.com/lysShub/itun/ustack/link"
+	"github.com/lysShub/itun/ustack/link/channel"
 	"github.com/lysShub/relraw"
+	"github.com/lysShub/relraw/test"
+	"github.com/lysShub/relraw/test/debug"
 	"github.com/stretchr/testify/require"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
-func withHdr(b header.TCP) header.TCP {
-	b.Encode(&header.TCPFields{
-		SrcPort:    19986,
-		DstPort:    8080,
-		SeqNum:     rand.Uint32(),
-		AckNum:     rand.Uint32(),
-		DataOffset: header.TCPMinimumSize,
-		Flags:      header.TCPFlagAck | header.TCPFlagPsh,
-		WindowSize: uint16(rand.Uint32()),
-		Checksum:   0,
+func buildTCP(t require.TestingT, msgSize int, prevAlloc bool) (*relraw.Packet, uint16) {
+	var (
+		src        = tcpip.AddrFrom4([4]byte{1, 2, 3, 4})
+		dst        = tcpip.AddrFrom4([4]byte{5, 6, 7, 8})
+		pseudoSum1 = header.PseudoHeaderChecksum(
+			header.TCPProtocolNumber,
+			src, dst,
+			0,
+		)
+	)
+
+	tail := 0
+	if prevAlloc {
+		tail = 64
+	}
+	p := relraw.NewPacket(0, header.TCPMinimumSize+msgSize, tail)
+
+	tcp := header.TCP(p.Data())
+	tcp.Encode(&header.TCPFields{
+		SrcPort:       19986,
+		DstPort:       8080,
+		SeqNum:        rand.Uint32(),
+		AckNum:        rand.Uint32(),
+		DataOffset:    header.TCPMinimumSize,
+		Flags:         header.TCPFlagAck | header.TCPFlagPsh,
+		WindowSize:    uint16(rand.Uint32()),
+		Checksum:      0,
+		UrgentPointer: 0,
 	})
-	return b
+	msg := tcp.Payload()
+	for i := range msg {
+		msg[i] = byte(i)
+	}
+	sum := checksum.Checksum(tcp, checksum.Combine(pseudoSum1, uint16(len(tcp))))
+	tcp.SetChecksum(^sum)
+
+	test.ValidTCP(t, tcp, pseudoSum1)
+	return p, pseudoSum1
 }
 
-func Test_TCP_Crypter(t *testing.T) {
+func Test_TCP_Crypto(t *testing.T) {
+	var (
+		key     = [crypto.Bytes]byte{0: 1}
+		msgSize = 5
+	)
 
-	t.Run("encrypt-decrypt", func(t *testing.T) {
-		var key [16]byte
-		crand.Read(key[:])
+	p, pseudoSum1 := buildTCP(t, msgSize, false)
 
-		c, err := NewTCPCrypt(key)
+	c, err := crypto.NewTCP(key, pseudoSum1)
+	require.NoError(t, err)
+
+	c.Encrypt(p)
+	test.ValidTCP(t, p.Data(), pseudoSum1)
+
+	err = c.Decrypt(p)
+	require.NoError(t, err)
+	test.ValidTCP(t, p.Data(), pseudoSum1)
+
+	msg := header.TCP(p.Data()).Payload()
+	require.Equal(t, []byte{0, 1, 2, 3, 4}, msg)
+}
+
+func Test_Conn(t *testing.T) {
+	var (
+		caddr = netip.AddrPortFrom(test.LocIP(), test.RandPort())
+		saddr = netip.AddrPortFrom(test.LocIP(), test.RandPort())
+		seed  = time.Now().UnixNano()
+		r     = rand.New(rand.NewSource(seed))
+
+		pseudoSum1 = header.PseudoHeaderChecksum(
+			header.TCPProtocolNumber,
+			test.Address(caddr.Addr()),
+			test.Address(saddr.Addr()),
+			0,
+		)
+	)
+	t.Log(seed)
+	c, s := test.NewMockRaw(
+		t, header.TCPProtocolNumber,
+		caddr, saddr,
+		test.ValidAddr, test.ValidChecksum,
+	)
+
+	// server
+	go func() {
+		raw := itun.WrapRawConn(s, 1536)
+		link := New(t, pseudoSum1, "server")
+		conn, err := ustack.AcceptTCP(context.Background(), raw, link, time.Second)
 		require.NoError(t, err)
+		defer conn.Close()
 
-		for _, msg := range [][]byte{
-			nil,
-			{},
-			[]byte("abcedf"),
-		} {
-			for _, pt := range []header.TCP{
-				make(header.TCP, header.TCPMinimumSize+len(msg)),
-				make(header.TCP, header.TCPMinimumSize+len(msg), header.TCPMinimumSize+len(msg)+Bytes),
-			} {
-				withHdr(pt)
-				copy(pt.Payload(), msg)
+		_, err = io.Copy(conn, conn)
+		require.NoError(t, err)
+	}()
 
-				p := relraw.ToPacket(0, pt)
-				c.Encrypt(p)
-				require.Equal(t, len(pt)+Bytes, p.Len())
-				ho := pt.DataOffset()
-				require.Equal(t, []byte(pt[:ho]), p.Data()[:ho])
+	{ // client
 
-				err = c.Decrypt(p)
-				require.NoError(t, err)
-				require.Equal(t, []byte(pt), p.Data())
-			}
+		raw := itun.WrapRawConn(c, 1536)
+		link := New(t, pseudoSum1, "client")
+
+		conn, err := ustack.ConnectTCP(context.Background(), raw, link, time.Second)
+		require.NoError(t, err)
+		defer conn.Close()
+
+		ValidPingPongConn(t, r, conn, 1024)
+
+	}
+}
+
+func ValidPingPongConn(t require.TestingT, s *rand.Rand, conn net.Conn, size int) {
+	var buf = make(chan []byte, 64)
+	go func() {
+		for i := 0; i < size; {
+			b := make([]byte, min(64, size-i))
+			s.Read(b)
+
+			n, err := conn.Write(b)
+			require.NoError(t, err)
+			require.Equal(t, len(b), n)
+
+			buf <- b
+			i += len(b)
 		}
-	})
+	}()
 
-	t.Run("checksum", func(t *testing.T) {
-		var (
-			key        [16]byte
-			msg        = []byte("abcedf")
-			src        = tcpip.AddrFrom4([4]byte{1, 2, 3, 4})
-			dst        = tcpip.AddrFrom4([4]byte{5, 6, 7, 8})
-			pseudoSum1 = header.PseudoHeaderChecksum(
-				header.TCPProtocolNumber,
-				src, dst,
-				0,
-			)
-		)
-		crand.Read(key[:])
-		c, err := NewTCPCrypt(key)
+	for i := 0; i < size; i++ {
+		var b = make([]byte, 64)
+
+		n, err := conn.Read(b)
 		require.NoError(t, err)
 
-		var pt = make(header.TCP, header.TCPMinimumSize+len(msg), header.TCPMinimumSize+len(msg)+Bytes)
-		withHdr(pt)
-		copy(pt.Payload(), msg)
+		exp := <-buf
+		require.Equal(t, exp, b[:n])
+		i += n
+	}
+}
 
-		p := relraw.ToPacket(0, pt)
-		c.EncryptChecksum(p, pseudoSum1)
+type secureLink struct {
+	link.LinkEndpoint
+	chiper     *crypto.TCP
+	t          *testing.T
+	pseudoSum1 uint16
+	id         string
+}
 
-		ct := header.TCP(p.Data())
+var _ link.LinkEndpoint = (*secureLink)(nil)
 
-		ok1 := ct.IsChecksumValid(
-			src, dst,
-			checksum.Checksum(ct.Payload(), 0),
-			uint16(len(ct.Payload())),
-		)
-		require.True(t, ok1)
+func New(t *testing.T, pseudoSum1 uint16, id string) *secureLink {
+	var child = channel.New(4, 1536, "")
+	var key = [crypto.Bytes]byte{0: 1}
 
-		err = c.DecryptChecksum(p, pseudoSum1)
-		require.NoError(t, err)
+	e := &secureLink{
+		LinkEndpoint: child, t: t,
+		pseudoSum1: pseudoSum1, id: id,
+	}
+	var err error
+	e.chiper, err = crypto.NewTCP(key, pseudoSum1)
+	if err != nil {
+		panic(err)
+	}
+	return e
+}
 
-		pt2 := header.TCP(p.Data())
-		require.Equal(t, unsafe.Pointer(&pt[0]), unsafe.Pointer(&p.Data()[0]))
-		ok2 := pt2.IsChecksumValid(
-			src, dst,
-			checksum.Checksum(pt2.Payload(), 0),
-			uint16(len(pt2.Payload())),
-		)
-		require.True(t, ok2)
-	})
+func (e *secureLink) Inbound(ip *relraw.Packet) {
+	err := e.chiper.DecryptRaw(ip)
+	require.NoError(test.T(), err)
+
+	e.LinkEndpoint.Inbound(ip)
+}
+
+func (e *secureLink) Outbound(ctx context.Context, ip *relraw.Packet) {
+	e.LinkEndpoint.Outbound(ctx, ip)
+	if ip.Len() == 0 {
+		return
+	}
+	e.chiper.EncryptRaw(ip)
 }
 
 /*
 
-goos: linux
-goarch: amd64
-pkg: github.com/lysShub/itun/sconn/crypto
 cpu: Intel(R) Xeon(R) CPU E5-1650 v4 @ 3.60GHz
-Benchmark_Encrypt_PrevAlloc-12              	 2359156	       510.4 ns/op	2899.77 MB/s	       0 B/op	       0 allocs/op
-Benchmark_EncryptChecksum_PrevAlloc-12      	 1872739	       628.0 ns/op	2356.54 MB/s	       0 B/op	       0 allocs/op
-Benchmark_Encrypt_NotPreAlloc-12            	 1393096	       854.4 ns/op	1732.26 MB/s	    1568 B/op	       2 allocs/op
-Benchmark_EncryptChecksum_NotPreAlloc-12    	 1226776	       980.8 ns/op	1508.96 MB/s	    1568 B/op	       2 allocs/op
-Benchmark_Decrypt-12                        	 2487850	       481.8 ns/op	3071.57 MB/s	       0 B/op	       0 allocs/op
-Benchmark_DecryptChecksum-12                	 2479730	       486.2 ns/op	3043.83 MB/s	       0 B/op	       0 allocs/op
+Benchmark_Encrypt_PrevAlloc-12      	 1719616	       694.2 ns/op	2160.66 MB/s	       0 B/op	       0 allocs/op
+Benchmark_Encrypt_NotPreAlloc-12    	 1000000	      1018 ns/op	1473.46 MB/s	    1568 B/op	       2 allocs/op
+Benchmark_Decrypt-12                	 1885424	       638.7 ns/op	2373.47 MB/s	       0 B/op	       0 allocs/op
 PASS
-ok  	github.com/lysShub/itun/sconn/crypto	11.195s
 
 */
 
+const packetLen = 1480
+
 func Benchmark_Encrypt_PrevAlloc(b *testing.B) {
-	var pt = make(header.TCP, 1480, 1480+Bytes)
-	withHdr(pt)
-
-	c, err := NewTCPCrypt([16]byte{})
-	require.NoError(b, err)
-
-	p := relraw.ToPacket(0, pt)
-	for i := 0; i < b.N; i++ {
-		b.SetBytes(int64(len(pt)))
-
-		c.Encrypt(p)
-		p.SetLen(len(pt))
+	if debug.Debug() {
+		b.Skip("debug mode")
 	}
-}
 
-func Benchmark_EncryptChecksum_PrevAlloc(b *testing.B) {
-	var pt = make(header.TCP, 1480, 1480+Bytes)
-	withHdr(pt)
+	var p, pseudoSum1 = buildTCP(b, packetLen, true)
+	c, _ := crypto.NewTCP([16]byte{}, pseudoSum1)
 
-	c, err := NewTCPCrypt([16]byte{})
-	require.NoError(b, err)
-
-	p := relraw.ToPacket(0, pt)
+	var pt = relraw.NewPacket(p.Head(), p.Len(), p.Tail())
 	for i := 0; i < b.N; i++ {
-		b.SetBytes(int64(len(pt)))
+		b.SetBytes(int64(p.Len()))
 
-		c.EncryptChecksum(p, 0)
-		p.SetLen(len(pt))
+		pt.Sets(p.Head(), p.Len())
+		copy(pt.Data(), p.Data())
+
+		c.Encrypt(pt)
 	}
 }
 
 func Benchmark_Encrypt_NotPreAlloc(b *testing.B) {
-	var pt = make(header.TCP, 1480)
-	withHdr(pt)
-
-	c, err := NewTCPCrypt([16]byte{})
-	require.NoError(b, err)
-
-	p := relraw.ToPacket(0, pt)
-	for i := 0; i < b.N; i++ {
-		b.SetBytes(int64(len(pt)))
-
-		c.Encrypt(p)
-		p = relraw.ToPacket(0, p.Data()[:len(pt):len(pt)])
+	if debug.Debug() {
+		b.Skip("debug mode")
 	}
-}
 
-func Benchmark_EncryptChecksum_NotPreAlloc(b *testing.B) {
-	var pt = make(header.TCP, 1480)
-	withHdr(pt)
+	var p, pseudoSum1 = buildTCP(b, packetLen, false)
+	c, _ := crypto.NewTCP([16]byte{}, pseudoSum1)
 
-	c, err := NewTCPCrypt([16]byte{})
-	require.NoError(b, err)
-
-	p := relraw.ToPacket(0, pt)
+	var raw = make([]byte, p.Len())
+	var pt = relraw.ToPacket(0, raw)
 	for i := 0; i < b.N; i++ {
-		b.SetBytes(int64(len(pt)))
+		b.SetBytes(int64(p.Len()))
 
-		c.EncryptChecksum(p, 0)
+		pt = relraw.ToPacket(0, raw[:p.Len():p.Len()])
+		copy(pt.Data(), p.Data())
 
-		p = relraw.ToPacket(0, p.Data()[:len(pt):len(pt)])
+		c.Encrypt(pt)
 	}
+
 }
 
 func Benchmark_Decrypt(b *testing.B) {
-	c, err := NewTCPCrypt([16]byte{})
-	require.NoError(b, err)
-
-	var data = relraw.NewPacket(0, 1480, 0)
-	withHdr(data.Data())
-	c.Encrypt(data)
-
-	var ct = relraw.NewPacket(0, data.Len(), 0)
-	for i := 0; i < b.N; i++ {
-		b.SetBytes(int64(ct.Len()))
-
-		copy(ct.Data(), data.Data())
-		c.Decrypt(ct)
+	if debug.Debug() {
+		b.Skip("debug mode")
 	}
-}
 
-func Benchmark_DecryptChecksum(b *testing.B) {
-	c, err := NewTCPCrypt([16]byte{})
-	require.NoError(b, err)
+	var p, pseudoSum1 = buildTCP(b, packetLen, true)
+	c, _ := crypto.NewTCP([16]byte{}, pseudoSum1)
+	c.Encrypt(p)
 
-	var data = relraw.NewPacket(0, 1480, 0)
-	withHdr(data.Data())
-	c.Encrypt(data)
-
-	var ct = relraw.NewPacket(0, data.Len(), 0)
+	var ct = relraw.NewPacket(p.Head(), p.Len(), p.Tail())
 	for i := 0; i < b.N; i++ {
-		b.SetBytes(int64(ct.Len()))
+		b.SetBytes(int64(p.Len()))
 
-		copy(ct.Data(), data.Data())
-		c.DecryptChecksum(ct, 0)
+		ct.Sets(p.Head(), p.Len())
+		copy(ct.Data(), p.Data())
+
+		c.Decrypt(ct)
 	}
 }

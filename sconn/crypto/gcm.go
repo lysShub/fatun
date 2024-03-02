@@ -5,21 +5,26 @@ import (
 	"crypto/cipher"
 
 	"github.com/lysShub/relraw"
-	pkge "github.com/pkg/errors"
+	"github.com/lysShub/relraw/test"
+	"github.com/lysShub/relraw/test/debug"
 	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
-type TCPCrypt struct {
-	c        cipher.AEAD
-	nonceLen int
+type TCP struct {
+	c cipher.AEAD
+
+	enOffsetDelta uint32
+	deOffsetDelta uint32
+	pseudoSum1    uint16
 }
 
 const Bytes = 16
+const nonces = 12
 
-// NewTCPCrypt a tcp crypter, use AES-GCM
-func NewTCPCrypt(key [Bytes]byte) (*TCPCrypt, error) {
-	var g = &TCPCrypt{}
+// NewTCP a tcp crypter, use AES-GCM
+func NewTCP(key [Bytes]byte, pseudoSum1 uint16) (*TCP, error) {
+	var g = &TCP{pseudoSum1: pseudoSum1}
 
 	if block, err := aes.NewCipher(key[:]); err != nil {
 		return nil, err
@@ -28,75 +33,134 @@ func NewTCPCrypt(key [Bytes]byte) (*TCPCrypt, error) {
 			return nil, err
 		}
 	}
-	g.nonceLen = g.c.NonceSize()
-	if g.nonceLen > header.TCPChecksumOffset {
-		return nil, pkge.Errorf("not support nonce length greater than header.TCPChecksumOffset")
-	}
-
 	return g, nil
 }
 
-func (g *TCPCrypt) Encrypt(tcp *relraw.Packet) {
+func (g *TCP) Encrypt(tcp *relraw.Packet) {
+	if debug.Debug() {
+		test.ValidTCP(test.T(), tcp.Data(), g.pseudoSum1)
+	}
+
 	tcp.AllocTail(Bytes)
-
-	// notice: not strict nonce
-
-	// additionalData can't contain tcp checksum flag
 	tcphdr := header.TCP(tcp.Data())
-	i := tcphdr.DataOffset()
-	g.c.Seal(tcphdr[i:i], tcphdr[:g.nonceLen], tcphdr[i:], tcphdr[:header.TCPChecksumOffset])
-
-	tcp.SetLen(tcp.Len() + Bytes)
-}
-
-// DecryptChecksum encrypt tcp packet and update checksum, pseudoSum1 indicate pseudo checksum
-// with totalLen=0.
-func (g *TCPCrypt) EncryptChecksum(tcp *relraw.Packet, pseudoSum1 uint16) {
-	tcp.AllocTail(Bytes)
-
-	tcphdr := header.TCP(tcp.Data())
+	tcphdr.SetSequenceNumber(tcphdr.SequenceNumber() + g.enOffsetDelta)
+	tcphdr.SetAckNumber(tcphdr.AckNumber() + g.enOffsetDelta)
+	g.enOffsetDelta += Bytes
 
 	i := tcphdr.DataOffset()
-	g.c.Seal(tcphdr[i:i], tcphdr[:g.nonceLen], tcphdr[i:], tcphdr[:header.TCPChecksumOffset])
+	g.c.Seal(tcphdr[i:i], tcphdr[:nonces], tcphdr[i:], tcphdr[:header.TCPChecksumOffset])
 
 	tcphdr = tcphdr[:len(tcphdr)+Bytes]
 	tcphdr.SetChecksum(0)
-	psosum := checksum.Combine(pseudoSum1, uint16(len(tcphdr)))
+	psosum := checksum.Combine(g.pseudoSum1, uint16(len(tcphdr)))
 	tcphdr.SetChecksum(^checksum.Checksum(tcphdr, psosum))
 
 	tcp.SetLen(len(tcphdr))
+
+	if debug.Debug() {
+		test.ValidTCP(test.T(), tcp.Data(), g.pseudoSum1)
+	}
 }
 
-// todo: segment type
-func (g *TCPCrypt) Decrypt(tcp *relraw.Packet) error {
-	tcphdr := header.TCP(tcp.Data())
-
-	i := tcphdr.DataOffset()
-	_, err := g.c.Open(tcphdr[i:i], tcphdr[:g.nonceLen], tcphdr[i:], tcphdr[:header.TCPChecksumOffset])
-	if err != nil {
-		return err
+func (g *TCP) EncryptRaw(ip *relraw.Packet) {
+	if debug.Debug() {
+		test.ValidIP(test.T(), ip.Data())
 	}
 
-	tcp.SetLen(len(tcphdr) - Bytes)
-	return nil
+	var hdrLen int
+	var ver = header.IPVersion(ip.Data())
+	switch ver {
+	case 4:
+		hdrLen = int(header.IPv4(ip.Data()).HeaderLength())
+	case 6:
+		hdrLen = header.IPv6MinimumSize
+	default:
+		panic("")
+	}
+
+	ip.SetHead(ip.Head() + hdrLen)
+	g.Encrypt(ip)
+	ip.SetHead(ip.Head() - hdrLen)
+
+	if ver == 4 {
+		iphdr := header.IPv4(ip.Data())
+		iphdr.SetTotalLength(iphdr.TotalLength() + Bytes)
+		sum := ^iphdr.Checksum()
+		iphdr.SetChecksum(^checksum.Combine(sum, Bytes))
+	} else {
+		iphdr := header.IPv6(ip.Data())
+		iphdr.SetPayloadLength(iphdr.PayloadLength() + Bytes)
+	}
+
+	if debug.Debug() {
+		test.ValidIP(test.T(), ip.Data())
+	}
 }
 
-// DecryptChecksum decrypt tcp packet and update checksum, pseudoSum1 indicate pseudo checksum
-// with totalLen=0.
-func (g *TCPCrypt) DecryptChecksum(tcp *relraw.Packet, pseudoSum1 uint16) error {
+func (g *TCP) Decrypt(tcp *relraw.Packet) error {
+	if debug.Debug() {
+		test.ValidTCP(test.T(), tcp.Data(), g.pseudoSum1)
+	}
+
 	tcphdr := header.TCP(tcp.Data())
 
 	i := tcphdr.DataOffset()
-	_, err := g.c.Open(tcphdr[i:i], tcphdr[:g.nonceLen], tcphdr[i:], tcphdr[:header.TCPChecksumOffset])
+	_, err := g.c.Open(tcphdr[i:i], tcphdr[:nonces], tcphdr[i:], tcphdr[:header.TCPChecksumOffset])
 	if err != nil {
 		return err
 	}
 
 	tcphdr = tcphdr[:len(tcphdr)-Bytes]
+	tcphdr.SetSequenceNumber(tcphdr.SequenceNumber() - g.deOffsetDelta)
+	tcphdr.SetAckNumber(tcphdr.AckNumber() - g.deOffsetDelta)
+	g.deOffsetDelta += Bytes
+
 	tcphdr.SetChecksum(0)
-	psosum := checksum.Combine(pseudoSum1, uint16(len(tcphdr)))
+	psosum := checksum.Combine(g.pseudoSum1, uint16(len(tcphdr)))
 	tcphdr.SetChecksum(^checksum.Checksum(tcphdr, psosum))
 
 	tcp.SetLen(len(tcphdr))
+
+	if debug.Debug() {
+		test.ValidTCP(test.T(), tcp.Data(), g.pseudoSum1)
+	}
+	return nil
+}
+
+func (g *TCP) DecryptRaw(ip *relraw.Packet) error {
+	if debug.Debug() {
+		test.ValidIP(test.T(), ip.Data())
+	}
+
+	var hdrLen int
+	var ver = header.IPVersion(ip.Data())
+	switch ver {
+	case 4:
+		hdrLen = int(header.IPv4(ip.Data()).HeaderLength())
+	case 6:
+		hdrLen = header.IPv6MinimumSize
+	default:
+		panic("")
+	}
+
+	ip.SetHead(ip.Head() + hdrLen)
+	if err := g.Decrypt(ip); err != nil {
+		return err
+	}
+	ip.SetHead(ip.Head() - hdrLen)
+
+	if ver == 4 {
+		iphdr := header.IPv4(ip.Data())
+		iphdr.SetTotalLength(iphdr.TotalLength() - Bytes)
+		sum := ^iphdr.Checksum()
+		iphdr.SetChecksum(^checksum.Combine(sum, ^uint16(Bytes)))
+	} else {
+		iphdr := header.IPv6(ip.Data())
+		iphdr.SetPayloadLength(iphdr.PayloadLength() - Bytes)
+	}
+
+	if debug.Debug() {
+		test.ValidIP(test.T(), ip.Data())
+	}
 	return nil
 }

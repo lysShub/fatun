@@ -1,3 +1,6 @@
+//go:build linux
+// +build linux
+
 package client
 
 import (
@@ -11,7 +14,7 @@ import (
 type capture struct {
 }
 
-func NewCapture(s itun.Session) (Capture, error) {
+func newCapture(s itun.Session) (Capture, error) {
 	// return nil, errors.New("implement")
 	return &capture{}, nil
 }

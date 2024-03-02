@@ -18,8 +18,8 @@ import (
 
 func Test_Ustack(t *testing.T) {
 	var (
-		caddr = netip.AddrPortFrom(test.LocIP, test.RandPort())
-		saddr = netip.AddrPortFrom(test.LocIP, test.RandPort())
+		caddr = netip.AddrPortFrom(test.LocIP(), test.RandPort())
+		saddr = netip.AddrPortFrom(test.LocIP(), test.RandPort())
 
 		seed = time.Now().UnixNano()
 		r    = rand.New(rand.NewSource(seed))

@@ -7,13 +7,11 @@ import (
 )
 
 type Keepalive struct {
-	cnt    uint16
-	curCnt uint16
-
-	rec atomic.Uint32
+	count  uint16
+	ticker *time.Ticker
 }
 
-func NewKeepalive(idle time.Duration) (ka *Keepalive, ticker *time.Ticker) {
+func NewKeepalive(idle time.Duration) (ka *Keepalive) {
 	const (
 		maxDur = time.Second * 5
 		minCnt = 5
@@ -35,20 +33,36 @@ func NewKeepalive(idle time.Duration) (ka *Keepalive, ticker *time.Ticker) {
 	}
 
 	return &Keepalive{
-		cnt: uint16(cnt),
-	}, time.NewTicker(period)
-}
-
-func (k *Keepalive) Idled() bool {
-	if k.rec.Load() == 0 {
-		k.curCnt++
-	} else {
-		k.rec.Store(0)
-		k.curCnt = 0
+		count:  uint16(cnt),
+		ticker: time.NewTicker(period),
 	}
-	return k.curCnt > k.cnt
 }
 
-func (k *Keepalive) Action() {
-	k.rec.Add(1)
+func (k *Keepalive) Ticker() <-chan time.Time {
+	return k.ticker.C
+}
+
+func (k *Keepalive) Task() *Task {
+	return &Task{}
+}
+
+type Task struct {
+	countLimit   uint16
+	currentCount uint16
+
+	rec atomic.Uint32
+}
+
+func (t *Task) Idle() bool {
+	if t.rec.Load() == 0 {
+		t.currentCount++
+	} else {
+		t.rec.Store(0)
+		t.currentCount = 0
+	}
+	return t.currentCount > t.countLimit
+}
+
+func (t *Task) Action() {
+	t.rec.Add(1)
 }

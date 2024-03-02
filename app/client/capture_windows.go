@@ -1,10 +1,16 @@
+//go:build windows
+// +build windows
+
 package client
 
 import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"net"
 	"net/netip"
+
+	pkge "github.com/pkg/errors"
 
 	"github.com/lysShub/divert-go"
 	"github.com/lysShub/itun"
@@ -13,28 +19,35 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
-func NewCapture(s itun.Session) (Capture, error) {
+/*
+	filter priority: 2 RS
+
+	capture priority: 1 RW
+
+*/
+
+const (
+	capturePriority = 1
+	filterPriority  = 2
+)
+
+func newCapture(s itun.Session) (Capture, error) {
 	var c = &capture{}
-	switch s.Proto {
-	case itun.TCP:
-		c.minSize += header.TCPMinimumSize
-	case itun.UDP:
-		c.minSize += header.UDPMinimumSize
-	case itun.ICMP:
-		c.minSize += header.ICMPv4MinimumSize
-	case itun.ICMPV6:
-		c.minSize += header.ICMPv6MinimumSize
-	default:
-		panic("")
-	}
-	if s.SrcAddr.Addr().Is4() {
-		c.minSize += header.IPv4MinimumSize
+
+	if addr, nic, err := getAddrNIC(s.SrcAddr.Addr()); err != nil {
+		return nil, err
 	} else {
-		c.minSize += header.IPv6MinimumSize
+		s.SrcAddr = netip.AddrPortFrom(addr, s.SrcAddr.Port())
+
+		var inbound divert.Address
+		inbound.SetOutbound(false)
+		inbound.Network().IfIdx = uint32(nic)
+		c.inboundAddr = inbound
 	}
+	c.minSize = s.MinPacketSize()
 
 	var err error
-	c.ip, err = relraw.NewIPStack(
+	c.ipstack, err = relraw.NewIPStack(
 		s.SrcAddr.Addr(), s.DstAddr.Addr(),
 		tcpip.TransportProtocolNumber(s.Proto),
 		// todo: option
@@ -48,18 +61,9 @@ func NewCapture(s itun.Session) (Capture, error) {
 		s.Proto, s.SrcAddr.Addr(), s.SrcAddr.Port(), s.DstAddr.Addr(), s.DstAddr.Port(),
 	)
 
-	c.hdl, err = divert.Open(filter, divert.NETWORK, 0, divert.READ_ONLY|divert.WRITE_ONLY)
+	c.hdl, err = divert.Open(filter, divert.NETWORK, capturePriority, divert.READ_ONLY|divert.WRITE_ONLY)
 	if err != nil {
 		return nil, err
-	}
-
-	if nic, err := getAddrNIC(s.SrcAddr.Addr()); err != nil {
-		return nil, err
-	} else {
-		var inbound divert.Address
-		inbound.SetOutbound(false)
-		inbound.Network().IfIdx = uint32(nic)
-		c.inboundAddr = inbound
 	}
 
 	return c, nil
@@ -68,7 +72,7 @@ func NewCapture(s itun.Session) (Capture, error) {
 type capture struct {
 	hdl *divert.Divert
 
-	ip *relraw.IPStack
+	ipstack *relraw.IPStack
 
 	minSize int
 
@@ -105,12 +109,14 @@ func (c *capture) RecvCtx(ctx context.Context, p *relraw.Packet) (err error) {
 	}
 
 	p.SetHead(p.Head() + iphdrLen)
+
+	// todo: remove tcp/udp checksum pseudo-sum party
 	return nil
 }
 
 func (c *capture) Inject(p *relraw.Packet) error {
 
-	c.ip.AttachInbound(p)
+	c.ipstack.AttachInbound(p)
 
 	_, err := c.hdl.Send(p.Data(), &c.inboundAddr)
 	return err
@@ -118,7 +124,53 @@ func (c *capture) Inject(p *relraw.Packet) error {
 
 func (c *capture) Close() error { return c.hdl.Close() }
 
-func getAddrNIC(addr netip.Addr) (int, error) {
-	panic("todo")
-	return 0, nil
+func getAddrNIC(addr netip.Addr) (netip.Addr, int, error) {
+	if addr.IsLoopback() {
+		c, err := net.DialUDP("udp", nil, &net.UDPAddr{IP: net.ParseIP("8.8.8.8"), Port: 53})
+		if err != nil {
+			return addr, 0, pkge.WithStack(err)
+		}
+
+		defAddr, err := netip.ParseAddrPort(c.LocalAddr().String())
+		if err != nil {
+			return addr, 0, pkge.WithStack(err)
+		}
+		addr = defAddr.Addr()
+	}
+
+	ifs, err := net.Interfaces()
+	if err != nil {
+		return addr, 0, err
+	}
+
+	for _, i := range ifs {
+		as, err := i.Addrs()
+		if err != nil {
+			return addr, 0, pkge.WithStack(err)
+		}
+		for _, a := range as {
+			var sub netip.Prefix
+			switch a := a.(type) {
+			case *net.IPAddr:
+				if ip := a.IP.To4(); ip != nil {
+					sub = netip.PrefixFrom(netip.AddrFrom4([4]byte(ip)), 32)
+				} else {
+					sub = netip.PrefixFrom(netip.AddrFrom16([16]byte(a.IP)), 128)
+				}
+			case *net.IPNet:
+				sub, err = netip.ParsePrefix(a.String())
+				if err != nil {
+					continue
+				}
+			default:
+				return addr, 0, pkge.Errorf("unknow address type %T", a)
+			}
+
+			if sub.Contains(addr) {
+				return addr, i.Index, nil
+			}
+		}
+	}
+
+	return addr, 0, pkge.Errorf("invalid address %s", addr)
 }

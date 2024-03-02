@@ -2,28 +2,28 @@ package sconn
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/lysShub/itun"
 	"github.com/lysShub/itun/cctx"
 	"github.com/lysShub/itun/sconn/crypto"
 	"github.com/lysShub/itun/ustack"
 	"github.com/lysShub/itun/ustack/faketcp"
+	"github.com/lysShub/itun/ustack/link/nofin"
+	"github.com/lysShub/relraw/test/debug"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
 func Accept(ctx cctx.CancelCtx, raw *itun.RawConn, cfg *Server) (conn *Conn) {
-	tcp, err := ustack.AcceptNoFinTCP(ctx, raw, cfg.HandShakeTimeout)
+	link := nofin.New(4, uint32(raw.MTU()))
+	tcp, err := ustack.AcceptTCP(ctx, raw, link, cfg.HandShakeTimeout)
 	if err != nil {
 		ctx.Cancel(err)
 		return nil
 	}
 	defer tcp.Close() // todo: aceept error
 
-	conn = &Conn{
-		raw:   raw,
-		id:    "server",
-		state: handshake,
-	}
+	conn = &Conn{raw: raw, id: "server"}
 
 	// previous packets
 	cfg.PrevPackets.Server(ctx, tcp)
@@ -32,13 +32,23 @@ func Accept(ctx cctx.CancelCtx, raw *itun.RawConn, cfg *Server) (conn *Conn) {
 		return nil
 	}
 
+	pseudoSum1 := header.PseudoHeaderChecksum(
+		header.TCPProtocolNumber,
+		conn.raw.LocalAddr().Addr, conn.raw.RemoteAddr().Addr,
+		0,
+	)
+
 	// swap secret key
 	if key, err := cfg.SwapKey.SecretKey(ctx, tcp); err != nil {
 		ctx.Cancel(errors.Join(ctx.Err(), err))
 		return nil
 	} else {
+		if debug.Debug() {
+			fmt.Println("server recved key", key)
+		}
+
 		if key != [crypto.Bytes]byte{} {
-			conn.crypter, err = crypto.NewTCPCrypt(key)
+			conn.crypter, err = crypto.NewTCP(key, pseudoSum1)
 			if err != nil {
 				ctx.Cancel(errors.Join(ctx.Err(), err))
 				return nil
@@ -52,30 +62,33 @@ func Accept(ctx cctx.CancelCtx, raw *itun.RawConn, cfg *Server) (conn *Conn) {
 		return nil
 	}
 
-	seq, ack := tcp.SeqAck()
+	// crypto tcp packet will re-calc checksum always
+	var psum1 *uint16
+	if conn.crypter == nil {
+		psum1 = &pseudoSum1
+	}
+	if debug.Debug() {
+		psum1 = &pseudoSum1
+	}
+	seq, ack := link.SeqAck()
 	conn.fake = faketcp.NewFakeTCP(
 		raw.LocalAddr().Port,
 		raw.RemoteAddr().Port,
-		seq, ack, conn.crypter == nil,
-	)
-	conn.state = transport
-	conn.psosum1 = header.PseudoHeaderChecksum(
-		header.TCPProtocolNumber,
-		conn.raw.LocalAddr().Addr, conn.raw.RemoteAddr().Addr,
-		0,
+		seq, ack, psum1,
 	)
 	return conn
 }
 
 func Connect(ctx cctx.CancelCtx, raw *itun.RawConn, cfg *Client) (conn *Conn) {
-	tcp, err := ustack.ConnectNoFinTCP(ctx, raw, cfg.HandShakeTimeout)
+	link := nofin.New(4, uint32(raw.MTU()))
+	tcp, err := ustack.ConnectTCP(ctx, raw, link, cfg.HandShakeTimeout)
 	if err != nil {
 		ctx.Cancel(err)
 		return nil
 	}
 	defer tcp.Close()
 
-	conn = &Conn{raw: raw, id: "clinet", state: handshake}
+	conn = &Conn{raw: raw, id: "client"}
 
 	// previous packets
 	cfg.PrevPackets.Client(ctx, tcp)
@@ -84,13 +97,23 @@ func Connect(ctx cctx.CancelCtx, raw *itun.RawConn, cfg *Client) (conn *Conn) {
 		return nil
 	}
 
+	pseudoSum1 := header.PseudoHeaderChecksum(
+		header.TCPProtocolNumber,
+		conn.raw.LocalAddr().Addr, conn.raw.RemoteAddr().Addr,
+		0,
+	)
+
 	// swap secret key
 	if key, err := cfg.SwapKey.SecretKey(ctx, tcp); err != nil {
 		ctx.Cancel(err)
 		return nil
 	} else {
+		if debug.Debug() {
+			fmt.Println("client swap key ", key)
+		}
 		if key != (Key{}) {
-			conn.crypter, err = crypto.NewTCPCrypt(key)
+
+			conn.crypter, err = crypto.NewTCP(key, pseudoSum1)
 			if err != nil {
 				ctx.Cancel(err)
 				return nil
@@ -104,17 +127,19 @@ func Connect(ctx cctx.CancelCtx, raw *itun.RawConn, cfg *Client) (conn *Conn) {
 		return nil
 	}
 
-	seq, ack := tcp.SeqAck()
+	// crypto tcp packet will re-calc checksum always
+	var psum1 *uint16
+	if conn.crypter == nil {
+		psum1 = &pseudoSum1
+	}
+	if debug.Debug() {
+		psum1 = &pseudoSum1
+	}
+	seq, ack := link.SeqAck()
 	conn.fake = faketcp.NewFakeTCP(
 		raw.LocalAddr().Port,
 		raw.RemoteAddr().Port,
-		seq, ack, conn.crypter == nil,
-	)
-	conn.state = transport
-	conn.psosum1 = header.PseudoHeaderChecksum(
-		header.TCPProtocolNumber,
-		conn.raw.LocalAddr().Addr, conn.raw.RemoteAddr().Addr,
-		0,
+		seq, ack, psum1,
 	)
 	return conn
 }

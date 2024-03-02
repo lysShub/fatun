@@ -10,7 +10,6 @@ import (
 	"github.com/lysShub/itun"
 	"github.com/lysShub/itun/cctx"
 	"github.com/lysShub/itun/ustack/link"
-	"github.com/lysShub/itun/ustack/link/nofin"
 	"github.com/lysShub/relraw"
 	pkge "github.com/pkg/errors"
 )
@@ -20,16 +19,16 @@ type TCP struct {
 
 	ctx cctx.CancelCtx
 
-	link  *nofin.Endpoint
+	link  link.LinkEndpoint
 	stack *Ustack
 
 	closed   atomic.Bool
 	closedCh chan struct{} // ensure in/out bound goroutine is returned
 }
 
-func AcceptNoFinTCP(paretnCtx context.Context, raw *itun.RawConn, handshakeTimeout time.Duration) (*TCP, error) {
+func AcceptTCP(paretnCtx context.Context, raw *itun.RawConn, link link.LinkEndpoint, handshakeTimeout time.Duration) (*TCP, error) {
 	ctx := cctx.WithContext(paretnCtx)
-	var t = newTcpStack(ctx, raw, "server")
+	var t = newTcpStack(ctx, link, raw, "server")
 
 	t.Conn = t.stack.Accept(ctx, handshakeTimeout)
 	if err := ctx.Err(); err != nil {
@@ -40,9 +39,9 @@ func AcceptNoFinTCP(paretnCtx context.Context, raw *itun.RawConn, handshakeTimeo
 	return t, nil
 }
 
-func ConnectNoFinTCP(paretnCtx context.Context, raw *itun.RawConn, handshakeTimeout time.Duration) (*TCP, error) {
+func ConnectTCP(paretnCtx context.Context, raw *itun.RawConn, link link.LinkEndpoint, handshakeTimeout time.Duration) (*TCP, error) {
 	ctx := cctx.WithContext(paretnCtx)
-	var t = newTcpStack(ctx, raw, "client")
+	var t = newTcpStack(ctx, link, raw, "client")
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -55,10 +54,10 @@ func ConnectNoFinTCP(paretnCtx context.Context, raw *itun.RawConn, handshakeTime
 	return t, nil
 }
 
-func newTcpStack(ctx cctx.CancelCtx, raw *itun.RawConn, id string) *TCP {
+func newTcpStack(ctx cctx.CancelCtx, link link.LinkEndpoint, raw *itun.RawConn, id string) *TCP {
 	var t = &TCP{
 		ctx:      ctx,
-		link:     nofin.New(8, uint32(raw.MTU())),
+		link:     link,
 		closedCh: make(chan struct{}, 2),
 	}
 
@@ -111,10 +110,6 @@ func (t *TCP) Close() (err error) {
 	t.stack.Destroy()
 	t.link.Close()
 	return err
-}
-
-func (t *TCP) SeqAck() (seq, ack uint32) {
-	return t.link.SeqAck()
 }
 
 func (t *TCP) inboundService(raw *itun.RawConn) {

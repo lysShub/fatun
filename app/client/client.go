@@ -17,6 +17,7 @@ import (
 type Config struct {
 	Sconn sconn.Client
 	MTU   uint16
+	IPv6  bool
 }
 
 type Client struct {
@@ -28,19 +29,19 @@ type Client struct {
 
 	conn *sconn.Conn
 
-	c control.Client
+	ctr control.Client
 }
 
-func NewClient(ctx context.Context, raw relraw.RawConn, cfg *Config) (*Client, error) {
+func NewClient(parentCtx context.Context, raw relraw.RawConn, cfg *Config) (*Client, error) {
 	var c = &Client{
-		ctx:  cctx.WithContext(ctx),
+		ctx:  cctx.WithContext(parentCtx),
 		cfg:  cfg,
 		addr: raw.LocalAddrPort(),
 	}
 
 	conn := itun.WrapRawConn(raw, c.cfg.MTU)
 	c.conn = sconn.Connect(c.ctx, conn, &c.cfg.Sconn)
-	if err := ctx.Err(); err != nil {
+	if err := c.ctx.Err(); err != nil {
 		return nil, err
 	}
 
@@ -52,12 +53,16 @@ func NewClient(ctx context.Context, raw relraw.RawConn, cfg *Config) (*Client, e
 	go ctr.OutboundService(c.ctx, c.conn)
 	go c.downlink(ctr)
 
-	c.c = control.Dial(c.ctx, ctr)
-	if err := ctx.Err(); err != nil {
+	c.ctr = control.Dial(c.ctx, ctr)
+	if err := c.ctx.Err(); err != nil {
 		return nil, err
 	}
 
-	return c, nil
+	if cfg.IPv6, err = c.ctr.IPv6(); err != nil {
+		return nil, errors.Join(err, c.Close())
+	}
+
+	return c, c.ctr.EndConfig()
 }
 
 func (c *Client) AddProxy(s itun.Session) error {
@@ -71,11 +76,11 @@ func (c *Client) AddProxy(s itun.Session) error {
 
 	switch s.Proto {
 	case itun.TCP:
-		resp, err := c.c.AddTCP(s.DstAddr)
+		resp, err := c.ctr.AddTCP(s.DstAddr)
 		if err != nil {
 			return err
 		} else if resp.Err != nil {
-			panic(err)
+			panic(resp.Err)
 		}
 		return c.sessionMgr.Add(s, resp.ID)
 	default:
@@ -110,7 +115,7 @@ func (c *Client) downlink(ctrSessionInbound *control.Controller) {
 
 func (c *Client) Close() error {
 	err := errors.Join(
-		c.c.Close(),
+		c.ctr.Close(),
 		c.conn.Close(),
 	)
 

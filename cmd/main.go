@@ -1,5 +1,11 @@
 package main
 
+import (
+	"context"
+
+	"github.com/lysShub/itun/app/client"
+)
+
 // var server netip.AddrPort
 // if a, err := net.ResolveTCPAddr("tcp", pxySrvAddr); err != nil {
 // 	return nil, err
@@ -36,3 +42,9 @@ package main
 // 		}
 // 		addrPort = netip.AddrPortFrom(addr, uint16(a.Port))
 // 	}
+
+func main() {
+
+	client.NewClient(context.Background(), nil, nil)
+
+}

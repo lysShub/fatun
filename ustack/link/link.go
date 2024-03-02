@@ -3,7 +3,7 @@ package link
 import (
 	"context"
 
-	"gvisor.dev/gvisor/pkg/tcpip"
+	"github.com/lysShub/relraw"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
@@ -11,14 +11,15 @@ import (
 type LinkEndpoint interface {
 	stack.LinkEndpoint
 
-	InjectInbound(tcpip.NetworkProtocolNumber, stack.PacketBufferPtr)
-	ReadContext(ctx context.Context) stack.PacketBufferPtr
+	Inbound(ip *relraw.Packet)
+	Outbound(ctx context.Context, ip *relraw.Packet)
+	Close()
 
+	// todo: 复用stack, 不在需要close stack
+	//
 	// FinRstFlag has send or recv tcp flag contain FIN or RST,
 	// use after tcp close.
 	FinRstFlag() <-chan struct{}
-
-	Close()
 }
 
 type ErrTCPCloseTimeout struct{}
