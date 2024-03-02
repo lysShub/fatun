@@ -23,12 +23,10 @@ func TestXxxx(t *testing.T) {
 	defer gdivert.Release()
 
 	cfg := &client.Config{
-		Sconn: sconn.Client{
-			BaseConfig: sconn.BaseConfig{
-				PrevPackets:      pps,
-				HandShakeTimeout: ht,
-			},
-			SwapKey: &sconn.TokenClient{Tokener: &tkClient{}},
+		Sconn: sconn.Config{
+			PrevPackets:      pps,
+			HandShakeTimeout: ht,
+			SwapKey:          &sconn.TokenClient{Tokener: &tkClient{}},
 		},
 		MTU: 1536,
 	}

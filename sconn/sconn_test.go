@@ -42,8 +42,8 @@ func Test_Sconn(t *testing.T) {
 
 	var suit = []struct {
 		pps    PrevPackets
-		client SecretKeyClient
-		server SecretKeyServer
+		client SecretKey
+		server SecretKey
 		data   []byte
 	}{
 		{
@@ -77,12 +77,10 @@ func Test_Sconn(t *testing.T) {
 		}()
 
 		go func() {
-			cfg := Server{
-				BaseConfig: BaseConfig{
-					PrevPackets:      pps,
-					HandShakeTimeout: time.Second * 3,
-				},
-				SwapKey: s.server,
+			cfg := Config{
+				PrevPackets:      pps,
+				HandShakeTimeout: time.Second * 3,
+				SwapKey:          s.server,
 			}
 
 			ctx := cctx.WithContext(context.Background())
@@ -105,12 +103,10 @@ func Test_Sconn(t *testing.T) {
 		time.Sleep(time.Second)
 
 		// client
-		cfg := Client{
-			BaseConfig: BaseConfig{
-				PrevPackets:      pps,
-				HandShakeTimeout: time.Second * 3,
-			},
-			SwapKey: s.client,
+		cfg := Config{
+			PrevPackets:      pps,
+			HandShakeTimeout: time.Second * 3,
+			SwapKey:          s.client,
 		}
 
 		ctx := cctx.WithContext(context.Background())

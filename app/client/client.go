@@ -15,7 +15,7 @@ import (
 )
 
 type Config struct {
-	Sconn sconn.Client
+	Sconn sconn.Config
 	MTU   uint16
 	IPv6  bool
 }

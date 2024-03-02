@@ -215,12 +215,10 @@ func CreateSconns(t require.TestingT, caddr, saddr netip.AddrPort) (c, s *sconn.
 
 	go func() {
 		s = func() *sconn.Conn {
-			cfg := sconn.Server{
-				BaseConfig: sconn.BaseConfig{
-					PrevPackets:      pps,
-					HandShakeTimeout: time.Hour,
-				},
-				SwapKey: &sconn.NotCryptoServer{},
+			cfg := sconn.Config{
+				PrevPackets:      pps,
+				HandShakeTimeout: time.Hour,
+				SwapKey:          &sconn.NotCryptoServer{},
 			}
 
 			sconn := sconn.Accept(ctx, sraw, &cfg)
@@ -232,12 +230,10 @@ func CreateSconns(t require.TestingT, caddr, saddr netip.AddrPort) (c, s *sconn.
 	}()
 
 	c = func() *sconn.Conn {
-		cfg := sconn.Client{
-			BaseConfig: sconn.BaseConfig{
-				PrevPackets:      pps,
-				HandShakeTimeout: time.Hour,
-			},
-			SwapKey: &sconn.NotCryptoClient{},
+		cfg := sconn.Config{
+			PrevPackets:      pps,
+			HandShakeTimeout: time.Hour,
+			SwapKey:          &sconn.NotCryptoClient{},
 		}
 
 		sconn := sconn.Connect(ctx, craw, &cfg)

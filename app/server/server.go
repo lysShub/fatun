@@ -15,7 +15,7 @@ import (
 )
 
 type Config struct {
-	Sconn sconn.Server
+	Sconn sconn.Config
 
 	MTU                 uint16
 	TCPHandshakeTimeout time.Duration

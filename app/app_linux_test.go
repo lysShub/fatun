@@ -14,12 +14,10 @@ import (
 
 func TestXxxx(t *testing.T) {
 	cfg := &server.Config{
-		Sconn: sconn.Server{
-			BaseConfig: sconn.BaseConfig{
-				PrevPackets:      pps,
-				HandShakeTimeout: ht,
-			},
-			SwapKey: &sconn.TokenServer{Valider: &tkServer{}},
+		Sconn: sconn.Config{
+			PrevPackets:      pps,
+			HandShakeTimeout: ht,
+			SwapKey:          &sconn.TokenServer{Valider: &tkServer{}},
 		},
 		MTU:                 1536,
 		TCPHandshakeTimeout: ht,

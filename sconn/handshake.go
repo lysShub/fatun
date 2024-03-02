@@ -2,7 +2,6 @@ package sconn
 
 import (
 	"errors"
-	"fmt"
 
 	"github.com/lysShub/itun"
 	"github.com/lysShub/itun/cctx"
@@ -14,7 +13,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
-func Accept(ctx cctx.CancelCtx, raw *itun.RawConn, cfg *Server) (conn *Conn) {
+func Accept(ctx cctx.CancelCtx, raw *itun.RawConn, cfg *Config) (conn *Conn) {
 	link := nofin.New(4, uint32(raw.MTU()))
 	tcp, err := ustack.AcceptTCP(ctx, raw, link, cfg.HandShakeTimeout)
 	if err != nil {
@@ -43,10 +42,6 @@ func Accept(ctx cctx.CancelCtx, raw *itun.RawConn, cfg *Server) (conn *Conn) {
 		ctx.Cancel(errors.Join(ctx.Err(), err))
 		return nil
 	} else {
-		if debug.Debug() {
-			fmt.Println("server recved key", key)
-		}
-
 		if key != [crypto.Bytes]byte{} {
 			conn.crypter, err = crypto.NewTCP(key, pseudoSum1)
 			if err != nil {
@@ -79,7 +74,7 @@ func Accept(ctx cctx.CancelCtx, raw *itun.RawConn, cfg *Server) (conn *Conn) {
 	return conn
 }
 
-func Connect(ctx cctx.CancelCtx, raw *itun.RawConn, cfg *Client) (conn *Conn) {
+func Connect(ctx cctx.CancelCtx, raw *itun.RawConn, cfg *Config) (conn *Conn) {
 	link := nofin.New(4, uint32(raw.MTU()))
 	tcp, err := ustack.ConnectTCP(ctx, raw, link, cfg.HandShakeTimeout)
 	if err != nil {
@@ -108,11 +103,7 @@ func Connect(ctx cctx.CancelCtx, raw *itun.RawConn, cfg *Client) (conn *Conn) {
 		ctx.Cancel(err)
 		return nil
 	} else {
-		if debug.Debug() {
-			fmt.Println("client swap key ", key)
-		}
 		if key != (Key{}) {
-
 			conn.crypter, err = crypto.NewTCP(key, pseudoSum1)
 			if err != nil {
 				ctx.Cancel(err)

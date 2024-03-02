@@ -10,34 +10,17 @@ import (
 	pkge "github.com/pkg/errors"
 )
 
-type SecretKeyClient interface {
-	secretKey
-	client()
-}
-type clientImpl struct{}
-
-func (clientImpl) client() {}
-
-type SecretKeyServer interface {
-	secretKey
-	server()
-}
-
-type serverImpl struct{}
-
-func (serverImpl) server() {}
-
-type secretKey interface {
+type SecretKey interface {
 	// SecretKey  get crypto secret key, return Key{} mean not crypto
 	SecretKey(ctx context.Context, conn net.Conn) (Key, error)
 }
 
 type Key = [crypto.Bytes]byte
 
-type NotCryptoClient struct{ clientImpl }
-type NotCryptoServer struct{ serverImpl }
+type NotCryptoClient struct{}
+type NotCryptoServer struct{}
 
-var _ secretKey = (*NotCryptoClient)(nil)
+var _ SecretKey = (*NotCryptoClient)(nil)
 
 func (c *NotCryptoClient) SecretKey(ctx context.Context, conn net.Conn) (Key, error) {
 	var key = Key{}
@@ -88,14 +71,12 @@ func (c *NotCryptoServer) SecretKey(ctx context.Context, conn net.Conn) (Key, er
 }
 
 type TokenClient struct {
-	clientImpl
 	Tokener interface {
 		Token() (tk []byte, key Key, err error)
 	}
 }
 
 type TokenServer struct {
-	serverImpl
 	Valider interface {
 		Valid(tk []byte) (key Key, err error)
 	}
