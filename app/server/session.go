@@ -13,7 +13,7 @@ import (
 	"github.com/lysShub/itun"
 	"github.com/lysShub/itun/cctx"
 	"github.com/lysShub/itun/sconn"
-	"github.com/lysShub/itun/segment"
+	"github.com/lysShub/itun/session"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 
 	"github.com/lysShub/relraw"
@@ -202,7 +202,7 @@ func (s *Session) downlink(conn *sconn.Conn) {
 		default:
 		}
 
-		err = conn.SendSeg(s.ctx, b, segment.SessID(s.id))
+		err = conn.SendSeg(s.ctx, b, session.SessID(s.id))
 		if err != nil {
 			s.ctx.Cancel(err)
 			return
@@ -258,7 +258,7 @@ func (m *IdMgr) getLocked() (id uint16, err error) {
 	}
 
 	id = m.allocs[n-1] + 1
-	if id != uint16(segment.CtrSessID) && !slices.Contains(m.allocs, id) {
+	if id != uint16(session.CtrSessID) && !slices.Contains(m.allocs, id) {
 		return id, nil
 	}
 	for i := 0; i < n-1; i++ {
@@ -279,7 +279,7 @@ func (m *IdMgr) Put(id uint16) {
 		return
 	}
 
-	m.allocs[i] = uint16(segment.CtrSessID)
+	m.allocs[i] = uint16(session.CtrSessID)
 	slices.Sort(m.allocs)
 	m.allocs = m.allocs[:len(m.allocs)-1]
 }

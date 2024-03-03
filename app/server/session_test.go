@@ -6,7 +6,7 @@ package server
 import (
 	"testing"
 
-	"github.com/lysShub/itun/segment"
+	"github.com/lysShub/itun/session"
 	"github.com/stretchr/testify/require"
 )
 
@@ -43,7 +43,7 @@ func Test_Id_Manager(t *testing.T) {
 		for i := 0; i < 0xffff-1; i++ {
 			id, err := idmgr.Get()
 			require.NoError(t, err)
-			require.NotEqual(t, segment.CtrSessID, id)
+			require.NotEqual(t, session.CtrSessID, id)
 		}
 
 		id, err := idmgr.Get()

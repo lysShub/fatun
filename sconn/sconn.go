@@ -29,16 +29,16 @@ type Conn struct {
 
 const tinyCntLimit = 4 // todo: to config
 
-type ErrManyInvalidSizeSegment int
+type ErrManyInvalidSizePacket int
 
-func (e ErrManyInvalidSizeSegment) Error() string {
-	return fmt.Sprintf("recved many invalid size(%d) segment", int(e))
+func (e ErrManyInvalidSizePacket) Error() string {
+	return fmt.Sprintf("recved many invalid size(%d) packet", int(e))
 }
 
-type ErrManyDecryptFailSegment string
+type ErrManyDecryptFailPacket string
 
-func (e ErrManyDecryptFailSegment) Error() string {
-	return fmt.Sprintf("recved many decrypt fail segment, %s", string(e))
+func (e ErrManyDecryptFailPacket) Error() string {
+	return fmt.Sprintf("recved many decrypt fail packet, %s", string(e))
 }
 
 func (s *Conn) RecvSeg(ctx context.Context, b *relraw.Packet) (id session.SessID, err error) {
@@ -59,7 +59,7 @@ func (s *Conn) RecvSeg(ctx context.Context, b *relraw.Packet) (id session.SessID
 		// recved impostor/wrong packet
 		if err != nil {
 			b.Sets(oldH, oldN)
-			s.tinyCntErr = ErrManyDecryptFailSegment(err.Error())
+			s.tinyCntErr = ErrManyDecryptFailPacket(err.Error())
 			return s.RecvSeg(ctx, b)
 		}
 	}
@@ -68,7 +68,7 @@ func (s *Conn) RecvSeg(ctx context.Context, b *relraw.Packet) (id session.SessID
 
 	if b.Len() <= session.IDSize {
 		s.tinyCnt++
-		s.tinyCntErr = ErrManyInvalidSizeSegment(b.Len())
+		s.tinyCntErr = ErrManyInvalidSizePacket(b.Len())
 		b.Sets(oldH, oldN)
 		return s.RecvSeg(ctx, b)
 	}

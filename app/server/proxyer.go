@@ -12,7 +12,7 @@ import (
 	"github.com/lysShub/itun/cctx"
 	"github.com/lysShub/itun/control"
 	"github.com/lysShub/itun/sconn"
-	"github.com/lysShub/itun/segment"
+	"github.com/lysShub/itun/session"
 	"github.com/lysShub/relraw"
 )
 
@@ -66,7 +66,7 @@ func (p *proxyer) uplink(ctrSessionInbound *control.Controller) {
 			return
 		}
 
-		if id == segment.CtrSessID {
+		if id == session.CtrSessID {
 			ctrSessionInbound.Inbound(b)
 		} else {
 			s := p.sessionMgr.Get(uint16(id))

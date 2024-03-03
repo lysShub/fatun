@@ -8,14 +8,6 @@ import (
 
 // todo: session
 
-/*
-	todo: deliver by Segment ID, then just accept SessionConn, not need
-		Segment type anymore
-*/
-
-// Segment include PxySeg and MgrSeg, identify by SessionID; MgrSeg is a TCP
-// packet, PxySeg indicate a transport layer packet, with header.
-//
 // SessionID   Payload(tcp/udp packet)
 // [0, 2)      [2, n)
 

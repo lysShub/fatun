@@ -105,7 +105,6 @@ func (s *Session) Inject(b *relraw.Packet) error {
 	// 	return pkge.Errorf("expect session %d, got %d", s.id, seg.ID())
 	// }
 
-	// decode segment
 	b.SetHead(b.Head() + session.IDSize)
 
 	return s.capture.Inject(b)
