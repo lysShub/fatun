@@ -8,7 +8,8 @@ import (
 
 	"github.com/lysShub/itun"
 	"github.com/lysShub/itun/cctx"
-	"github.com/lysShub/itun/segment"
+	"github.com/lysShub/itun/session"
+	"github.com/lysShub/relraw"
 	"github.com/lysShub/relraw/test"
 	pkge "github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
@@ -64,6 +65,7 @@ func Test_Sconn(t *testing.T) {
 			data:   []byte("0123456789"),
 		},
 	}
+	var sid session.SessID = 0x23
 
 	for _, s := range suit {
 		var craw, sraw = func() (*itun.RawConn, *itun.RawConn) {
@@ -89,14 +91,16 @@ func Test_Sconn(t *testing.T) {
 			defer sconn.Close()
 
 			if len(s.data) > 0 {
-				seg := segment.NewSegment(1536)
-				err := sconn.RecvSeg(ctx, seg)
-				require.NoError(t, err)
+				b := relraw.NewPacket(0, 1536)
 
-				rdata := seg.Payload()
+				id, err := sconn.RecvSeg(ctx, b)
+				require.NoError(t, err)
+				require.Equal(t, sid, id)
+
+				rdata := b.Data()
 				require.Equal(t, s.data, rdata)
 
-				err = sconn.SendSeg(ctx, seg)
+				err = sconn.SendSeg(ctx, b, id)
 				require.NoError(t, err)
 			}
 		}()
@@ -115,19 +119,18 @@ func Test_Sconn(t *testing.T) {
 		defer sconn.Close()
 
 		if len(s.data) > 0 {
-			seg := segment.NewSegment(1536)
-			n := copy(seg.Data(), s.data)
-			seg.SetLen(n)
-			seg.SetID(1)
+			b := relraw.NewPacket(0, 1536)
+			n := copy(b.Data(), s.data)
+			b.SetLen(n)
 
-			err := sconn.SendSeg(ctx, seg)
+			err := sconn.SendSeg(ctx, b, sid)
 			require.NoError(t, err)
 
-			seg.Packet().Sets(0, seg.Packet().Len())
-			err = sconn.RecvSeg(ctx, seg)
+			b.Sets(0, 1536)
+			id, err := sconn.RecvSeg(ctx, b)
 			require.NoError(t, err)
-
-			require.Equal(t, s.data, seg.Payload())
+			require.Equal(t, sid, id)
+			require.Equal(t, s.data, b.Data())
 		}
 	}
 }

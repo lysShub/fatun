@@ -14,7 +14,8 @@ import (
 	"github.com/lysShub/itun"
 	"github.com/lysShub/itun/cctx"
 	"github.com/lysShub/itun/sconn"
-	"github.com/lysShub/itun/segment"
+	"github.com/lysShub/itun/session"
+	"github.com/lysShub/relraw"
 	"github.com/lysShub/relraw/test"
 	"github.com/stretchr/testify/require"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -37,16 +38,16 @@ func Test_Control(t *testing.T) {
 
 		go ctr.OutboundService(ctx, s)
 		go func() {
-			seg := segment.NewSegment(1536)
+			b := relraw.NewPacket(0, 1536)
 			for {
-				seg.Sets(0, 1536)
-				err := s.RecvSeg(ctx, seg)
+				b.Sets(0, 1536)
+				_, err := s.RecvSeg(ctx, b)
 				if errors.Is(err, io.EOF) {
 					return
 				}
 				require.NoError(t, err)
 
-				ctr.Inbound(seg)
+				ctr.Inbound(b)
 			}
 		}()
 
@@ -62,17 +63,17 @@ func Test_Control(t *testing.T) {
 
 		go ctr.OutboundService(ctx, c)
 		go func() {
-			seg := segment.NewSegment(1536)
+			b := relraw.NewPacket(0, 1536)
 			for {
-				seg.Sets(0, 1536)
-				err := c.RecvSeg(ctx, seg)
+				b.Sets(0, 1536)
+				_, err := c.RecvSeg(ctx, b)
 				if errors.Is(err, context.Canceled) ||
 					errors.Is(err, os.ErrClosed) {
 					return
 				}
 				require.NoError(t, err)
 
-				ctr.Inbound(seg)
+				ctr.Inbound(b)
 			}
 		}()
 
@@ -114,23 +115,23 @@ func Test_Control_Client_Close(t *testing.T) {
 			var recvFin bool
 			defer func() { require.True(t, recvFin) }()
 
-			seg := segment.NewSegment(1536)
+			b := relraw.NewPacket(0, 1536)
 			for {
-				seg.Sets(0, 1536)
-				err := s.RecvSeg(ctx, seg)
+				b.Sets(0, 1536)
+				_, err := s.RecvSeg(ctx, b)
 				if errors.Is(err, context.Canceled) ||
 					errors.Is(err, io.EOF) {
 					rets = append(rets, 2)
 					return
 				}
 
-				if header.TCP(seg.Data()[segment.HdrSize:]).
+				if header.TCP(b.Data()[session.IDSize:]).
 					Flags().Contains(header.TCPFlagFin) {
 					recvFin = true
 				}
 
 				require.NoError(t, err)
-				ctr.Inbound(seg)
+				ctr.Inbound(b)
 			}
 		}()
 
@@ -152,16 +153,16 @@ func Test_Control_Client_Close(t *testing.T) {
 			rets = append(rets, 4)
 		}()
 		go func() {
-			seg := segment.NewSegment(1536)
+			b := relraw.NewPacket(0, 1536)
 			for {
-				seg.Sets(0, 1536)
-				err := c.RecvSeg(ctx, seg)
+				b.Sets(0, 1536)
+				_, err := c.RecvSeg(ctx, b)
 				if errors.Is(err, context.Canceled) {
 					rets = append(rets, 5)
 					return
 				}
 				require.NoError(t, err)
-				ctr.Inbound(seg)
+				ctr.Inbound(b)
 			}
 		}()
 

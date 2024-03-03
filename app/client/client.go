@@ -9,7 +9,7 @@ import (
 	"github.com/lysShub/itun/cctx"
 	"github.com/lysShub/itun/control"
 	"github.com/lysShub/itun/sconn"
-	"github.com/lysShub/itun/segment"
+	"github.com/lysShub/itun/session"
 	"github.com/lysShub/relraw"
 	pkge "github.com/pkg/errors"
 )
@@ -91,19 +91,20 @@ func (c *Client) AddProxy(s itun.Session) error {
 func (c *Client) downlink(ctrSessionInbound *control.Controller) {
 	n := c.conn.Raw().MTU()
 
-	var seg = segment.NewSegment(n)
+	var seg = relraw.NewPacket(0, n)
 	for {
-		seg.Packet().Sets(0, n)
+		seg.Sets(0, n)
 
-		if err := c.conn.RecvSeg(c.ctx, seg); err != nil {
+		id, err := c.conn.RecvSeg(c.ctx, seg)
+		if err != nil {
 			c.ctx.Cancel(err)
 			return
 		}
 
-		if id := seg.ID(); id == segment.CtrSegID {
+		if id == session.CtrSessID {
 			ctrSessionInbound.Inbound(seg)
 		} else {
-			s := c.sessionMgr.Get(id)
+			s := c.sessionMgr.Get(uint16(id))
 			if s != nil {
 				s.Inject(seg)
 			} else {

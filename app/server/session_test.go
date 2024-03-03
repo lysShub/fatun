@@ -43,7 +43,7 @@ func Test_Id_Manager(t *testing.T) {
 		for i := 0; i < 0xffff-1; i++ {
 			id, err := idmgr.Get()
 			require.NoError(t, err)
-			require.NotEqual(t, segment.CtrSegID, id)
+			require.NotEqual(t, segment.CtrSessID, id)
 		}
 
 		id, err := idmgr.Get()

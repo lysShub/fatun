@@ -182,13 +182,13 @@ func (s *Session) ID() uint16 {
 // recv from server and write to raw
 func (s *Session) downlink(conn *sconn.Conn) {
 	mtu := conn.Raw().MTU()
-	seg := segment.ToSegment(relraw.NewPacket(
+	b := relraw.NewPacket(
 		64, mtu, 16,
-	))
+	)
 
 	for {
-		seg.Sets(0, mtu)
-		err := s.capture.ReadCtx(s.ctx, seg.Packet())
+		b.Sets(0, mtu)
+		err := s.capture.ReadCtx(s.ctx, b)
 		if err != nil {
 			s.ctx.Cancel(err)
 			return
@@ -196,15 +196,13 @@ func (s *Session) downlink(conn *sconn.Conn) {
 
 		switch s.session.Proto {
 		case itun.TCP:
-			header.TCP(seg.Data()).SetDestinationPortWithChecksumUpdate(s.session.SrcAddr.Port())
+			header.TCP(b.Data()).SetDestinationPortWithChecksumUpdate(s.session.SrcAddr.Port())
 		case itun.UDP:
-			header.UDP(seg.Data()).SetDestinationPortWithChecksumUpdate(s.session.SrcAddr.Port())
+			header.UDP(b.Data()).SetDestinationPortWithChecksumUpdate(s.session.SrcAddr.Port())
 		default:
 		}
 
-		seg.SetID(s.id)
-
-		err = conn.SendSeg(s.ctx, seg)
+		err = conn.SendSeg(s.ctx, b, segment.SessID(s.id))
 		if err != nil {
 			s.ctx.Cancel(err)
 			return
@@ -260,7 +258,7 @@ func (m *IdMgr) getLocked() (id uint16, err error) {
 	}
 
 	id = m.allocs[n-1] + 1
-	if id != segment.CtrSegID && !slices.Contains(m.allocs, id) {
+	if id != uint16(segment.CtrSessID) && !slices.Contains(m.allocs, id) {
 		return id, nil
 	}
 	for i := 0; i < n-1; i++ {
@@ -281,7 +279,7 @@ func (m *IdMgr) Put(id uint16) {
 		return
 	}
 
-	m.allocs[i] = segment.CtrSegID
+	m.allocs[i] = uint16(segment.CtrSessID)
 	slices.Sort(m.allocs)
 	m.allocs = m.allocs[:len(m.allocs)-1]
 }

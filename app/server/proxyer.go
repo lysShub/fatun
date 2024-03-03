@@ -13,6 +13,7 @@ import (
 	"github.com/lysShub/itun/control"
 	"github.com/lysShub/itun/sconn"
 	"github.com/lysShub/itun/segment"
+	"github.com/lysShub/relraw"
 )
 
 type proxyer struct {
@@ -54,23 +55,23 @@ func Proxy(c context.Context, srv *Server, raw *itun.RawConn) {
 
 func (p *proxyer) uplink(ctrSessionInbound *control.Controller) {
 	n := p.conn.Raw().MTU()
-	seg := segment.NewSegment(n)
+	b := relraw.NewPacket(0, n)
 
 	for {
-		seg.Packet().Sets(0, n)
+		b.Sets(0, n)
 
-		err := p.conn.RecvSeg(p.ctx, seg)
+		id, err := p.conn.RecvSeg(p.ctx, b)
 		if err != nil {
 			p.ctx.Cancel(err)
 			return
 		}
 
-		if id := seg.ID(); id == segment.CtrSegID {
-			ctrSessionInbound.Inbound(seg)
+		if id == segment.CtrSessID {
+			ctrSessionInbound.Inbound(b)
 		} else {
-			s := p.sessionMgr.Get(id)
+			s := p.sessionMgr.Get(uint16(id))
 			if s != nil {
-				err := s.Write(seg.Payload())
+				err := s.Write(b.Data())
 				if err != nil {
 					p.ctx.Cancel(err)
 					return

@@ -9,9 +9,9 @@ import (
 	"time"
 
 	"github.com/lysShub/itun/ustack/link/nofin"
+	"github.com/lysShub/relraw"
 
 	"github.com/stretchr/testify/require"
-	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -60,21 +60,17 @@ func Test_Custom_Network_Stack(t *testing.T) {
 		}
 
 		var linkUnicom = func(a, b *nofin.Endpoint) {
+			var ip = relraw.NewPacket(0, 1536)
 			for {
-				pkb := a.ReadContext(context.Background())
-				if pkb.IsNil() {
+				a.Outbound(context.Background(), ip)
+				if ip.Len() == 0 {
 					return
 				}
-				iphdr := header.IPv4(pkb.ToView().AsSlice())
+				iphdr := header.IPv4(ip.Data())
 				tcphdr := header.TCP(iphdr.Payload())
 				require.False(t, tcphdr.Flags().Contains(header.TCPFlagFin))
 
-				pkb2 := stack.NewPacketBuffer(stack.PacketBufferOptions{
-					Payload: buffer.MakeWithData(iphdr),
-				})
-				pkb.DecRef()
-
-				b.InjectInbound(ipv4.ProtocolNumber, pkb2)
+				b.Inbound(ip)
 			}
 		}
 		go linkUnicom(links[0], links[1])

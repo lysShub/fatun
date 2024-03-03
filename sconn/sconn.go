@@ -6,8 +6,9 @@ import (
 
 	"github.com/lysShub/itun"
 	"github.com/lysShub/itun/sconn/crypto"
-	"github.com/lysShub/itun/segment"
+	"github.com/lysShub/itun/session"
 	"github.com/lysShub/itun/ustack/faketcp"
+	"github.com/lysShub/relraw"
 	"github.com/lysShub/relraw/test"
 	"github.com/lysShub/relraw/test/debug"
 	"github.com/stretchr/testify/require"
@@ -40,52 +41,59 @@ func (e ErrManyDecryptFailSegment) Error() string {
 	return fmt.Sprintf("recved many decrypt fail segment, %s", string(e))
 }
 
-func (s *Conn) RecvSeg(ctx context.Context, seg *segment.Segment) (err error) {
+func (s *Conn) RecvSeg(ctx context.Context, b *relraw.Packet) (id session.SessID, err error) {
 	if s.tinyCnt > tinyCntLimit {
-		return s.tinyCntErr
+		return 0, s.tinyCntErr
 	}
-	oldH, oldN := seg.Head(), seg.Len()
+	oldH, oldN := b.Head(), b.Len()
 
-	err = s.raw.ReadCtx(ctx, seg.Packet())
+	err = s.raw.ReadCtx(ctx, b)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	if s.crypter != nil {
 		s.tinyCnt++
-		err = s.crypter.Decrypt(seg.Packet())
+		err = s.crypter.Decrypt(b)
 
 		// recved impostor/wrong packet
 		if err != nil {
-			seg.Sets(oldH, oldN)
+			b.Sets(oldH, oldN)
 			s.tinyCntErr = ErrManyDecryptFailSegment(err.Error())
-			return s.RecvSeg(ctx, seg)
+			return s.RecvSeg(ctx, b)
 		}
 	}
 
-	s.fake.RecvStrip(seg.Packet())
+	s.fake.RecvStrip(b)
+
+	if b.Len() <= session.IDSize {
+		s.tinyCnt++
+		s.tinyCntErr = ErrManyInvalidSizeSegment(b.Len())
+		b.Sets(oldH, oldN)
+		return s.RecvSeg(ctx, b)
+	}
 
 	s.tinyCnt = 0
-	return nil
+	return session.GetID(b), nil
 }
 
-func (s *Conn) SendSeg(ctx context.Context, seg *segment.Segment) (err error) {
-	p := seg.Packet()
+func (s *Conn) SendSeg(ctx context.Context, b *relraw.Packet, id session.SessID) (err error) {
+	session.SetID(b, id)
 
-	s.fake.SendAttach(p)
+	s.fake.SendAttach(b)
 
 	if s.crypter != nil {
-		s.crypter.Encrypt(p)
+		s.crypter.Encrypt(b)
 
 		if debug.Debug() {
-			tp := p.Copy()
+			tp := b.Copy()
 			err := s.crypter.Decrypt(tp)
 			require.NoError(test.T(), err)
 		}
 	}
 
 	// todo: raw not calc tcp checksum
-	return s.raw.WriteCtx(ctx, p)
+	return s.raw.WriteCtx(ctx, b)
 }
 
 func (s *Conn) Raw() *itun.RawConn {

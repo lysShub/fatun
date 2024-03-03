@@ -91,9 +91,7 @@ func (u *Ustack) SetID(id string) { u.id = id }
 func (u *Ustack) ID() string      { return u.id }
 
 func (u *Ustack) InboundRaw(ip *relraw.Packet) error {
-
 	u.link.Inbound(ip)
-
 	return nil
 }
 
@@ -105,7 +103,6 @@ func (u *Ustack) Inbound(b *relraw.Packet) error {
 	}
 
 	u.link.Inbound(b)
-
 	return nil
 }
 

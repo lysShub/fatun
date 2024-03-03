@@ -7,7 +7,7 @@ import (
 
 	"github.com/lysShub/itun/cctx"
 	"github.com/lysShub/itun/sconn"
-	"github.com/lysShub/itun/segment"
+	"github.com/lysShub/itun/session"
 	"github.com/lysShub/itun/ustack"
 	"github.com/lysShub/itun/ustack/link/channel"
 	"github.com/lysShub/relraw"
@@ -60,10 +60,7 @@ func (c *Controller) OutboundService(ctx cctx.CancelCtx, conn *sconn.Conn) {
 			p.SetHead(p.Head() + header.IPv6MinimumSize)
 		}
 
-		seg := segment.ToSegment(p)
-		seg.SetID(segment.CtrSegID)
-
-		err = conn.SendSeg(ctx, seg)
+		err = conn.SendSeg(ctx, p, session.CtrSessID)
 		if err != nil {
 			ctx.Cancel(err)
 			return
@@ -71,11 +68,8 @@ func (c *Controller) OutboundService(ctx cctx.CancelCtx, conn *sconn.Conn) {
 	}
 }
 
-func (c *Controller) Inbound(seg *segment.Segment) {
-	// strip segment header
-	seg.SetHead(seg.Head() + segment.HdrSize)
-
-	c.stack.Inbound(seg.Packet())
+func (c *Controller) Inbound(seg *relraw.Packet) {
+	c.stack.Inbound(seg)
 }
 
 func (c *Controller) Destroy() {

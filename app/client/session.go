@@ -7,7 +7,7 @@ import (
 	"github.com/lysShub/itun"
 	"github.com/lysShub/itun/cctx"
 	"github.com/lysShub/itun/sconn"
-	"github.com/lysShub/itun/segment"
+	"github.com/lysShub/itun/session"
 	"github.com/lysShub/relraw"
 	pkge "github.com/pkg/errors"
 )
@@ -93,22 +93,20 @@ func (s *Session) uplink(conn *sconn.Conn) {
 
 		// todo: reset tcp mss
 
-		seg := segment.ToSegment(p)
-		seg.SetID(s.id)
-		if err := conn.SendSeg(s.ctx, seg); err != nil {
+		if err := conn.SendSeg(s.ctx, p, session.SessID(s.id)); err != nil {
 			s.ctx.Cancel(err)
 			return
 		}
 	}
 }
 
-func (s *Session) Inject(seg *segment.Segment) error {
-	if seg.ID() != s.id {
-		return pkge.Errorf("expect session %d, got %d", s.id, seg.ID())
-	}
+func (s *Session) Inject(b *relraw.Packet) error {
+	// if seg.ID() != s.id {
+	// 	return pkge.Errorf("expect session %d, got %d", s.id, seg.ID())
+	// }
 
 	// decode segment
-	seg.SetHead(seg.Head() + segment.HdrSize)
+	b.SetHead(b.Head() + session.IDSize)
 
-	return s.capture.Inject(seg.Packet())
+	return s.capture.Inject(b)
 }
