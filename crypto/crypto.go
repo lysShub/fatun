@@ -1,4 +1,4 @@
-package sconn
+package crypto
 
 import (
 	"context"
@@ -6,7 +6,6 @@ import (
 	"io"
 	"net"
 
-	"github.com/lysShub/itun/sconn/crypto"
 	pkge "github.com/pkg/errors"
 )
 
@@ -15,7 +14,7 @@ type SecretKey interface {
 	SecretKey(ctx context.Context, conn net.Conn) (Key, error)
 }
 
-type Key = [crypto.Bytes]byte
+type Key = [Bytes]byte
 
 type NotCryptoClient struct{}
 type NotCryptoServer struct{}
@@ -28,14 +27,14 @@ func (c *NotCryptoClient) SecretKey(ctx context.Context, conn net.Conn) (Key, er
 	n, err := conn.Write(key[:])
 	if err != nil {
 		return key, err
-	} else if n != crypto.Bytes {
+	} else if n != Bytes {
 		return key, pkge.Errorf("SecretKey write interrupt")
 	}
 
 	n, err = io.ReadFull(conn, key[:])
 	if err != nil {
 		return key, err
-	} else if n != crypto.Bytes {
+	} else if n != Bytes {
 		return key, pkge.Errorf("SecretKey read interrupt")
 	}
 
@@ -52,7 +51,7 @@ func (c *NotCryptoServer) SecretKey(ctx context.Context, conn net.Conn) (Key, er
 	n, err := io.ReadFull(conn, key[:])
 	if err != nil {
 		return key, err
-	} else if n != crypto.Bytes {
+	} else if n != Bytes {
 		return key, pkge.Errorf("SecretKey read interrupt")
 	}
 
@@ -63,7 +62,7 @@ func (c *NotCryptoServer) SecretKey(ctx context.Context, conn net.Conn) (Key, er
 	n, err = conn.Write(key[:])
 	if err != nil {
 		return key, err
-	} else if n != crypto.Bytes {
+	} else if n != Bytes {
 		return key, pkge.Errorf("SecretKey write interrupt")
 	}
 

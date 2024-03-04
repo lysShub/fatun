@@ -8,12 +8,13 @@ import (
 	"github.com/lysShub/divert-go"
 	"github.com/lysShub/itun"
 	"github.com/lysShub/itun/cctx"
+	"github.com/lysShub/itun/session"
 	"github.com/shirou/gopsutil/v3/process"
 )
 
 type filter struct {
 	ctx     cctx.CancelCtx
-	proxyCh chan itun.Session
+	proxyCh chan session.Session
 
 	processName       string
 	processNameProtos []itun.Proto
@@ -22,12 +23,12 @@ type filter struct {
 func NewFilter(ctx cctx.CancelCtx) *filter {
 	f := &filter{
 		ctx:     ctx,
-		proxyCh: make(chan itun.Session, 8),
+		proxyCh: make(chan session.Session, 8),
 	}
 	return f
 }
 
-func (f *filter) ProxyCh() <-chan itun.Session {
+func (f *filter) ProxyCh() <-chan session.Session {
 	return f.proxyCh
 }
 
@@ -73,20 +74,20 @@ func (f *filter) proxyByNameService() {
 			if name, err := p.Name(); err == nil {
 				fmt.Println(name)
 				if f.processName == name {
-					session := itun.Session{
+					s := session.Session{
 						SrcAddr: netip.AddrPortFrom(s.LocalAddr(), s.LocalPort),
 						Proto:   itun.Proto(s.Protocol),
 						DstAddr: netip.AddrPortFrom(s.RemoteAddr(), s.RemotePort),
 					}
 
-					if !slices.Contains(f.processNameProtos, session.Proto) {
-						fmt.Println("还不支持的proto ", session.Proto.String())
-					} else if !session.IsValid() {
-						fmt.Println("不合法的session", itun.ErrInvalidSession(session).Error())
+					if !slices.Contains(f.processNameProtos, s.Proto) {
+						fmt.Println("还不支持的proto ", s.Proto.String())
+					} else if !s.IsValid() {
+						fmt.Println("不合法的session", (session.ErrInvalidSession(s)).Error())
 					}
 
 					select {
-					case f.proxyCh <- session:
+					case f.proxyCh <- s:
 					default:
 						fmt.Println("block")
 					}

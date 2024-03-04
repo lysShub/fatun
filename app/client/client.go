@@ -3,34 +3,53 @@ package client
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/netip"
 
 	"github.com/lysShub/itun"
+	"github.com/lysShub/itun/app"
 	"github.com/lysShub/itun/cctx"
+	"github.com/lysShub/itun/config"
 	"github.com/lysShub/itun/control"
-	"github.com/lysShub/itun/sconn"
+	"github.com/lysShub/itun/crypto"
 	"github.com/lysShub/itun/session"
+	"github.com/lysShub/itun/ustack"
+	"github.com/lysShub/itun/ustack/faketcp"
+	"github.com/lysShub/itun/ustack/gonet"
 	"github.com/lysShub/relraw"
+	"github.com/lysShub/relraw/test"
+	"github.com/lysShub/relraw/test/debug"
 	pkge "github.com/pkg/errors"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
 type Config struct {
-	Sconn sconn.Config
-	MTU   uint16
-	IPv6  bool
+	config.Config
+	Secret crypto.SecretKey
+
+	MTU  uint16
+	IPv6 bool
 }
 
 type Client struct {
-	ctx  cctx.CancelCtx
-	cfg  *Config
+	ctx cctx.CancelCtx
+	cfg *Config
+
+	raw  *itun.RawConn
 	addr netip.AddrPort
 
 	sessionMgr *SessionMgr
 
-	conn *sconn.Conn
+	inited bool
+	st     *ustack.Ustack
+
+	fake   *faketcp.FakeTCP
+	crypto *crypto.TCP
 
 	ctr control.Client
 }
+
+var _ app.Sender = (*Client)(nil)
 
 func NewClient(parentCtx context.Context, raw relraw.RawConn, cfg *Config) (*Client, error) {
 	var c = &Client{
@@ -38,36 +57,53 @@ func NewClient(parentCtx context.Context, raw relraw.RawConn, cfg *Config) (*Cli
 		cfg:  cfg,
 		addr: raw.LocalAddrPort(),
 	}
+	go c.downlinkService()
+	go c.uplinkService()
 
-	conn := itun.WrapRawConn(raw, c.cfg.MTU)
-	c.conn = sconn.Connect(c.ctx, conn, &c.cfg.Sconn)
-	if err := c.ctx.Err(); err != nil {
-		return nil, err
-	}
-
-	ctr, err := control.NewController(conn.LocalAddrPort(), conn.RemoteAddrPort(), conn.MTU())
+	tcp, err := gonet.DialTCPWithBind(
+		c.ctx, c.st,
+		raw.LocalAddrPort(), raw.RemoteAddrPort(),
+		header.IPv4ProtocolNumber,
+	)
 	if err != nil {
 		return nil, err
 	}
 
-	go ctr.OutboundService(c.ctx, c.conn)
-	go c.downlink(ctr)
-
-	c.ctr = control.Dial(c.ctx, ctr)
-	if err := c.ctx.Err(); err != nil {
+	cfg.PrevPackets.Client(c.ctx, tcp)
+	if c.ctx.Err() != nil {
 		return nil, err
 	}
 
-	if cfg.IPv6, err = c.ctr.IPv6(); err != nil {
-		return nil, errors.Join(err, c.Close())
+	key, err := cfg.Secret.SecretKey(c.ctx, tcp)
+	if err != nil {
+		return nil, err
 	}
+	c.crypto, err = crypto.NewTCP(key, 0) // todo:
+	if err != nil {
+		return nil, err
+	}
+
+	seq, ack := c.st.SeqAck()
+
+	c.fake = faketcp.NewFakeTCP(
+		raw.LocalAddrPort().Port(),
+		raw.RemoteAddrPort().Port(),
+		seq, ack,
+		nil, // todo:
+	)
+
+	c.inited = true
+
+	c.ctr = control.NewClient(c.ctx, tcp)
+
+	c.ctr.IPv6()
 
 	return c, c.ctr.EndConfig()
 }
 
-func (c *Client) AddProxy(s itun.Session) error {
+func (c *Client) AddProxy(s session.Session) error {
 	if !s.IsValid() {
-		return itun.ErrInvalidSession(s)
+		return session.ErrInvalidSession(s)
 	} else if s.SrcAddr.Addr() != c.addr.Addr() {
 		return pkge.Errorf("client %s can't proxy ip %s", c.addr.Addr(), s.SrcAddr.Addr())
 	} else if s.SrcAddr.Port() == c.addr.Port() {
@@ -88,28 +124,76 @@ func (c *Client) AddProxy(s itun.Session) error {
 	}
 }
 
-func (c *Client) downlink(ctrSessionInbound *control.Controller) {
-	n := c.conn.Raw().MTU()
+func (c *Client) Send(b *relraw.Packet, id session.ID) {
+	session.SetID(b, id)
 
-	var seg = relraw.NewPacket(0, n)
+	c.fake.SendAttach(b)
+
+	c.crypto.Encrypt(b)
+
+	c.raw.WriteCtx(context.Background(), b)
+}
+
+func (c *Client) MTU() int { return c.raw.MTU() }
+
+func (c *Client) downlinkService() {
+	mtu := c.MTU()
+	var p = relraw.NewPacket(0, mtu)
+
 	for {
-		seg.Sets(0, n)
+		p.Sets(0, mtu)
 
-		id, err := c.conn.RecvSeg(c.ctx, seg)
-		if err != nil {
+		if err := c.raw.ReadCtx(c.ctx, p); err != nil {
 			c.ctx.Cancel(err)
 			return
 		}
 
-		if id == session.CtrSessID {
-			ctrSessionInbound.Inbound(seg)
-		} else {
-			s := c.sessionMgr.Get(uint16(id))
-			if s != nil {
-				s.Inject(seg)
-			} else {
-				// todo: log reply without registed
+		if faketcp.IsFakeTCP(p.Data()) {
+			err := c.crypto.Decrypt(p)
+			if err != nil {
+				fmt.Println(err)
+				continue
 			}
+
+			id := session.GetID(p)
+			if id == session.CtrSessID {
+				// recover to ip packet
+				p.Sets(0, p.Len()+p.Head())
+
+				c.st.Inbound(p)
+			} else {
+				s := c.sessionMgr.Get(id)
+				s.Inject(p)
+			}
+		} else {
+			// recover to ip packet
+			p.Sets(0, p.Len()+p.Head())
+
+			if debug.Debug() {
+				test.ValidIP(test.T(), p.Data())
+			}
+
+			c.st.Inbound(p)
+		}
+	}
+}
+
+func (c *Client) uplinkService() {
+	mtu := c.MTU()
+	var ip = relraw.NewPacket(0, mtu)
+
+	for {
+		ip.Sets(0, mtu)
+
+		c.st.Outbound(c.ctx, ip)
+
+		if c.inited {
+			if debug.Debug() {
+				panic("attach ip hdr")
+			}
+			c.Send(ip, session.CtrSessID)
+		} else {
+			c.raw.Write(ip.Data())
 		}
 	}
 }
@@ -117,7 +201,6 @@ func (c *Client) downlink(ctrSessionInbound *control.Controller) {
 func (c *Client) Close() error {
 	err := errors.Join(
 		c.ctr.Close(),
-		c.conn.Close(),
 	)
 
 	return err

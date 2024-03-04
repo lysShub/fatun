@@ -1,35 +1,31 @@
 package app
 
 import (
-	"context"
 	"io"
 	"net"
 	"testing"
 
-	"github.com/lysShub/itun/app/server"
-	"github.com/lysShub/itun/sconn"
-	"github.com/lysShub/relraw/tcp/bpf"
 	"github.com/stretchr/testify/require"
 )
 
 func TestXxxx(t *testing.T) {
-	cfg := &server.Config{
-		Sconn: sconn.Config{
-			PrevPackets:      pps,
-			HandShakeTimeout: ht,
-			SwapKey:          &sconn.TokenServer{Valider: &tkServer{}},
-		},
-		MTU:                 1536,
-		TCPHandshakeTimeout: ht,
-		InitCfgTimeout:      ht,
-		ProxyerIdeleTimeout: ht,
-	}
+	// cfg := &server.Config{
+	// 	Sconn: sconn.Config{
+	// 		PrevPackets:      pps,
+	// 		HandShakeTimeout: ht,
+	// 		SwapKey:          &sconn.TokenServer{Valider: &tkServer{}},
+	// 	},
+	// 	MTU:                 1536,
+	// 	TCPHandshakeTimeout: ht,
+	// 	InitCfgTimeout:      ht,
+	// 	ProxyerIdeleTimeout: ht,
+	// }
 
-	l, err := bpf.Listen(saddr)
-	require.NoError(t, err)
-	defer l.Close()
+	// l, err := bpf.Listen(saddr)
+	// require.NoError(t, err)
+	// defer l.Close()
 
-	server.ListenAndServe(context.Background(), l, cfg)
+	// server.ListenAndServe(context.Background(), l, cfg)
 }
 
 func TestTCP(t *testing.T) {

@@ -9,6 +9,7 @@ import (
 
 	"github.com/lysShub/itun"
 	"github.com/lysShub/itun/control"
+	"github.com/lysShub/itun/session"
 )
 
 type proxyerImpl proxyer
@@ -25,10 +26,10 @@ func (pi *proxyerImpl) EndConfig() {
 	fmt.Println("完成初始化配置")
 }
 
-func (pi *proxyerImpl) AddTCP(addr netip.AddrPort) (uint16, error) {
+func (pi *proxyerImpl) AddTCP(addr netip.AddrPort) (session.ID, error) {
 	s, err := pi.sessionMgr.Add(
 		pi.ctx,
-		itun.Session{
+		session.Session{
 			SrcAddr: pi.SrcAddr,
 			Proto:   itun.TCP,
 			DstAddr: addr,
@@ -39,14 +40,14 @@ func (pi *proxyerImpl) AddTCP(addr netip.AddrPort) (uint16, error) {
 	}
 	return s.ID(), nil
 }
-func (pi *proxyerImpl) DelTCP(id uint16) error {
+func (pi *proxyerImpl) DelTCP(id session.ID) error {
 	return pi.sessionMgr.Del(id)
 }
 
-func (pi *proxyerImpl) AddUDP(addr netip.AddrPort) (uint16, error) {
+func (pi *proxyerImpl) AddUDP(addr netip.AddrPort) (session.ID, error) {
 	s, err := pi.sessionMgr.Add(
 		pi.ctx,
-		itun.Session{
+		session.Session{
 			Proto:   itun.UDP,
 			DstAddr: addr,
 		},
@@ -56,7 +57,7 @@ func (pi *proxyerImpl) AddUDP(addr netip.AddrPort) (uint16, error) {
 	}
 	return s.ID(), nil
 }
-func (pi *proxyerImpl) DelUDP(id uint16) error {
+func (pi *proxyerImpl) DelUDP(id session.ID) error {
 	return pi.sessionMgr.Del(id)
 }
 

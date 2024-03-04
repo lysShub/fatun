@@ -5,8 +5,8 @@ import (
 	"time"
 
 	"github.com/lysShub/itun"
+	"github.com/lysShub/itun/app"
 	"github.com/lysShub/itun/cctx"
-	"github.com/lysShub/itun/sconn"
 	"github.com/lysShub/itun/session"
 	"github.com/lysShub/relraw"
 	pkge "github.com/pkg/errors"
@@ -19,7 +19,7 @@ type SessionMgr struct {
 	ticker    *time.Ticker
 
 	mu       sync.RWMutex
-	sessions map[uint16]*Session
+	sessions map[session.ID]*Session
 }
 
 func NewSessionMgr(c *Client) *SessionMgr {
@@ -29,14 +29,14 @@ func NewSessionMgr(c *Client) *SessionMgr {
 	}
 }
 
-func (sm *SessionMgr) Add(s itun.Session, id uint16) error {
+func (sm *SessionMgr) Add(s session.Session, id session.ID) error {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 	if _, has := sm.sessions[id]; has {
 		return pkge.Errorf("id %d exist", id)
 	}
 
-	session, err := NewSession(sm.client.ctx, sm.client.conn, id, s)
+	session, err := NewSession(sm.client.ctx, sm.client, id, s)
 	if err != nil {
 		return err
 	}
@@ -46,7 +46,7 @@ func (sm *SessionMgr) Add(s itun.Session, id uint16) error {
 	return nil
 }
 
-func (sm *SessionMgr) Get(id uint16) *Session {
+func (sm *SessionMgr) Get(id session.ID) *Session {
 	sm.mu.RLock()
 	defer sm.mu.RLock()
 	return sm.sessions[id]
@@ -54,15 +54,15 @@ func (sm *SessionMgr) Get(id uint16) *Session {
 
 type Session struct {
 	ctx     cctx.CancelCtx
-	session itun.Session
-	id      uint16
+	session session.Session
+	id      session.ID
 
 	capture Capture
 }
 
 func NewSession(
-	ctx cctx.CancelCtx, conn *sconn.Conn,
-	id uint16, session itun.Session,
+	ctx cctx.CancelCtx, conn app.Sender,
+	id session.ID, session session.Session,
 ) (*Session, error) {
 	var s = &Session{
 		ctx:     ctx,
@@ -80,8 +80,8 @@ func NewSession(
 	return s, nil
 }
 
-func (s *Session) uplink(conn *sconn.Conn) {
-	var mtu = conn.Raw().MTU()
+func (s *Session) uplink(conn app.Sender) {
+	var mtu = conn.MTU()
 	p := relraw.NewPacket(64, mtu)
 
 	for {
@@ -93,10 +93,8 @@ func (s *Session) uplink(conn *sconn.Conn) {
 
 		// todo: reset tcp mss
 
-		if err := conn.SendSeg(s.ctx, p, session.SessID(s.id)); err != nil {
-			s.ctx.Cancel(err)
-			return
-		}
+		conn.Send(p, session.ID(s.id))
+
 	}
 }
 

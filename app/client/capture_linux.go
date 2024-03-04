@@ -7,14 +7,14 @@ import (
 	"context"
 	"time"
 
-	"github.com/lysShub/itun"
+	"github.com/lysShub/itun/session"
 	"github.com/lysShub/relraw"
 )
 
 type capture struct {
 }
 
-func newCapture(s itun.Session) (Capture, error) {
+func newCapture(s session.Session) (Capture, error) {
 	// return nil, errors.New("implement")
 	return &capture{}, nil
 }

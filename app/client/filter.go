@@ -1,9 +1,12 @@
 package client
 
-import "github.com/lysShub/itun"
+import (
+	"github.com/lysShub/itun"
+	"github.com/lysShub/itun/session"
+)
 
 type Filter interface {
-	ProxyCh() <-chan itun.Session
+	ProxyCh() <-chan session.Session
 
 	EnableDefaultRule() error
 	DisableDefaultRule() error

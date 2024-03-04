@@ -13,7 +13,7 @@ import (
 	pkge "github.com/pkg/errors"
 
 	"github.com/lysShub/divert-go"
-	"github.com/lysShub/itun"
+	"github.com/lysShub/itun/session"
 	"github.com/lysShub/relraw"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -31,7 +31,7 @@ const (
 	filterPriority  = 2
 )
 
-func newCapture(s itun.Session) (Capture, error) {
+func newCapture(s session.Session) (Capture, error) {
 	var c = &capture{}
 
 	if addr, nic, err := getAddrNIC(s.SrcAddr.Addr()); err != nil {

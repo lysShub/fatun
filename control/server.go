@@ -2,41 +2,33 @@ package control
 
 import (
 	"encoding/gob"
-	"errors"
 	"net"
 	"net/netip"
-	"time"
 
 	"github.com/lysShub/itun/cctx"
 	"github.com/lysShub/itun/control/internal"
-	"github.com/lysShub/itun/ustack/link"
+	"github.com/lysShub/itun/session"
 	pkge "github.com/pkg/errors"
 )
 
 type SrvHandler interface {
 	IPv6() bool
 	EndConfig()
-	AddTCP(addr netip.AddrPort) (uint16, error)
-	DelTCP(id uint16) error
-	AddUDP(addr netip.AddrPort) (uint16, error)
-	DelUDP(id uint16) error
+	AddTCP(addr netip.AddrPort) (session.ID, error)
+	DelTCP(id session.ID) error
+	AddUDP(addr netip.AddrPort) (session.ID, error)
+	DelUDP(id session.ID) error
 	PackLoss() float32
 	Ping()
 }
 
-func Serve(ctx cctx.CancelCtx, ctr *Controller, hander SrvHandler) {
-	tcp := ctr.stack.Accept(ctx, ctr.handshakeTimeout)
-	if ctx.Err() != nil {
-		return
-	}
-
-	srv := newGobServer(ctx, ctr, tcp, hander)
+func Serve(ctx cctx.CancelCtx, tcp net.Conn, hander SrvHandler) {
+	srv := newGobServer(ctx, tcp, hander)
 	srv.Serve(ctx)
 }
 
 type gobServer struct {
 	ctx cctx.CancelCtx
-	ctr *Controller
 	hdr SrvHandler
 
 	conn net.Conn
@@ -45,10 +37,9 @@ type gobServer struct {
 	dec *gob.Decoder
 }
 
-func newGobServer(ctx cctx.CancelCtx, ctr *Controller, tcp net.Conn, hdr SrvHandler) *gobServer {
+func newGobServer(ctx cctx.CancelCtx, tcp net.Conn, hdr SrvHandler) *gobServer {
 	var s = &gobServer{
 		ctx:  ctx,
-		ctr:  ctr,
 		hdr:  hdr,
 		conn: tcp,
 		enc:  gob.NewEncoder(tcp),
@@ -96,33 +87,14 @@ func (s *gobServer) Serve(ctx cctx.CancelCtx) {
 		}
 
 		if err != nil {
-			s.abort(err)
+			select {
+			case <-s.ctx.Done():
+			default:
+				s.ctx.Cancel(pkge.WithStack(s.conn.Close()))
+			}
 			return
 		}
 	}
-}
-
-func (s *gobServer) abort(err error) {
-	select {
-	case <-s.ctx.Done():
-	default:
-		err = errors.Join(
-			err,
-
-			// todo: this case, usual can't close
-			s.conn.Close(),
-		)
-
-		select {
-		case <-s.ctr.stack.Closed():
-		case <-time.After(time.Second * 3):
-			err = errors.Join(err, link.ErrTCPCloseTimeout{})
-		}
-
-		s.ctx.Cancel(pkge.WithStack(err))
-	}
-
-	s.ctr.Destroy()
 }
 
 func (s *gobServer) nextType() (t internal.CtrType, err error) {
@@ -174,7 +146,7 @@ func (s *gobServer) DelTCP() error {
 		return err
 	}
 
-	_ = s.hdr.DelTCP(uint16(req))
+	_ = s.hdr.DelTCP(req)
 
 	var resp internal.DelTCPResp
 	return s.enc.Encode(resp)
@@ -201,7 +173,7 @@ func (s *gobServer) DelUDP() error {
 		return err
 	}
 
-	_ = s.hdr.DelUDP(uint16(req))
+	_ = s.hdr.DelUDP(req)
 
 	var resp internal.DelUDPResp
 	return s.enc.Encode(resp)

@@ -2,14 +2,12 @@ package control
 
 import (
 	"encoding/gob"
-	"errors"
 	"net"
 	"net/netip"
-	"time"
 
 	"github.com/lysShub/itun/cctx"
 	"github.com/lysShub/itun/control/internal"
-	"github.com/lysShub/itun/ustack/link"
+	"github.com/lysShub/itun/session"
 )
 
 type Client interface {
@@ -18,25 +16,20 @@ type Client interface {
 	IPv6() (bool, error)
 	EndConfig() error
 	AddTCP(addr netip.AddrPort) (*AddTCP, error)
-	DelTCP(id uint16) error
+	DelTCP(id session.ID) error
 	AddUDP(addr netip.AddrPort) (*AddUDP, error)
-	DelUDP(id uint16) error
+	DelUDP(id session.ID) error
 	PackLoss() (float32, error)
 	Ping() error
 }
 
-func Dial(ctx cctx.CancelCtx, ctr *Controller) Client {
-	tcp := ctr.stack.Connect(ctx, ctr.handshakeTimeout)
-	if ctx.Err() != nil {
-		return nil
-	}
+func NewClient(ctx cctx.CancelCtx, tcp net.Conn) Client {
 
-	return newGobClient(ctx, ctr, tcp)
+	return newGobClient(ctx, tcp)
 }
 
 type gobClient struct {
 	ctx cctx.CancelCtx
-	ctr *Controller
 
 	conn net.Conn
 
@@ -44,10 +37,9 @@ type gobClient struct {
 	dec *gob.Decoder
 }
 
-func newGobClient(parentCtx cctx.CancelCtx, ctr *Controller, tcp net.Conn) *gobClient {
+func newGobClient(parentCtx cctx.CancelCtx, tcp net.Conn) *gobClient {
 	return &gobClient{
 		ctx:  parentCtx,
-		ctr:  ctr,
 		conn: tcp,
 		enc:  gob.NewEncoder(tcp),
 		dec:  gob.NewDecoder(tcp),
@@ -62,17 +54,11 @@ func (c *gobClient) Close() (err error) {
 		err = c.ctx.Err()
 	default:
 		err = c.conn.Close()
-		select {
-		case <-c.ctr.stack.Closed():
-		case <-time.After(time.Second * 3):
-			err = errors.Join(err, link.ErrTCPCloseTimeout{})
-		}
 
 		c.ctx.Cancel(nil)
 		// todo: wait downlink/OutboundService return
 	}
 
-	c.ctr.Destroy()
 	return err
 }
 
@@ -117,7 +103,7 @@ func (c *gobClient) AddTCP(addr netip.AddrPort) (*AddTCP, error) {
 	return &resp, err
 }
 
-func (c *gobClient) DelTCP(id uint16) error {
+func (c *gobClient) DelTCP(id session.ID) error {
 	if err := c.nextType(internal.DelTCP); err != nil {
 		return err
 	}
@@ -143,7 +129,7 @@ func (c *gobClient) AddUDP(addr netip.AddrPort) (*AddUDP, error) {
 	return &resp, err
 }
 
-func (c *gobClient) DelUDP(id uint16) error {
+func (c *gobClient) DelUDP(id session.ID) error {
 	if err := c.nextType(internal.DelUDP); err != nil {
 		return err
 	}

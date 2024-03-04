@@ -9,13 +9,16 @@ import (
 	"time"
 
 	"github.com/lysShub/itun"
-	"github.com/lysShub/itun/sconn"
+	"github.com/lysShub/itun/config"
+	"github.com/lysShub/itun/crypto"
+	"github.com/lysShub/itun/ustack"
 
 	"github.com/lysShub/relraw"
 )
 
 type Config struct {
-	Sconn sconn.Config
+	config.Config
+	Key crypto.SecretKey
 
 	MTU                 uint16
 	TCPHandshakeTimeout time.Duration
@@ -31,6 +34,8 @@ type Server struct {
 	Addr netip.AddrPort
 
 	ap *PortAdapter
+
+	st *ustack.Ustack
 }
 
 func ListenAndServe(ctx context.Context, l relraw.Listener, cfg *Config) (err error) {

@@ -9,6 +9,7 @@ require (
 
 require (
 	github.com/lysShub/divert-go v0.0.0-20240229084335-43e1fa8ed87b
+	github.com/shoenig/test v0.6.4
 	github.com/stretchr/testify v1.8.4
 	golang.org/x/net v0.20.0
 	gvisor.dev/gvisor v0.0.0-20230916030846-1d82564559db
@@ -16,6 +17,7 @@ require (
 
 require (
 	github.com/go-ole/go-ole v1.2.6 // indirect
+	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/google/uuid v1.4.0 // indirect
 	github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 // indirect
 	github.com/power-devops/perfstat v0.0.0-20210106213030-5aafc221ea8c // indirect

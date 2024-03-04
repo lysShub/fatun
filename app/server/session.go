@@ -5,14 +5,12 @@ package server
 
 import (
 	"context"
-	"errors"
 	"net/netip"
-	"slices"
 	"sync"
 
 	"github.com/lysShub/itun"
+	"github.com/lysShub/itun/app"
 	"github.com/lysShub/itun/cctx"
-	"github.com/lysShub/itun/sconn"
 	"github.com/lysShub/itun/session"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 
@@ -23,15 +21,15 @@ import (
 
 type SessionMgr struct {
 	proxyer *proxyer
-	idmgr   IdMgr
+	idmgr   *session.IdMgr
 
 	sync.RWMutex
 
 	// record mapping session id and Session
-	sessionMap map[uint16]*Session
+	sessionMap map[session.ID]*Session
 
 	// filter reduplicate add session
-	idMap map[itun.Session]uint16
+	idMap map[session.Session]session.ID
 
 	ka *itun.Keepalive
 }
@@ -40,8 +38,8 @@ func NewSessionMgr(pxyer *proxyer) *SessionMgr {
 	mgr := &SessionMgr{
 		proxyer: pxyer,
 
-		sessionMap: make(map[uint16]*Session, 16),
-		idMap:      make(map[itun.Session]uint16, 16),
+		sessionMap: make(map[session.ID]*Session, 16),
+		idMap:      make(map[session.Session]session.ID, 16),
 		ka:         itun.NewKeepalive(pxyer.srv.cfg.ProxyerIdeleTimeout),
 	}
 
@@ -49,15 +47,15 @@ func NewSessionMgr(pxyer *proxyer) *SessionMgr {
 	return mgr
 }
 
-func (sm *SessionMgr) Add(ctx cctx.CancelCtx, session itun.Session) (*Session, error) {
+func (sm *SessionMgr) Add(ctx cctx.CancelCtx, session session.Session) (*Session, error) {
 	sm.RLock()
-	sessionId, has := sm.idMap[session]
+	id, has := sm.idMap[session]
 	sm.RUnlock()
 	if has {
-		return sm.Get(sessionId), nil
+		return sm.Get(id), nil
 	}
 
-	sessionId, err := sm.idmgr.Get()
+	id, err := sm.idmgr.Get()
 	if err != nil {
 		return nil, err
 	}
@@ -67,7 +65,7 @@ func (sm *SessionMgr) Add(ctx cctx.CancelCtx, session itun.Session) (*Session, e
 	}
 	locAddr := netip.AddrPortFrom(sm.proxyer.srv.Addr.Addr(), port)
 	s, err := NewSession(
-		ctx, sm.proxyer.conn, sessionId, session,
+		ctx, sm.proxyer, id, session,
 		locAddr, sm.ka.Task(),
 	)
 	if err != nil {
@@ -75,13 +73,13 @@ func (sm *SessionMgr) Add(ctx cctx.CancelCtx, session itun.Session) (*Session, e
 	}
 
 	sm.Lock()
-	sm.sessionMap[sessionId] = s
-	sm.idMap[session] = sessionId
+	sm.sessionMap[id] = s
+	sm.idMap[session] = id
 	sm.Unlock()
 	return s, nil
 }
 
-func (sm *SessionMgr) Del(id uint16) (err error) {
+func (sm *SessionMgr) Del(id session.ID) (err error) {
 	s := sm.Get(id)
 	if s != nil {
 		err = s.Close()
@@ -95,14 +93,14 @@ func (sm *SessionMgr) Del(id uint16) (err error) {
 	return err
 }
 
-func (sm *SessionMgr) Get(id uint16) *Session {
+func (sm *SessionMgr) Get(id session.ID) *Session {
 	sm.RLock()
 	defer sm.RUnlock()
 	return sm.sessionMap[id]
 }
 
 func (sm *SessionMgr) keepalive(ctx context.Context) {
-	var idleSessions = make([]uint16, 0, 16)
+	var idleSessions = make([]session.ID, 0, 16)
 
 	ticker := sm.ka.Ticker()
 	for {
@@ -132,29 +130,30 @@ func (sm *SessionMgr) keepalive(ctx context.Context) {
 	}
 }
 
-const maxSessions = 0xffff - 1
-
-var ErrSessionExceed = errors.New("session exceed limit")
-
 type Session struct {
 	ctx     cctx.CancelCtx
-	id      uint16
-	session itun.Session
+	id      session.ID
+	session session.Session
 
 	capture relraw.RawConn
 
 	task *itun.Task
 }
 
+type sender interface {
+	Send(ctx context.Context, b *relraw.Packet, id session.ID)
+	MTU() int
+}
+
 func NewSession(
-	ctx cctx.CancelCtx, conn *sconn.Conn,
-	sessionId uint16, session itun.Session,
+	ctx cctx.CancelCtx, sdr app.Sender,
+	id session.ID, session session.Session,
 	locAddr netip.AddrPort, task *itun.Task,
 ) (*Session, error) {
 
 	var se = &Session{
 		ctx:     cctx.WithContext(ctx),
-		id:      sessionId,
+		id:      id,
 		session: session,
 		task:    task,
 	}
@@ -171,17 +170,17 @@ func NewSession(
 		return nil, pkge.Errorf("not support itun number %d", session.Proto)
 	}
 
-	go se.downlink(conn)
+	go se.downlink(sdr)
 	return se, nil
 }
 
-func (s *Session) ID() uint16 {
+func (s *Session) ID() session.ID {
 	return s.id
 }
 
 // recv from server and write to raw
-func (s *Session) downlink(conn *sconn.Conn) {
-	mtu := conn.Raw().MTU()
+func (s *Session) downlink(sdr app.Sender) {
+	mtu := sdr.MTU()
 	b := relraw.NewPacket(
 		64, mtu, 16,
 	)
@@ -202,11 +201,11 @@ func (s *Session) downlink(conn *sconn.Conn) {
 		default:
 		}
 
-		err = conn.SendSeg(s.ctx, b, session.SessID(s.id))
-		if err != nil {
-			s.ctx.Cancel(err)
-			return
-		}
+		sdr.Send(b, s.id)
+		// if err != nil {
+		// 	s.ctx.Cancel(err)
+		// 	return
+		// }
 		s.task.Action()
 	}
 }
@@ -226,60 +225,4 @@ func (s *Session) Close() error {
 	err := s.capture.Close()
 	s.ctx.Cancel(nil)
 	return err
-}
-
-type IdMgr struct {
-	mu     sync.RWMutex
-	allocs []uint16 // asc
-}
-
-func (m *IdMgr) Get() (uint16, error) {
-	m.mu.RLock()
-	id, err := m.getLocked()
-	m.mu.RUnlock()
-	if err != nil {
-		return 0, err
-	}
-
-	m.mu.Lock()
-	m.allocs = append(m.allocs, id)
-	slices.Sort(m.allocs)
-	m.mu.Unlock()
-
-	return id, nil
-}
-
-func (m *IdMgr) getLocked() (id uint16, err error) {
-	n := len(m.allocs)
-	if n >= maxSessions {
-		return 0, ErrSessionExceed
-	} else if n == 0 {
-		return 0, nil
-	}
-
-	id = m.allocs[n-1] + 1
-	if id != uint16(session.CtrSessID) && !slices.Contains(m.allocs, id) {
-		return id, nil
-	}
-	for i := 0; i < n-1; i++ {
-		if m.allocs[i]+1 != m.allocs[i+1] {
-			return m.allocs[i] + 1, nil
-		}
-	}
-
-	return 0, pkge.Errorf("unknown error")
-}
-
-func (m *IdMgr) Put(id uint16) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	i := slices.Index(m.allocs, id)
-	if i < 0 {
-		return
-	}
-
-	m.allocs[i] = uint16(session.CtrSessID)
-	slices.Sort(m.allocs)
-	m.allocs = m.allocs[:len(m.allocs)-1]
 }

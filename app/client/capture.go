@@ -3,7 +3,7 @@ package client
 import (
 	"context"
 
-	"github.com/lysShub/itun"
+	"github.com/lysShub/itun/session"
 	"github.com/lysShub/relraw"
 )
 
@@ -17,6 +17,6 @@ type Capture interface {
 	Close() error
 }
 
-func NewCapture(session itun.Session) (Capture, error) {
+func NewCapture(session session.Session) (Capture, error) {
 	return newCapture(session)
 }

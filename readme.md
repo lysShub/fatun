@@ -19,9 +19,10 @@ TODO:
 
 
 
+
 cliet:
 ```go
-go func(){
+go func(){ // uplink
     ip := stack.Outbound()
     if inited {
         b = setSID(ip.tcp, 0xffff)
@@ -32,7 +33,7 @@ go func(){
         raw.Write(ip)
     }
 }
-go func(){
+go func(){ // downlink
     ip := raw.Read()
     if isfake(ip) {
         b := decrypt(ip.tcp)

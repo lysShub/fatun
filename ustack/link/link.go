@@ -2,28 +2,59 @@ package link
 
 import (
 	"context"
+	"net/netip"
 
 	"github.com/lysShub/relraw"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
-// link endpoint for tcp
-type LinkEndpoint interface {
+type Link interface {
 	stack.LinkEndpoint
 
-	Inbound(ip *relraw.Packet)
-	Outbound(ctx context.Context, ip *relraw.Packet)
-	Close()
+	SeqAck() (uint32, uint32)
 
-	// todo: 复用stack, 不在需要close stack
-	//
-	// FinRstFlag has send or recv tcp flag contain FIN or RST,
-	// use after tcp close.
-	FinRstFlag() <-chan struct{}
+	Inbound(ip *relraw.Packet)
+	OutboundBy(ctx context.Context, dst netip.AddrPort, ip *relraw.Packet) error
+	Outbound(ctx context.Context, ip *relraw.Packet) error
 }
 
-type ErrTCPCloseTimeout struct{}
+var invalidAddr = netip.AddrPort{}
 
-func (e ErrTCPCloseTimeout) Error() string {
-	return "close ustack tcp connnection timeout"
+func match(pkb *stack.PacketBuffer, dst netip.AddrPort) (match bool) {
+	if pkb.IsNil() {
+		return false
+	}
+
+	if !dst.Addr().IsValid() {
+		return true
+	} else {
+		switch pkb.TransportProtocolNumber {
+		case header.TCPProtocolNumber:
+			match = dst.Port() ==
+				header.TCP(pkb.TransportHeader().Slice()).DestinationPort()
+		case header.UDPProtocolNumber:
+			match = dst.Port() ==
+				header.UDP(pkb.TransportHeader().Slice()).DestinationPort()
+		case header.ICMPv4ProtocolNumber, header.ICMPv6ProtocolNumber:
+			match = dst.Port() == 0
+		default:
+			panic("")
+		}
+		if !match {
+			return false
+		}
+
+		switch pkb.NetworkProtocolNumber {
+		case header.IPv4ProtocolNumber:
+			match = dst.Addr().As4() ==
+				header.IPv4(pkb.NetworkHeader().Slice()).DestinationAddress().As4()
+		case header.IPv6ProtocolNumber:
+			match = dst.Addr().As16() ==
+				header.IPv6(pkb.NetworkHeader().Slice()).DestinationAddress().As16()
+		default:
+			panic("")
+		}
+		return match
+	}
 }

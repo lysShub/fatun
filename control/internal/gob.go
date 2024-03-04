@@ -3,6 +3,7 @@ package internal
 import (
 	"net/netip"
 
+	"github.com/lysShub/itun/session"
 	pkge "github.com/pkg/errors"
 )
 
@@ -37,22 +38,22 @@ type IPv6Resp bool
 type EndConfigReq struct{}
 type EndConfigResp struct{}
 
-type AddTCPReq netip.AddrPort
+type AddTCPReq = netip.AddrPort
 type AddTCPResp struct {
-	ID  uint16
+	ID  session.ID
 	Err error
 }
 
-type DelTCPReq uint16
+type DelTCPReq = session.ID
 type DelTCPResp struct{}
 
 type AddUDPReq netip.AddrPort
 type AddUDPResp struct {
-	ID  uint16
+	ID  session.ID
 	Err error
 }
 
-type DelUDPReq uint16
+type DelUDPReq = session.ID
 type DelUDPResp struct{}
 
 type PackLossReq struct{}
@@ -60,12 +61,3 @@ type PackLossResp float32
 
 type PingReq struct{}
 type PingResp struct{}
-
-func (IPv6Req) Type() CtrType      { return IPv6 }
-func (EndConfigReq) Type() CtrType { return EndConfig }
-func (AddTCPReq) Type() CtrType    { return AddTCP }
-func (DelTCPReq) Type() CtrType    { return DelTCP }
-func (AddUDPReq) Type() CtrType    { return AddUDP }
-func (DelUDPReq) Type() CtrType    { return DelUDP }
-func (PackLossReq) Type() CtrType  { return PackLoss }
-func (PingReq) Type() CtrType      { return Ping }
