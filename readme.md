@@ -68,7 +68,7 @@ server:
 ```go
 // in proxyer
 
-go func(){
+go func(){ // downlink
     ip := stack.OutboundBy(addr)
     if inited {
         b := setSID(ip.tcp, 0xffff)
@@ -79,7 +79,7 @@ go func(){
         raw.Write(ip)
     }
 }
-go func(){
+go func(){ // uplink
     ip := raw.Read()
     if isfake(ip) {
         b := decrypt(ip.tcp)

@@ -15,18 +15,6 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 )
 
-type Stack interface {
-	Inbound(ip *relraw.Packet)
-
-	// only use by server
-	OutboundBy(ctx context.Context, dst netip.AddrPort, ip *relraw.Packet)
-	// AcceptBy(ctx context.Context, src netip.AddrPort) net.Conn
-
-	// only use by client
-	Outbound(ctx context.Context, ip *relraw.Packet)
-	// Connect(ctx context.Context, src netip.AddrPort, dst netip.AddrPort) net.Conn
-}
-
 // user mode tcp stack
 type Ustack struct {
 	*stack.Stack
@@ -36,8 +24,6 @@ type Ustack struct {
 
 	link link.Link
 }
-
-var _ Stack = (*Ustack)(nil)
 
 func NewUstack(addr netip.AddrPort, mtu int) (*Ustack, error) {
 	var u = &Ustack{
@@ -76,21 +62,16 @@ func NewUstack(addr netip.AddrPort, mtu int) (*Ustack, error) {
 
 const nicid tcpip.NICID = 1234
 
-func (u *Ustack) SeqAck() (uint32, uint32) {
-	return u.link.SeqAck()
-}
-
 func (u *Ustack) Inbound(ip *relraw.Packet) {
 	u.link.Inbound(ip)
 }
 
-func (u *Ustack) OutboundBy(ctx context.Context, dst netip.AddrPort, ip *relraw.Packet) {
-	_ = u.link.OutboundBy(ctx, dst, ip)
+// OutboundBy only use by server, read stack outbound tcp packet
+func (u *Ustack) OutboundBy(ctx context.Context, dst netip.AddrPort, b *relraw.Packet) {
+	_ = u.link.OutboundBy(ctx, dst, b)
 }
 
-func (u *Ustack) Outbound(ctx context.Context, ip *relraw.Packet) {
-	_ = u.link.Outbound(ctx, ip)
+// Outbound only use by client
+func (u *Ustack) Outbound(ctx context.Context, b *relraw.Packet) {
+	_ = u.link.Outbound(ctx, b)
 }
-
-// func (u *Ustack) Connect(ctx context.Context, src netip.AddrPort, dst netip.AddrPort) net.Conn
-// func (u *Ustack) AcceptBy(ctx context.Context, src netip.AddrPort) net.Conn

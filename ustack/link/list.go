@@ -26,9 +26,6 @@ type List struct {
 	mtu                int
 	LinkEPCapabilities stack.LinkEndpointCapabilities
 	SupportedGSOKind   stack.SupportedGSO
-
-	recordSeqAck bool
-	seq, ack     uint32
 }
 
 var _ Link = (*List)(nil)
@@ -37,91 +34,75 @@ func NewList(size int, mtu int) *List {
 	size = max(size, 4)
 	return &List{
 		// list:         newHeap(size), // todo: heap can't pass ut, fix bug
-		list:         newSlice(size),
-		mtu:          mtu,
-		recordSeqAck: true,
+		list: newSlice(size),
+		mtu:  mtu,
 	}
 }
 
 var _ stack.LinkEndpoint = (*List)(nil)
 
-func (l *List) SeqAck() (uint32, uint32) {
-	l.recordSeqAck = false
-	return l.seq, l.ack
-}
-
-func (l *List) Outbound(ctx context.Context, ip *relraw.Packet) error {
+func (l *List) Outbound(ctx context.Context, b *relraw.Packet) error {
 	pkb := l.list.Get(ctx)
 	if pkb.IsNil() {
 		return ctx.Err()
 	}
 	defer pkb.DecRef()
 
-	if l.recordSeqAck {
-		if pkb.TransportProtocolNumber == header.TCPProtocolNumber {
-			seq := header.TCP(pkb.TransportHeader().Slice()).SequenceNumber()
-			l.seq = max(seq, l.seq)
-		}
-	}
-
-	ip.SetLen(pkb.Size())
-	b := ip.Data()
+	b.SetLen(pkb.Size())
+	data := b.Data()
 
 	n := 0
 	for _, e := range pkb.AsSlices() {
-		n += copy(b[n:], e)
+		n += copy(data[n:], e)
 	}
 
 	if debug.Debug() {
-		require.Equal(test.T(), ip.Len(), n)
-		test.ValidIP(test.T(), ip.Data())
+		test.ValidIP(test.T(), b.Data())
+	}
+	switch pkb.NetworkProtocolNumber {
+	case header.IPv4ProtocolNumber:
+		hdrLen := header.IPv4(b.Data()).HeaderLength()
+		b.SetHead(int(hdrLen))
+	case header.IPv6ProtocolNumber:
+		b.SetHead(header.IPv6MinimumSize)
+	default:
+		panic("")
 	}
 	return nil
 }
 
-func (l *List) OutboundBy(ctx context.Context, dst netip.AddrPort, ip *relraw.Packet) error {
+func (l *List) OutboundBy(ctx context.Context, dst netip.AddrPort, b *relraw.Packet) error {
 	pkb := l.list.GetBy(ctx, dst)
 	if pkb.IsNil() {
 		return ctx.Err()
 	}
 	defer pkb.DecRef()
 
-	ip.SetLen(pkb.Size())
-	b := ip.Data()
+	b.SetLen(pkb.Size())
+	data := b.Data()
 
 	n := 0
 	for _, e := range pkb.AsSlices() {
-		n += copy(b[n:], e)
+		n += copy(data[n:], e)
 	}
 
 	if debug.Debug() {
-		require.Equal(test.T(), ip.Len(), n)
-		// todo: valid dst addr
+		test.ValidIP(test.T(), b.Data())
+	}
+	switch pkb.NetworkProtocolNumber {
+	case header.IPv4ProtocolNumber:
+		hdrLen := header.IPv4(b.Data()).HeaderLength()
+		b.SetHead(int(hdrLen))
+	case header.IPv6ProtocolNumber:
+		b.SetHead(header.IPv6MinimumSize)
+	default:
+		panic("")
 	}
 
 	return nil
 }
 
 func (l *List) Inbound(ip *relraw.Packet) {
-	if l.recordSeqAck {
-		hdrSize := 0
-		proto := tcpip.TransportProtocolNumber(0)
-		switch header.IPVersion(ip.Data()) {
-		case 4:
-			hdrSize = int(header.IPv4(ip.Data()).HeaderLength())
-			proto = header.IPv4(ip.Data()).TransportProtocol()
-		case 6:
-			hdrSize = header.IPv6MinimumSize
-			proto = header.IPv6(ip.Data()).TransportProtocol()
-		default:
-			panic("")
-		}
-		if proto == header.TCPProtocolNumber {
-			ack := header.TCP(ip.Data()[hdrSize:]).AckNumber()
-			l.ack = max(l.ack, ack)
-		}
-	}
-
 	pkb := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Payload: buffer.MakeWithData(ip.Data()),
 	})

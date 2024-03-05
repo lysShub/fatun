@@ -9,7 +9,6 @@ import (
 	"sync"
 
 	"github.com/lysShub/itun"
-	"github.com/lysShub/itun/app"
 	"github.com/lysShub/itun/cctx"
 	"github.com/lysShub/itun/session"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -18,6 +17,11 @@ import (
 	"github.com/lysShub/relraw/tcp/bpf"
 	pkge "github.com/pkg/errors"
 )
+
+type Downlink interface {
+	Downlink(b *relraw.Packet, id session.ID)
+	MTU() int
+}
 
 type SessionMgr struct {
 	proxyer *proxyer
@@ -146,7 +150,7 @@ type sender interface {
 }
 
 func NewSession(
-	ctx cctx.CancelCtx, sdr app.Sender,
+	ctx cctx.CancelCtx, down Downlink,
 	id session.ID, session session.Session,
 	locAddr netip.AddrPort, task *itun.Task,
 ) (*Session, error) {
@@ -170,7 +174,7 @@ func NewSession(
 		return nil, pkge.Errorf("not support itun number %d", session.Proto)
 	}
 
-	go se.downlink(sdr)
+	go se.recvService(down)
 	return se, nil
 }
 
@@ -179,7 +183,7 @@ func (s *Session) ID() session.ID {
 }
 
 // recv from server and write to raw
-func (s *Session) downlink(sdr app.Sender) {
+func (s *Session) recvService(sdr Downlink) {
 	mtu := sdr.MTU()
 	b := relraw.NewPacket(
 		64, mtu, 16,
@@ -201,7 +205,7 @@ func (s *Session) downlink(sdr app.Sender) {
 		default:
 		}
 
-		sdr.Send(b, s.id)
+		sdr.Downlink(b, s.id)
 		// if err != nil {
 		// 	s.ctx.Cancel(err)
 		// 	return
@@ -210,10 +214,10 @@ func (s *Session) downlink(sdr app.Sender) {
 	}
 }
 
-// Write write uplink proxy-data
-func (s *Session) Write(pxy []byte) error {
+// Send write uplink proxy-data
+func (s *Session) Send(b []byte) error {
 	s.task.Action()
-	_, err := s.capture.Write(pxy)
+	_, err := s.capture.Write(b)
 	return err
 }
 

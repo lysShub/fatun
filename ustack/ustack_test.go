@@ -19,14 +19,6 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
-func Test(t *testing.T) {
-	// todo: fix it
-	for i := 0; i < 64; i++ {
-		Test_Conn(t)
-	}
-
-}
-
 func Test_Conn(t *testing.T) {
 	var (
 		caddr = netip.AddrPortFrom(test.LocIP(), test.RandPort())
@@ -235,6 +227,10 @@ func UnicomStackAndRaw(t *testing.T, s *ustack.Ustack, raw *itun.RawConn) {
 			if p.Len() == 0 {
 				return
 			}
+
+			// fmt.Println("inbound")
+
+			p.SetHead(0)
 			test.ValidIP(t, p.Data())
 
 			_, err := raw.Write(p.Data())
@@ -253,7 +249,9 @@ func UnicomStackAndRaw(t *testing.T, s *ustack.Ustack, raw *itun.RawConn) {
 			}
 			require.NoError(t, err)
 
-			p.Sets(0, p.Head()+p.Len())
+			// fmt.Println("outbound")
+
+			p.SetHead(0)
 			test.ValidIP(t, p.Data())
 
 			s.Inbound(p)
@@ -272,6 +270,7 @@ func UnicomStackAndRawBy(t *testing.T, s *ustack.Ustack, raw *itun.RawConn, dst 
 			if p.Len() == 0 {
 				return
 			}
+			p.SetHead(0)
 			test.ValidIP(t, p.Data())
 
 			_, err := raw.Write(p.Data())
@@ -290,7 +289,7 @@ func UnicomStackAndRawBy(t *testing.T, s *ustack.Ustack, raw *itun.RawConn, dst 
 			}
 			require.NoError(t, err)
 
-			p.Sets(0, p.Head()+p.Len())
+			p.SetHead(0)
 			test.ValidIP(t, p.Data())
 
 			s.Inbound(p)

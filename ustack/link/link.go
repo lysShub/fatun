@@ -12,9 +12,9 @@ import (
 type Link interface {
 	stack.LinkEndpoint
 
-	SeqAck() (uint32, uint32)
-
 	Inbound(ip *relraw.Packet)
+
+	// OutboundBy
 	OutboundBy(ctx context.Context, dst netip.AddrPort, ip *relraw.Packet) error
 	Outbound(ctx context.Context, ip *relraw.Packet) error
 }

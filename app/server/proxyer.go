@@ -9,8 +9,8 @@ import (
 	"net/netip"
 
 	"github.com/lysShub/itun"
-	"github.com/lysShub/itun/app"
 	"github.com/lysShub/itun/cctx"
+	"github.com/lysShub/itun/control"
 	"github.com/lysShub/itun/crypto"
 	"github.com/lysShub/itun/session"
 	"github.com/lysShub/itun/ustack/faketcp"
@@ -18,26 +18,31 @@ import (
 	"github.com/lysShub/relraw/test"
 	"github.com/lysShub/relraw/test/debug"
 	"github.com/stretchr/testify/require"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
 type proxyer struct {
 	ctx        cctx.CancelCtx
 	srv        *Server
 	sessionMgr *SessionMgr
+	session    session.Session
 
 	raw *itun.RawConn
 
 	SrcAddr netip.AddrPort
 
+	ipstack *relraw.IPStack
+
 	inited bool
 
 	seq, ack uint32
 
-	fake   *faketcp.FakeTCP
-	crypto *crypto.TCP
+	pseudoSum1 uint16
+	fake       *faketcp.FakeTCP
+	crypto     *crypto.TCP
 }
 
-var _ app.Sender = (*proxyer)(nil)
+var _ Downlink = (*proxyer)(nil)
 
 func Proxy(c context.Context, srv *Server, raw *itun.RawConn) {
 	var p = &proxyer{
@@ -49,63 +54,139 @@ func Proxy(c context.Context, srv *Server, raw *itun.RawConn) {
 	}
 	p.sessionMgr = NewSessionMgr(p)
 
-	// p.conn = sconn.Accept(p.ctx, raw, &p.srv.cfg.Sconn)
-	// if err := p.ctx.Err(); err != nil {
-	// 	panic(err)
-	// }
+	go p.uplinkService()
+	go p.downlinkService()
 
-	// ctr, err := control.NewController(raw.LocalAddrPort(), raw.RemoteAddrPort(), raw.MTU())
-	// if err != nil {
-	// 	panic(err)
-	// }
+	tcp, err := p.srv.ctrListener.AcceptBy(p.ctx, raw.RemoteAddrPort())
+	if err != nil {
+		panic(err)
+	}
 
-	// go ctr.OutboundService(p.ctx, p.conn)
-	// go p.uplink(ctr)
-	// go control.Serve(p.ctx, ctr, proxyerImplPtr(p))
+	p.srv.cfg.PrevPackets.Server(p.ctx, tcp)
+	if p.ctx.Err() != nil {
+		panic(p.ctx.Err())
+	}
+
+	key, err := p.srv.cfg.SwapKey.SecretKey(p.ctx, tcp)
+	if err != nil {
+		panic(err)
+	}
+
+	p.crypto, err = crypto.NewTCP(key, p.pseudoSum1)
+	if err != nil {
+		panic(err)
+	}
+	p.fake = faketcp.NewFakeTCP(
+		p.raw.LocalAddr().Port,
+		p.raw.RemoteAddr().Port,
+		p.seq, p.ack, &p.pseudoSum1,
+	)
+	p.inited = true
+
+	control.Serve(p.ctx, tcp, proxyerImplPtr(p))
 
 	<-p.ctx.Done()
 	e := p.ctx.Err()
 	fmt.Println("proxy closed: ", e)
 }
 
-func (p *proxyer) recvService() {
-	n := p.raw.MTU()
+func (p *proxyer) downlinkService() {
+	dst := p.raw.RemoteAddrPort()
+	mtu := p.raw.MTU()
+	b := relraw.NewPacket(0, mtu)
 
-	b := relraw.NewPacket(0, n)
+	p.srv.st.OutboundBy(p.ctx, dst, b)
+
+	if p.inited {
+		p.Downlink(b, session.CtrSessID)
+	} else {
+		p.seq = max(p.seq, header.TCP(b.Data()).SequenceNumber())
+
+		// recover to ip packet
+		b.SetHead(0)
+		if debug.Debug() {
+			test.ValidIP(test.T(), b.Data())
+		}
+		_, err := p.raw.Write(b.Data())
+		if err != nil {
+			p.ctx.Cancel(err)
+			return
+		}
+	}
+}
+
+type ErrManyDecryptFailPacket string
+
+func (e ErrManyDecryptFailPacket) Error() string {
+	return fmt.Sprintf("recved many decrypt fail segment, %s", string(e))
+}
+
+func (p *proxyer) uplinkService() {
+	var (
+		mtu     = p.raw.MTU()
+		minSize = p.session.MinPacketSize()
+		tinyCnt = uint8(0)
+
+		b = relraw.NewPacket(0, mtu)
+	)
+	const tinyCntLimit = 4 // todo: to config
+
 	for {
-		b.Sets(0, n)
+		b.Sets(0, mtu)
 
 		err := p.raw.ReadCtx(p.ctx, b)
 		if err != nil {
 			p.ctx.Cancel(err)
 			return
-		} else if b.Len() == 0 {
+		} else if b.Len() < minSize {
 			continue
 		}
 
 		if faketcp.IsFakeTCP(b.Data()) {
 			err = p.crypto.Decrypt(b)
 			if err != nil {
-				panic(err)
+				if debug.Debug() {
+					require.NoError(test.T(), err)
+				}
+
+				tinyCnt++
+				if tinyCnt > tinyCntLimit {
+					p.ctx.Cancel(ErrManyDecryptFailPacket(err.Error()))
+					return
+				} else {
+					continue
+				}
+			} else {
+				tinyCnt = 0
 			}
+
+			p.fake.RecvStrip(b)
 
 			id := session.GetID(b)
 			if id == session.CtrSessID {
-				// todo: attach ip hdr
+				p.ipstack.AttachInbound(b)
+				if debug.Debug() {
+					test.ValidIP(test.T(), b.Data())
+				}
+
 				p.srv.st.Inbound(b)
 			} else {
 				s := p.sessionMgr.Get(id)
-				s.Write(b.Data())
+				s.Send(b.Data())
 			}
 		} else {
-			p.seq, p.ack = 0, 0
-			// todo: attach ip hdr
+			p.ack = max(p.ack, header.TCP(b.Data()).AckNumber())
+
+			p.ipstack.AttachInbound(b)
+			if debug.Debug() {
+				test.ValidIP(test.T(), b.Data())
+			}
 			p.srv.st.Inbound(b)
 		}
 	}
 }
 
-func (p *proxyer) Send(b *relraw.Packet, id session.ID) {
+func (p *proxyer) Downlink(b *relraw.Packet, id session.ID) {
 	if debug.Debug() {
 		require.True(test.T(), p.inited)
 	}

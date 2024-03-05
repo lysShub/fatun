@@ -5,12 +5,16 @@ import (
 	"time"
 
 	"github.com/lysShub/itun"
-	"github.com/lysShub/itun/app"
 	"github.com/lysShub/itun/cctx"
 	"github.com/lysShub/itun/session"
 	"github.com/lysShub/relraw"
 	pkge "github.com/pkg/errors"
 )
+
+type Uplink interface {
+	Uplink(b *relraw.Packet, id session.ID)
+	MTU() int
+}
 
 type SessionMgr struct {
 	client *Client
@@ -61,7 +65,7 @@ type Session struct {
 }
 
 func NewSession(
-	ctx cctx.CancelCtx, conn app.Sender,
+	ctx cctx.CancelCtx, up Uplink,
 	id session.ID, session session.Session,
 ) (*Session, error) {
 	var s = &Session{
@@ -76,16 +80,16 @@ func NewSession(
 		return nil, err
 	}
 
-	go s.uplink(conn)
+	go s.uplinkService(up)
 	return s, nil
 }
 
-func (s *Session) uplink(conn app.Sender) {
-	var mtu = conn.MTU()
-	p := relraw.NewPacket(64, mtu)
+func (s *Session) uplinkService(up Uplink) {
+	var mtu = up.MTU()
+	p := relraw.NewPacket(0, mtu)
 
 	for {
-		p.Sets(64, mtu)
+		p.Sets(0, mtu)
 		if err := s.capture.RecvCtx(s.ctx, p); err != nil {
 			s.ctx.Cancel(err)
 			return
@@ -93,7 +97,7 @@ func (s *Session) uplink(conn app.Sender) {
 
 		// todo: reset tcp mss
 
-		conn.Send(p, session.ID(s.id))
+		up.Uplink(p, session.ID(s.id))
 
 	}
 }

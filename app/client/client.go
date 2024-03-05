@@ -3,11 +3,9 @@ package client
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/netip"
 
 	"github.com/lysShub/itun"
-	"github.com/lysShub/itun/app"
 	"github.com/lysShub/itun/cctx"
 	"github.com/lysShub/itun/config"
 	"github.com/lysShub/itun/control"
@@ -20,6 +18,7 @@ import (
 	"github.com/lysShub/relraw/test"
 	"github.com/lysShub/relraw/test/debug"
 	pkge "github.com/pkg/errors"
+	"github.com/stretchr/testify/require"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
@@ -40,6 +39,8 @@ type Client struct {
 
 	sessionMgr *SessionMgr
 
+	seq, ack uint32
+
 	inited bool
 	st     *ustack.Ustack
 
@@ -49,7 +50,7 @@ type Client struct {
 	ctr control.Client
 }
 
-var _ app.Sender = (*Client)(nil)
+var _ Uplink = (*Client)(nil)
 
 func NewClient(parentCtx context.Context, raw relraw.RawConn, cfg *Config) (*Client, error) {
 	var c = &Client{
@@ -83,12 +84,10 @@ func NewClient(parentCtx context.Context, raw relraw.RawConn, cfg *Config) (*Cli
 		return nil, err
 	}
 
-	seq, ack := c.st.SeqAck()
-
 	c.fake = faketcp.NewFakeTCP(
 		raw.LocalAddrPort().Port(),
 		raw.RemoteAddrPort().Port(),
-		seq, ack,
+		c.seq, c.ack,
 		nil, // todo:
 	)
 
@@ -124,7 +123,7 @@ func (c *Client) AddProxy(s session.Session) error {
 	}
 }
 
-func (c *Client) Send(b *relraw.Packet, id session.ID) {
+func (c *Client) Uplink(b *relraw.Packet, id session.ID) {
 	session.SetID(b, id)
 
 	c.fake.SendAttach(b)
@@ -151,28 +150,26 @@ func (c *Client) downlinkService() {
 		if faketcp.IsFakeTCP(p.Data()) {
 			err := c.crypto.Decrypt(p)
 			if err != nil {
-				fmt.Println(err)
+				if debug.Debug() {
+					require.NoError(test.T(), err)
+				}
 				continue
 			}
 
+			c.fake.RecvStrip(p)
+
 			id := session.GetID(p)
 			if id == session.CtrSessID {
-				// recover to ip packet
-				p.Sets(0, p.Len()+p.Head())
-
 				c.st.Inbound(p)
 			} else {
 				s := c.sessionMgr.Get(id)
 				s.Inject(p)
 			}
 		} else {
+			c.ack = max(c.ack, header.TCP(p.Data()).AckNumber())
+
 			// recover to ip packet
-			p.Sets(0, p.Len()+p.Head())
-
-			if debug.Debug() {
-				test.ValidIP(test.T(), p.Data())
-			}
-
+			p.SetHead(0)
 			c.st.Inbound(p)
 		}
 	}
@@ -180,20 +177,20 @@ func (c *Client) downlinkService() {
 
 func (c *Client) uplinkService() {
 	mtu := c.MTU()
-	var ip = relraw.NewPacket(0, mtu)
+	var b = relraw.NewPacket(0, mtu)
 
 	for {
-		ip.Sets(0, mtu)
-
-		c.st.Outbound(c.ctx, ip)
+		b.Sets(0, mtu)
+		c.st.Outbound(c.ctx, b)
 
 		if c.inited {
-			if debug.Debug() {
-				panic("attach ip hdr")
-			}
-			c.Send(ip, session.CtrSessID)
+			c.Uplink(b, session.CtrSessID)
 		} else {
-			c.raw.Write(ip.Data())
+			c.seq = max(c.seq, header.TCP(b.Data()).SequenceNumber())
+
+			// recover to ip packet
+			b.SetHead(0)
+			c.raw.Write(b.Data())
 		}
 	}
 }

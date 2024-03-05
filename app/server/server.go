@@ -12,6 +12,8 @@ import (
 	"github.com/lysShub/itun/config"
 	"github.com/lysShub/itun/crypto"
 	"github.com/lysShub/itun/ustack"
+	"github.com/lysShub/itun/ustack/gonet"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 
 	"github.com/lysShub/relraw"
 )
@@ -35,7 +37,8 @@ type Server struct {
 
 	ap *PortAdapter
 
-	st *ustack.Ustack
+	st          *ustack.Ustack
+	ctrListener *gonet.TCPListener
 }
 
 func ListenAndServe(ctx context.Context, l relraw.Listener, cfg *Config) (err error) {
@@ -44,6 +47,14 @@ func ListenAndServe(ctx context.Context, l relraw.Listener, cfg *Config) (err er
 		l:    l,
 		Addr: l.Addr(),
 		ap:   NewPortAdapter(l.Addr().Addr()),
+	}
+	s.st, err = ustack.NewUstack(l.Addr(), int(cfg.MTU))
+	if err != nil {
+		return err
+	}
+	s.ctrListener, err = gonet.ListenTCP(s.st, l.Addr(), header.IPv4ProtocolNumber)
+	if err != nil {
+		return err
 	}
 
 	for {

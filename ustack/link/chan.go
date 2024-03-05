@@ -5,6 +5,8 @@ import (
 	"net/netip"
 
 	"github.com/lysShub/relraw"
+	"github.com/lysShub/relraw/test"
+	"github.com/lysShub/relraw/test/debug"
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -60,7 +62,7 @@ func (c *Chan) Inbound(ip *relraw.Packet) {
 	c.Endpoint.InjectInbound(header.IPv4ProtocolNumber, pkb)
 }
 
-func (c *Chan) Outbound(ctx context.Context, ip *relraw.Packet) error {
+func (c *Chan) Outbound(ctx context.Context, b *relraw.Packet) error {
 	pkb := c.Endpoint.ReadContext(ctx)
 	if pkb.IsNil() {
 		return ctx.Err()
@@ -74,17 +76,30 @@ func (c *Chan) Outbound(ctx context.Context, ip *relraw.Packet) error {
 		}
 	}
 
-	ip.SetLen(pkb.Size())
-	b := ip.Data()
+	b.SetLen(pkb.Size())
+	data := b.Data()
 
 	n := 0
 	for _, e := range pkb.AsSlices() {
-		n += copy(b[n:], e)
+		n += copy(data[n:], e)
+	}
+
+	if debug.Debug() {
+		test.ValidIP(test.T(), b.Data())
+	}
+	switch pkb.NetworkProtocolNumber {
+	case header.IPv4ProtocolNumber:
+		hdrLen := header.IPv4(b.Data()).HeaderLength()
+		b.SetHead(int(hdrLen))
+	case header.IPv6ProtocolNumber:
+		b.SetHead(header.IPv6MinimumSize)
+	default:
+		panic("")
 	}
 	return nil
 }
 
-func (c *Chan) OutboundBy(ctx context.Context, dst netip.AddrPort, ip *relraw.Packet) error {
+func (c *Chan) OutboundBy(ctx context.Context, dst netip.AddrPort, b *relraw.Packet) error {
 	var pkb *stack.PacketBuffer
 	for pkb.IsNil() {
 		pkb = c.walkBy(dst)
@@ -99,13 +114,24 @@ func (c *Chan) OutboundBy(ctx context.Context, dst netip.AddrPort, ip *relraw.Pa
 	}
 	defer pkb.DecRef()
 
-	ip.SetLen(pkb.Size())
-	b := ip.Data()
+	b.SetLen(pkb.Size())
+	data := b.Data()
 
 	n := 0
 	for _, e := range pkb.AsSlices() {
-		n += copy(b[n:], e)
+		n += copy(data[n:], e)
 	}
+
+	switch pkb.NetworkProtocolNumber {
+	case header.IPv4ProtocolNumber:
+		hdrLen := header.IPv4(b.Data()).HeaderLength()
+		b.SetHead(int(hdrLen))
+	case header.IPv6ProtocolNumber:
+		b.SetHead(header.IPv6MinimumSize)
+	default:
+		panic("")
+	}
+
 	return nil
 }
 
