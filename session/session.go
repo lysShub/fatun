@@ -18,8 +18,8 @@ import (
 type ID uint16
 
 func SetID(p *relraw.Packet, id ID) {
-	p.AllocHead(IDSize)
-	p.SetHead(p.Head() - IDSize)
+	p.AllocHead(Size)
+	p.SetHead(p.Head() - Size)
 
 	b := p.Data()
 	binary.BigEndian.PutUint16(b[idOffset1:idOffset2], uint16(id))
@@ -28,7 +28,7 @@ func SetID(p *relraw.Packet, id ID) {
 func GetID(p *relraw.Packet) ID {
 	b := p.Data()
 	id := binary.BigEndian.Uint16(b[idOffset1:idOffset2])
-	p.SetHead(p.Head() + IDSize)
+	p.SetHead(p.Head() + Size)
 	return ID(id)
 }
 
@@ -36,7 +36,7 @@ const CtrSessID ID = 0xffff
 const (
 	idOffset1 = 0
 	idOffset2 = 2
-	IDSize    = idOffset2
+	Size      = idOffset2
 )
 
 type Session struct {

@@ -107,7 +107,7 @@ func (s *Session) Inject(b *relraw.Packet) error {
 	// 	return pkge.Errorf("expect session %d, got %d", s.id, seg.ID())
 	// }
 
-	b.SetHead(b.Head() + session.IDSize)
+	b.SetHead(b.Head() + session.Size)
 
 	return s.capture.Inject(b)
 }

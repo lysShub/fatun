@@ -22,9 +22,8 @@ type Config struct {
 	config.Config
 	Key crypto.SecretKey
 
-	MTU                 uint16
-	TCPHandshakeTimeout time.Duration
-	InitCfgTimeout      time.Duration
+	MTU uint16
+
 	ProxyerIdeleTimeout time.Duration
 }
 

@@ -43,6 +43,7 @@ func NewUstack(addr netip.AddrPort, mtu int) (*Ustack, error) {
 		TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol},
 		HandleLocal:        false,
 	})
+
 	// u.link = link.NewChan(16, mtu)
 	u.link = link.NewList(16, mtu)
 	if err := u.Stack.CreateNIC(nicid, u.link); err != nil {

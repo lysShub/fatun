@@ -30,7 +30,7 @@ func (pi *proxyerImpl) AddTCP(addr netip.AddrPort) (session.ID, error) {
 	s, err := pi.sessionMgr.Add(
 		pi.ctx,
 		session.Session{
-			SrcAddr: pi.SrcAddr,
+			SrcAddr: pi.raw.RemoteAddrPort(),
 			Proto:   itun.TCP,
 			DstAddr: addr,
 		},
