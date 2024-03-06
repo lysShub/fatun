@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func UnicomStackAndRaw(t *testing.T, s *ustack.Ustack, raw *itun.RawConn, pseudoSum1 uint16) {
+func UnicomStackAndRaw(t *testing.T, s ustack.Ustack, raw *itun.RawConn, pseudoSum1 uint16) {
 	c, err := crypto.NewTCP(crypto.Key{0: 1}, pseudoSum1)
 	require.NoError(t, err)
 

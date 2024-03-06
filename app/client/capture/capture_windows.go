@@ -1,7 +1,7 @@
 //go:build windows
 // +build windows
 
-package client
+package capture
 
 import (
 	"context"
@@ -30,7 +30,6 @@ import (
 
 const (
 	capturePriority = 1
-	filterPriority  = 2
 )
 
 type capture struct {

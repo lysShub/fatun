@@ -1,4 +1,4 @@
-package server
+package adapter
 
 import (
 	"errors"
@@ -10,7 +10,7 @@ import (
 	pkge "github.com/pkg/errors"
 )
 
-type PortAdapter struct {
+type Ports struct {
 	mgr *itun.PortMgr
 
 	mu sync.RWMutex
@@ -20,11 +20,11 @@ type PortAdapter struct {
 	ports map[portKey] /* server adds */ *AddrSet
 }
 
-// NewPortAdapter for reuse local machine port, reduce port consume
+// NewPorts for reuse local machine port, reduce port consume
 // require: one local port can be reused sessions, that has different
 // destination address
-func NewPortAdapter(addr netip.Addr) *PortAdapter {
-	return &PortAdapter{
+func NewPorts(addr netip.Addr) *Ports {
+	return &Ports{
 		mgr: itun.NewPortMgr(addr),
 		// sess:  make(map[Session]uint16, 16),
 		ports: make(map[portKey]*AddrSet, 16),
@@ -83,7 +83,7 @@ type portKey struct {
 }
 
 // GetPort get a local machine port
-func (a *PortAdapter) GetPort(proto itun.Proto, dst netip.AddrPort) (port uint16, err error) {
+func (a *Ports) GetPort(proto itun.Proto, dst netip.AddrPort) (port uint16, err error) {
 	if !proto.IsValid() {
 		return 0, itun.ErrInvalidProto(proto)
 	} else if !dst.IsValid() {
@@ -142,7 +142,7 @@ func (a *PortAdapter) GetPort(proto itun.Proto, dst netip.AddrPort) (port uint16
 }
 
 // todo: idle timeout delete
-func (a *PortAdapter) DelPort(proto itun.Proto, port uint16, dst netip.AddrPort) error {
+func (a *Ports) DelPort(proto itun.Proto, port uint16, dst netip.AddrPort) error {
 	if proto.IsICMP() {
 		return nil
 	}
@@ -174,7 +174,7 @@ func (a *PortAdapter) DelPort(proto itun.Proto, port uint16, dst netip.AddrPort)
 	return nil
 }
 
-func (a *PortAdapter) Close() (err error) {
+func (a *Ports) Close() (err error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 

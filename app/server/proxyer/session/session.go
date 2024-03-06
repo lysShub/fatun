@@ -1,7 +1,7 @@
 //go:build linux
 // +build linux
 
-package server
+package session
 
 import (
 	"context"
@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/lysShub/itun"
+	"github.com/lysShub/itun/app/server/adapter"
+	"github.com/lysShub/itun/app/server/proxyer/sender"
 	"github.com/lysShub/itun/cctx"
 	"github.com/lysShub/itun/session"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -21,13 +23,14 @@ import (
 )
 
 type Downlink interface {
-	downlink(pkt *relraw.Packet, id session.ID) error
+	Downlink(pkt *relraw.Packet, id session.ID) error
 	MTU() int
 }
 
 type SessionMgr struct {
-	proxyer *Proxyer
-	idmgr   *session.IdMgr
+	idmgr *session.IdMgr
+	ap    *adapter.Ports
+	addr  netip.Addr
 
 	ticker  *time.Ticker
 	closeCh chan struct{}
@@ -39,10 +42,11 @@ type SessionMgr struct {
 	idMap map[session.Session]session.ID
 }
 
-func NewSessionMgr(pxyer *Proxyer) *SessionMgr {
+func NewSessionMgr(ap *adapter.Ports, locAddr netip.Addr) *SessionMgr {
 	mgr := &SessionMgr{
-		proxyer: pxyer,
-		idmgr:   session.NewIDMgr(),
+		idmgr: session.NewIDMgr(),
+		ap:    ap,
+		addr:  locAddr,
 
 		ticker:  time.NewTicker(time.Minute), // todo: from config
 		closeCh: make(chan struct{}),
@@ -66,7 +70,11 @@ func (sm *SessionMgr) Get(id session.ID) (s *Session, err error) {
 	return s, err
 }
 
-func (sm *SessionMgr) Add(s session.Session) (*Session, error) {
+type PortAlloc interface {
+	GetPort(proto itun.Proto, dst netip.AddrPort) (port uint16, err error)
+}
+
+func (sm *SessionMgr) Add(proxyerCtx context.Context, down Downlink, s session.Session) (*Session, error) {
 	sm.mu.RLock()
 	_, has := sm.idMap[s]
 	sm.mu.RUnlock()
@@ -79,15 +87,15 @@ func (sm *SessionMgr) Add(s session.Session) (*Session, error) {
 		return nil, err
 	}
 
-	locPort, err := sm.proxyer.srv.ap.GetPort(s.Proto, s.DstAddr)
+	locPort, err := sm.ap.GetPort(s.Proto, s.DstAddr)
 	if err != nil {
 		return nil, err
 	}
 
 	ns, err := newSession(
-		sm.proxyer.ctx, sm.proxyer,
+		proxyerCtx, down,
 		id, s,
-		netip.AddrPortFrom(sm.proxyer.srv.Addr.Addr(), locPort),
+		netip.AddrPortFrom(sm.addr, locPort),
 	)
 	if err != nil {
 		return nil, err
@@ -112,7 +120,7 @@ func (sm *SessionMgr) Del(id session.ID, cause error) (err error) {
 func (sm *SessionMgr) del(s *Session, cause error) error {
 	err := errors.Join(
 		s.close(cause),
-		sm.proxyer.srv.ap.DelPort(
+		sm.ap.DelPort(
 			s.session.Proto,
 			s.locAddr.Port(),
 			s.session.DstAddr,
@@ -186,13 +194,13 @@ type Session struct {
 	locAddr netip.AddrPort
 	session session.Session
 
-	sender Sender
+	sender sender.Sender
 
 	cnt atomic.Uint32
 }
 
 func newSession(
-	proxyerCtx cctx.CancelCtx, down Downlink,
+	proxyerCtx context.Context, down Downlink,
 	id session.ID, session session.Session,
 	locAddr netip.AddrPort,
 ) (*Session, error) {
@@ -204,7 +212,7 @@ func newSession(
 	}
 
 	var err error
-	s.sender, err = NewSender(locAddr, session.Proto, session.DstAddr)
+	s.sender, err = sender.NewSender(locAddr, session.Proto, session.DstAddr)
 	if err != nil {
 		return nil, err
 	}
@@ -237,7 +245,7 @@ func (s *Session) downlinkService(down Downlink) {
 		default:
 		}
 
-		err = down.downlink(seg, s.id)
+		err = down.Downlink(seg, s.id)
 		if err != nil {
 			s.ctx.Cancel(err)
 			return

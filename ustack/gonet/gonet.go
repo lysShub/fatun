@@ -48,7 +48,7 @@ func (e *timeoutError) Temporary() bool { return true }
 // A TCPListener is a wrapper around a TCP tcpip.Endpoint that implements
 // net.Listener.
 type TCPListener struct {
-	stack      *ustack.Ustack
+	stack      ustack.Ustack
 	ep         tcpip.Endpoint
 	wq         *waiter.Queue
 	cancelOnce sync.Once
@@ -56,7 +56,7 @@ type TCPListener struct {
 }
 
 // NewTCPListener creates a new TCPListener from a listening tcpip.Endpoint.
-func NewTCPListener(s *ustack.Ustack, wq *waiter.Queue, ep tcpip.Endpoint) *TCPListener {
+func NewTCPListener(s ustack.Ustack, wq *waiter.Queue, ep tcpip.Endpoint) *TCPListener {
 	return &TCPListener{
 		stack:  s,
 		ep:     ep,
@@ -74,7 +74,7 @@ func NewTCPListener(s *ustack.Ustack, wq *waiter.Queue, ep tcpip.Endpoint) *TCPL
 const maxListenBacklog = 4096
 
 // ListenTCP creates a new TCPListener.
-func ListenTCP(s *ustack.Ustack, addr netip.AddrPort, network tcpip.NetworkProtocolNumber) (*TCPListener, error) {
+func ListenTCP(s ustack.Ustack, addr netip.AddrPort, network tcpip.NetworkProtocolNumber) (*TCPListener, error) {
 	faddr := toFullAddr(addr)
 	// Create a TCP endpoint, bind it, then start listening.
 	var wq waiter.Queue
@@ -524,13 +524,13 @@ func fullToUDPAddr(addr tcpip.FullAddress) *net.UDPAddr {
 }
 
 // DialTCP creates a new TCPConn connected to the specified address.
-func DialTCP(s *ustack.Ustack, addr netip.AddrPort, network tcpip.NetworkProtocolNumber) (*TCPConn, error) {
+func DialTCP(s ustack.Ustack, addr netip.AddrPort, network tcpip.NetworkProtocolNumber) (*TCPConn, error) {
 	return DialContextTCP(context.Background(), s, addr, network)
 }
 
 // DialTCPWithBind creates a new TCPConn connected to the specified
 // remoteAddress with its local address bound to localAddr.
-func DialTCPWithBind(ctx context.Context, s *ustack.Ustack, localAddr, remoteAddr netip.AddrPort, network tcpip.NetworkProtocolNumber) (*TCPConn, error) {
+func DialTCPWithBind(ctx context.Context, s ustack.Ustack, localAddr, remoteAddr netip.AddrPort, network tcpip.NetworkProtocolNumber) (*TCPConn, error) {
 	flocalAddr, fremoteAddr := toFullAddr(localAddr), toFullAddr(remoteAddr)
 	// Create TCP endpoint, then connect.
 	var wq waiter.Queue
@@ -585,7 +585,7 @@ func DialTCPWithBind(ctx context.Context, s *ustack.Ustack, localAddr, remoteAdd
 
 // DialContextTCP creates a new TCPConn connected to the specified address
 // with the option of adding cancellation and timeouts.
-func DialContextTCP(ctx context.Context, s *ustack.Ustack, addr netip.AddrPort, network tcpip.NetworkProtocolNumber) (*TCPConn, error) {
+func DialContextTCP(ctx context.Context, s ustack.Ustack, addr netip.AddrPort, network tcpip.NetworkProtocolNumber) (*TCPConn, error) {
 	return DialTCPWithBind(ctx, s, netip.AddrPortFrom(netip.IPv4Unspecified(), 0) /* localAddr */, addr /* remoteAddr */, network)
 }
 
@@ -613,7 +613,7 @@ func NewUDPConn(wq *waiter.Queue, ep tcpip.Endpoint) *UDPConn {
 // If laddr is nil, a local address is automatically chosen.
 //
 // If raddr is nil, the UDPConn is left unconnected.
-func DialUDP(s *ustack.Ustack, laddr, raddr *tcpip.FullAddress, network tcpip.NetworkProtocolNumber) (*UDPConn, error) {
+func DialUDP(s ustack.Ustack, laddr, raddr *tcpip.FullAddress, network tcpip.NetworkProtocolNumber) (*UDPConn, error) {
 	var wq waiter.Queue
 	ep, err := s.NewEndpoint(udp.ProtocolNumber, network, &wq)
 	if err != nil {

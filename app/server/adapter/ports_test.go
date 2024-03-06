@@ -1,11 +1,11 @@
-package server_test
+package adapter_test
 
 import (
 	"net/netip"
 	"testing"
 
 	"github.com/lysShub/itun"
-	"github.com/lysShub/itun/app/server"
+	"github.com/lysShub/itun/app/server/adapter"
 	"github.com/lysShub/relraw"
 	"github.com/stretchr/testify/require"
 )
@@ -17,7 +17,7 @@ var (
 )
 
 func Test_AddrSet(t *testing.T) {
-	var as = &server.AddrSet{}
+	var as = &adapter.AddrSet{}
 
 	as.Add(addr1)
 	as.Add(addr1)
@@ -35,7 +35,7 @@ func Test_AddrSet(t *testing.T) {
 func Test_Port_Adapter(t *testing.T) {
 
 	t.Run("reuse", func(t *testing.T) {
-		ap := server.NewPortAdapter(relraw.LocalAddr())
+		ap := adapter.NewPorts(relraw.LocalAddr())
 		defer func() {
 			require.NoError(t, ap.Close())
 		}()
@@ -56,7 +56,7 @@ func Test_Port_Adapter(t *testing.T) {
 	})
 
 	t.Run("repead-get", func(t *testing.T) {
-		ap := server.NewPortAdapter(relraw.LocalAddr())
+		ap := adapter.NewPorts(relraw.LocalAddr())
 		defer func() {
 			require.NoError(t, ap.Close())
 		}()
@@ -71,7 +71,7 @@ func Test_Port_Adapter(t *testing.T) {
 	})
 
 	t.Run("add-invalid-proto", func(t *testing.T) {
-		ap := server.NewPortAdapter(relraw.LocalAddr())
+		ap := adapter.NewPorts(relraw.LocalAddr())
 		defer func() {
 			require.NoError(t, ap.Close())
 		}()
@@ -82,7 +82,7 @@ func Test_Port_Adapter(t *testing.T) {
 	})
 
 	t.Run("add-invalid-addr", func(t *testing.T) {
-		ap := server.NewPortAdapter(relraw.LocalAddr())
+		ap := adapter.NewPorts(relraw.LocalAddr())
 		defer func() {
 			require.NoError(t, ap.Close())
 		}()

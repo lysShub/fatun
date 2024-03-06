@@ -1,7 +1,7 @@
 //go:build linux
 // +build linux
 
-package server
+package proxyer
 
 import (
 	"net/netip"
@@ -32,6 +32,7 @@ func (pi *proxyerImpl) EndConfig() {
 // todo: error 不要把server堆栈返回处理咯
 func (pi *proxyerImpl) AddTCP(addr netip.AddrPort) (session.ID, error) {
 	s, err := pi.sessionMgr.Add(
+		pi.ctx, (*Proxyer)(pi),
 		session.Session{
 			SrcAddr: pi.raw.RemoteAddrPort(),
 			Proto:   itun.TCP,
@@ -49,6 +50,7 @@ func (pi *proxyerImpl) DelTCP(id session.ID) error {
 
 func (pi *proxyerImpl) AddUDP(addr netip.AddrPort) (session.ID, error) {
 	s, err := pi.sessionMgr.Add(
+		pi.ctx, (*Proxyer)(pi),
 		session.Session{
 			Proto:   itun.UDP,
 			DstAddr: addr,

@@ -216,7 +216,7 @@ func Test_Conn_Clients(t *testing.T) {
 	t.Log(<-rets, "retrun")
 }
 
-func UnicomStackAndRaw(t *testing.T, s *ustack.Ustack, raw *itun.RawConn) {
+func UnicomStackAndRaw(t *testing.T, s ustack.Ustack, raw *itun.RawConn) {
 	go func() {
 		mtu := raw.MTU()
 		var p = relraw.NewPacket(0, mtu)
@@ -259,7 +259,7 @@ func UnicomStackAndRaw(t *testing.T, s *ustack.Ustack, raw *itun.RawConn) {
 	}()
 }
 
-func UnicomStackAndRawBy(t *testing.T, s *ustack.Ustack, raw *itun.RawConn, dst netip.AddrPort) {
+func UnicomStackAndRawBy(t *testing.T, s ustack.Ustack, raw *itun.RawConn, dst netip.AddrPort) {
 	go func() {
 		mtu := raw.MTU()
 		var p = relraw.NewPacket(0, mtu)

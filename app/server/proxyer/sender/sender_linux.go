@@ -1,7 +1,7 @@
 //go:build linux
 // +build linux
 
-package server
+package sender
 
 import (
 	"context"

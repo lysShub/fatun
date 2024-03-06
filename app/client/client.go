@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/lysShub/itun"
+	cs "github.com/lysShub/itun/app/client/session"
 	"github.com/lysShub/itun/cctx"
 	"github.com/lysShub/itun/config"
 	"github.com/lysShub/itun/control"
@@ -36,8 +37,8 @@ type Client struct {
 	cfg *Config
 	raw *itun.RawConn
 
-	sessionMgr *SessionMgr
-	st         *ustack.Ustack
+	sessionMgr *cs.SessionMgr
+	st         ustack.Ustack
 
 	pseudoSum1 uint16
 	seq, ack   uint32
@@ -50,15 +51,16 @@ type Client struct {
 	ctr    control.Client
 }
 
-var _ Uplink = (*Client)(nil)
+var _ cs.Uplink = (*Client)(nil)
 
 func NewClient(parentCtx context.Context, raw relraw.RawConn, cfg *Config) (*Client, error) {
 	var c = &Client{
 		ctx: cctx.WithContext(parentCtx),
 		cfg: cfg,
 		raw: itun.WrapRawConn(raw, cfg.MTU),
+
+		sessionMgr: cs.NewSessionMgr(),
 	}
-	c.sessionMgr = NewSessionMgr(c)
 	c.pseudoSum1 = header.PseudoHeaderChecksum(
 		header.TCPProtocolNumber,
 		c.raw.LocalAddr().Addr, c.raw.RemoteAddr().Addr,
@@ -194,7 +196,7 @@ func (c *Client) uplinkService() {
 		c.st.Outbound(c.ctx, pkt)
 
 		if c.inited.Load() {
-			c.uplink(pkt, session.CtrSessID)
+			c.Uplink(pkt, session.CtrSessID)
 		} else {
 			c.seq = max(c.seq, header.TCP(pkt.Data()).SequenceNumber())
 
@@ -205,7 +207,7 @@ func (c *Client) uplinkService() {
 	}
 }
 
-func (c *Client) uplink(pkt *relraw.Packet, id session.ID) error {
+func (c *Client) Uplink(pkt *relraw.Packet, id session.ID) error {
 	if debug.Debug() {
 		require.True(test.T(), c.inited.Load())
 	}
@@ -240,7 +242,7 @@ func (c *Client) AddProxy(s session.Session) error {
 		} else if resp.Err != nil {
 			panic(resp.Err)
 		}
-		return c.sessionMgr.Add(s, resp.ID)
+		return c.sessionMgr.Add(c.ctx, c, s, resp.ID)
 	default:
 		panic("impossible")
 	}

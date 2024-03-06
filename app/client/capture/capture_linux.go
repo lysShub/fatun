@@ -1,7 +1,7 @@
 //go:build linux
 // +build linux
 
-package client
+package capture
 
 import (
 	"context"

@@ -1,4 +1,4 @@
-package client
+package filter
 
 import (
 	"fmt"
@@ -10,6 +10,10 @@ import (
 	"github.com/lysShub/itun/cctx"
 	"github.com/lysShub/itun/session"
 	"github.com/shirou/gopsutil/v3/process"
+)
+
+const (
+	filterPriority = 2
 )
 
 type filter struct {

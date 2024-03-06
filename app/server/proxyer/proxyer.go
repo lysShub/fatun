@@ -1,18 +1,24 @@
 //go:build linux
 // +build linux
 
-package server
+package proxyer
 
 import (
 	"context"
 	"fmt"
+	"net"
+	"net/netip"
 	"sync/atomic"
 
 	"github.com/lysShub/itun"
+	"github.com/lysShub/itun/app/server/adapter"
+	ss "github.com/lysShub/itun/app/server/proxyer/session"
 	"github.com/lysShub/itun/cctx"
+	"github.com/lysShub/itun/config"
 	"github.com/lysShub/itun/control"
 	"github.com/lysShub/itun/crypto"
 	"github.com/lysShub/itun/session"
+	"github.com/lysShub/itun/ustack"
 	"github.com/lysShub/itun/ustack/faketcp"
 	"github.com/lysShub/relraw"
 	"github.com/lysShub/relraw/test"
@@ -21,7 +27,17 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
-func Proxy(c context.Context, srv *Server, raw *itun.RawConn) {
+type Server interface {
+	Config() config.Config
+	PortAdapter() *adapter.Ports
+
+	// accept control connect
+	AcceptBy(ctx context.Context, src netip.AddrPort) (net.Conn, error)
+
+	Stack() ustack.Ustack
+}
+
+func Proxy(c context.Context, srv Server, raw *itun.RawConn) {
 	p, err := NewProxyer(c, srv, raw)
 	if err != nil {
 		panic(err)
@@ -35,10 +51,10 @@ func Proxy(c context.Context, srv *Server, raw *itun.RawConn) {
 
 type Proxyer struct {
 	ctx cctx.CancelCtx
-	srv *Server
+	srv Server
 	raw *itun.RawConn
 
-	sessionMgr *SessionMgr
+	sessionMgr *ss.SessionMgr
 
 	pseudoSum1 uint16
 	ipstack    *relraw.IPStack
@@ -55,13 +71,15 @@ type Proxyer struct {
 	endConfigNotify chan struct{}
 }
 
-var _ Downlink = (*Proxyer)(nil)
+var _ ss.Downlink = (*Proxyer)(nil)
 
-func NewProxyer(c context.Context, srv *Server, raw *itun.RawConn) (*Proxyer, error) {
+func NewProxyer(c context.Context, srv Server, raw *itun.RawConn) (*Proxyer, error) {
 	var p = &Proxyer{
 		ctx: cctx.WithContext(c),
 		srv: srv,
 		raw: raw,
+
+		sessionMgr: ss.NewSessionMgr(srv.PortAdapter(), raw.LocalAddrPort().Addr()),
 
 		pseudoSum1: header.PseudoHeaderChecksum(
 			header.TCPProtocolNumber,
@@ -72,7 +90,6 @@ func NewProxyer(c context.Context, srv *Server, raw *itun.RawConn) (*Proxyer, er
 		initNotify:      make(chan struct{}),
 		endConfigNotify: make(chan struct{}),
 	}
-	p.sessionMgr = NewSessionMgr(p)
 
 	var err error
 	if p.ipstack, err = relraw.NewIPStack(
@@ -90,24 +107,23 @@ func (p *Proxyer) HandShake() error {
 	go p.uplinkService()
 	go p.downlinkService()
 
-	tcp, err := p.srv.ctrListener.AcceptBy(p.ctx, p.raw.RemoteAddrPort())
+	tcp, err := p.srv.AcceptBy(p.ctx, p.raw.RemoteAddrPort())
 	if err != nil {
 		return err
 	}
 
-	err = p.srv.cfg.PrevPackets.Server(p.ctx, tcp)
-	if err != nil {
+	cfg := p.srv.Config()
+
+	if err = cfg.PrevPackets.Server(p.ctx, tcp); err != nil {
 		return err
 	}
-
-	key, err := p.srv.cfg.SwapKey.SecretKey(p.ctx, tcp)
-	if err != nil {
+	if key, err := cfg.SwapKey.SecretKey(p.ctx, tcp); err != nil {
 		return err
-	}
-
-	p.crypto, err = crypto.NewTCP(key, p.pseudoSum1)
-	if err != nil {
-		return err
+	} else {
+		p.crypto, err = crypto.NewTCP(key, p.pseudoSum1)
+		if err != nil {
+			return err
+		}
 	}
 
 	// todo: NewFakeTCP not need calc csum
@@ -130,16 +146,17 @@ func (p *Proxyer) HandShake() error {
 }
 
 func (p *Proxyer) downlinkService() {
+	st := p.srv.Stack()
 	dst := p.raw.RemoteAddrPort()
 	mtu := p.raw.MTU()
 
 	var tcp = relraw.NewPacket(0, mtu)
 	for {
 		tcp.SetHead(0)
-		p.srv.st.OutboundBy(p.ctx, dst, tcp)
+		st.OutboundBy(p.ctx, dst, tcp)
 
 		if p.inited.Load() {
-			p.downlink(tcp, session.CtrSessID)
+			p.Downlink(tcp, session.CtrSessID)
 		} else {
 			p.seq = max(p.seq, header.TCP(tcp.Data()).SequenceNumber())
 
@@ -159,6 +176,7 @@ func (p *Proxyer) downlinkService() {
 
 func (p *Proxyer) uplinkService() {
 	var (
+		st      = p.srv.Stack()
 		mtu     = p.raw.MTU()
 		minSize = header.TCPMinimumSize + session.Size
 
@@ -196,7 +214,7 @@ func (p *Proxyer) uplinkService() {
 					test.ValidIP(test.T(), seg.Data())
 				}
 
-				p.srv.st.Inbound(seg)
+				st.Inbound(seg)
 			} else {
 				s, err := p.sessionMgr.Get(id)
 				if err != nil {
@@ -212,7 +230,7 @@ func (p *Proxyer) uplinkService() {
 			if debug.Debug() {
 				test.ValidIP(test.T(), seg.Data())
 			}
-			p.srv.st.Inbound(seg)
+			st.Inbound(seg)
 		}
 	}
 }
@@ -224,7 +242,7 @@ func (p *Proxyer) controlService() {
 	}
 }
 
-func (p *Proxyer) downlink(pkt *relraw.Packet, id session.ID) error {
+func (p *Proxyer) Downlink(pkt *relraw.Packet, id session.ID) error {
 	if debug.Debug() {
 		require.True(test.T(), p.inited.Load())
 	}
