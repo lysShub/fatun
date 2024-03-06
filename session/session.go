@@ -2,11 +2,11 @@ package session
 
 import (
 	"encoding/binary"
-	"fmt"
 	"net/netip"
 
 	"github.com/lysShub/itun"
 	"github.com/lysShub/relraw"
+	pkge "github.com/pkg/errors"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
@@ -17,19 +17,27 @@ import (
 
 type ID uint16
 
-func SetID(p *relraw.Packet, id ID) {
-	p.AllocHead(Size)
-	p.SetHead(p.Head() - Size)
+func SetID(pkt *relraw.Packet, id ID) {
+	pkt.AllocHead(Size)
+	pkt.SetHead(pkt.Head() - Size)
 
-	b := p.Data()
+	b := pkt.Data()
 	binary.BigEndian.PutUint16(b[idOffset1:idOffset2], uint16(id))
 }
 
-func GetID(p *relraw.Packet) ID {
-	b := p.Data()
+func GetID(seg *relraw.Packet) ID {
+	b := seg.Data()
 	id := binary.BigEndian.Uint16(b[idOffset1:idOffset2])
-	p.SetHead(p.Head() + Size)
+	seg.SetHead(seg.Head() + Size)
 	return ID(id)
+}
+
+func ErrInvalidID(id ID) error {
+	return pkge.Errorf("invalid session id %d", id)
+}
+
+func ErrExistID(id ID) error {
+	return pkge.Errorf("exist session id %d", id)
 }
 
 const CtrSessID ID = 0xffff
@@ -74,8 +82,10 @@ func (s *Session) MinPacketSize() int {
 	return minSize
 }
 
-type ErrInvalidSession Session
+func ErrInvalidSession(s Session) error {
+	return pkge.Errorf("invalid %s session %s->%s", s.Proto, s.SrcAddr, s.DstAddr)
+}
 
-func (e ErrInvalidSession) Error() string {
-	return fmt.Sprintf("invalid %s session %s->%s", e.Proto, e.SrcAddr, e.DstAddr)
+func ErrExistSession(s Session) error {
+	return pkge.Errorf("exist %s session %s->%s", s.Proto, s.SrcAddr, s.DstAddr)
 }

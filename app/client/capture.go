@@ -8,11 +8,9 @@ import (
 )
 
 type Capture interface {
-	// recv tcp/udp packet
-	RecvCtx(ctx context.Context, p *relraw.Packet) (err error)
+	Capture(ctx context.Context, pkt *relraw.Packet) (err error)
 
-	// inject tcp/udp packet
-	Inject(p *relraw.Packet) error
+	Inject(pkt *relraw.Packet) error
 
 	Close() error
 }

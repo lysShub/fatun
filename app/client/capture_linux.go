@@ -19,11 +19,11 @@ func newCapture(s session.Session) (Capture, error) {
 	return &capture{}, nil
 }
 
-func (c *capture) RecvCtx(ctx context.Context, p *relraw.Packet) (err error) {
+func (c *capture) Capture(ctx context.Context, pkt *relraw.Packet) (err error) {
 	time.Sleep(time.Hour)
 	return nil
 }
-func (c *capture) Inject(p *relraw.Packet) error {
+func (c *capture) Inject(pkt *relraw.Packet) error {
 	return nil
 }
 func (c *capture) Close() error {

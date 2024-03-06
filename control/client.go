@@ -1,45 +1,26 @@
 package control
 
 import (
+	"context"
 	"encoding/gob"
 	"net"
 	"net/netip"
 
-	"github.com/lysShub/itun/cctx"
 	"github.com/lysShub/itun/control/internal"
 	"github.com/lysShub/itun/session"
 )
 
-type Client interface {
-	Close() error
-
-	IPv6() (bool, error)
-	EndConfig() error
-	AddTCP(addr netip.AddrPort) (*AddTCP, error)
-	DelTCP(id session.ID) error
-	AddUDP(addr netip.AddrPort) (*AddUDP, error)
-	DelUDP(id session.ID) error
-	PackLoss() (float32, error)
-	Ping() error
-}
-
-func NewClient(ctx cctx.CancelCtx, tcp net.Conn) Client {
-
-	return newGobClient(ctx, tcp)
-}
+// todo: support ctx, e.g: ctr.IPv6(ctx)
 
 type gobClient struct {
-	ctx cctx.CancelCtx
-
 	conn net.Conn
 
 	enc *gob.Encoder
 	dec *gob.Decoder
 }
 
-func newGobClient(parentCtx cctx.CancelCtx, tcp net.Conn) *gobClient {
+func newGobClient(tcp net.Conn) *gobClient {
 	return &gobClient{
-		ctx:  parentCtx,
 		conn: tcp,
 		enc:  gob.NewEncoder(tcp),
 		dec:  gob.NewDecoder(tcp),
@@ -49,24 +30,14 @@ func newGobClient(parentCtx cctx.CancelCtx, tcp net.Conn) *gobClient {
 var _ Client = (*gobClient)(nil)
 
 func (c *gobClient) Close() (err error) {
-	select {
-	case <-c.ctx.Done():
-		err = c.ctx.Err()
-	default:
-		err = c.conn.Close()
-
-		c.ctx.Cancel(nil)
-		// todo: wait downlink/OutboundService return
-	}
-
-	return err
+	return c.conn.Close()
 }
 
 func (c *gobClient) nextType(t internal.CtrType) error {
 	return c.enc.Encode(t)
 }
 
-func (c *gobClient) IPv6() (bool, error) {
+func (c *gobClient) IPv6(ctx context.Context) (bool, error) {
 	if err := c.nextType(internal.IPv6); err != nil {
 		return false, err
 	}
@@ -79,7 +50,7 @@ func (c *gobClient) IPv6() (bool, error) {
 	return bool(resp), err
 }
 
-func (c *gobClient) EndConfig() error {
+func (c *gobClient) EndConfig(ctx context.Context) error {
 	if err := c.nextType(internal.EndConfig); err != nil {
 		return err
 	}
@@ -91,7 +62,7 @@ func (c *gobClient) EndConfig() error {
 
 type AddTCP internal.AddTCPResp
 
-func (c *gobClient) AddTCP(addr netip.AddrPort) (*AddTCP, error) {
+func (c *gobClient) AddTCP(ctx context.Context, addr netip.AddrPort) (*AddTCP, error) {
 	if err := c.nextType(internal.AddTCP); err != nil {
 		return nil, err
 	}
@@ -103,7 +74,7 @@ func (c *gobClient) AddTCP(addr netip.AddrPort) (*AddTCP, error) {
 	return &resp, err
 }
 
-func (c *gobClient) DelTCP(id session.ID) error {
+func (c *gobClient) DelTCP(ctx context.Context, id session.ID) error {
 	if err := c.nextType(internal.DelTCP); err != nil {
 		return err
 	}
@@ -117,7 +88,7 @@ func (c *gobClient) DelTCP(id session.ID) error {
 
 type AddUDP internal.AddUDPResp
 
-func (c *gobClient) AddUDP(addr netip.AddrPort) (*AddUDP, error) {
+func (c *gobClient) AddUDP(ctx context.Context, addr netip.AddrPort) (*AddUDP, error) {
 	if err := c.nextType(internal.AddUDP); err != nil {
 		return nil, err
 	}
@@ -129,7 +100,7 @@ func (c *gobClient) AddUDP(addr netip.AddrPort) (*AddUDP, error) {
 	return &resp, err
 }
 
-func (c *gobClient) DelUDP(id session.ID) error {
+func (c *gobClient) DelUDP(ctx context.Context, id session.ID) error {
 	if err := c.nextType(internal.DelUDP); err != nil {
 		return err
 	}
@@ -141,7 +112,7 @@ func (c *gobClient) DelUDP(id session.ID) error {
 	return err
 }
 
-func (c *gobClient) PackLoss() (float32, error) {
+func (c *gobClient) PackLoss(ctx context.Context) (float32, error) {
 	if err := c.nextType(internal.PackLoss); err != nil {
 		return 0, err
 	}
@@ -153,7 +124,7 @@ func (c *gobClient) PackLoss() (float32, error) {
 	return float32(resp), err
 }
 
-func (c *gobClient) Ping() error {
+func (c *gobClient) Ping(ctx context.Context) error {
 	if err := c.nextType(internal.Ping); err != nil {
 		return err
 	}

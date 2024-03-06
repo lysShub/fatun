@@ -5,10 +5,7 @@ import (
 	"time"
 )
 
-// self cancel-able context, sub-goroutine can cancel whole task with error.
-// the cctx.Err() return error from context.Cause(ctx) firstly, then ctx.Err().
-//
-// if a function takes xxx as a parameter, it does not need to return err
+// context can cancel, only used by parallel task
 type CancelCtx interface {
 	context.Context
 	Cancel(cause error)

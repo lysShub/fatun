@@ -37,8 +37,10 @@ func TestXxxx(t *testing.T) {
 	c, err := client.NewClient(ctx, raw, cfg)
 	require.NoError(t, err)
 
-	defer c.Close()
+	err = c.Handshake()
+	require.NoError(t, err)
 
+	defer c.Close()
 }
 
 func Test_TCP(t *testing.T) {

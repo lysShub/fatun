@@ -651,6 +651,8 @@ func (c *UDPConn) LocalAddr() net.Addr {
 	return fullToUDPAddr(a)
 }
 
+// todo: recover deateline
+
 type deadlineTimer struct{}
 
 func (d *deadlineTimer) SetReadDeadline(t time.Time) error {

@@ -4,7 +4,6 @@
 package server
 
 import (
-	"fmt"
 	"net/netip"
 
 	"github.com/lysShub/itun"
@@ -12,23 +11,27 @@ import (
 	"github.com/lysShub/itun/session"
 )
 
-type proxyerImpl proxyer
+type proxyerImpl Proxyer
 
 type proxyerImplPtr = *proxyerImpl
 
-var _ control.SrvHandler = (proxyerImplPtr)(nil)
+var _ control.Handler = (proxyerImplPtr)(nil)
 
 func (pi *proxyerImpl) IPv6() bool {
 	return true
 }
 
 func (pi *proxyerImpl) EndConfig() {
-	fmt.Println("完成初始化配置")
+	select {
+	case <-pi.endConfigNotify:
+	default:
+		close(pi.endConfigNotify)
+	}
 }
 
+// todo: error 不要把server堆栈返回处理咯
 func (pi *proxyerImpl) AddTCP(addr netip.AddrPort) (session.ID, error) {
 	s, err := pi.sessionMgr.Add(
-		pi.ctx,
 		session.Session{
 			SrcAddr: pi.raw.RemoteAddrPort(),
 			Proto:   itun.TCP,
@@ -41,12 +44,11 @@ func (pi *proxyerImpl) AddTCP(addr netip.AddrPort) (session.ID, error) {
 	return s.ID(), nil
 }
 func (pi *proxyerImpl) DelTCP(id session.ID) error {
-	return pi.sessionMgr.Del(id)
+	return pi.sessionMgr.Del(id, nil)
 }
 
 func (pi *proxyerImpl) AddUDP(addr netip.AddrPort) (session.ID, error) {
 	s, err := pi.sessionMgr.Add(
-		pi.ctx,
 		session.Session{
 			Proto:   itun.UDP,
 			DstAddr: addr,
@@ -58,7 +60,7 @@ func (pi *proxyerImpl) AddUDP(addr netip.AddrPort) (session.ID, error) {
 	return s.ID(), nil
 }
 func (pi *proxyerImpl) DelUDP(id session.ID) error {
-	return pi.sessionMgr.Del(id)
+	return pi.sessionMgr.Del(id, nil)
 }
 
 func (pi *proxyerImpl) PackLoss() float32 {

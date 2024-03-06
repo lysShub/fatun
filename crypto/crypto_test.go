@@ -20,46 +20,46 @@ func UnicomStackAndRaw(t *testing.T, s *ustack.Ustack, raw *itun.RawConn, pseudo
 
 	go func() {
 		mtu := raw.MTU()
-		var p = relraw.NewPacket(0, mtu)
+		var ip = relraw.NewPacket(0, mtu)
 
 		for {
-			p.Sets(0, mtu)
-			s.Outbound(context.Background(), p)
-			if p.Len() == 0 {
+			ip.Sets(0, mtu)
+			s.Outbound(context.Background(), ip)
+			if ip.Len() == 0 {
 				return
 			}
 
-			test.ValidIP(t, p.Data())
+			test.ValidIP(t, ip.Data())
 
-			c.EncryptRaw(p)
+			c.EncryptRaw(ip)
 
-			test.ValidIP(t, p.Data())
+			test.ValidIP(t, ip.Data())
 
-			_, err := raw.Write(p.Data())
+			_, err := raw.Write(ip.Data())
 			require.NoError(t, err)
 		}
 	}()
 	go func() {
 		mtu := raw.MTU()
-		var p = relraw.NewPacket(0, mtu)
+		var tcp = relraw.NewPacket(0, mtu)
 
 		for {
-			p.Sets(0, mtu)
-			err := raw.ReadCtx(context.Background(), p)
+			tcp.Sets(0, mtu)
+			err := raw.ReadCtx(context.Background(), tcp)
 			if errors.Is(err, io.EOF) {
 				return
 			}
 			require.NoError(t, err)
 
-			p.Sets(0, p.Head()+p.Len())
-			test.ValidIP(t, p.Data())
+			tcp.SetHead(0)
+			test.ValidIP(t, tcp.Data())
 
-			err = c.DecryptRaw(p)
+			err = c.DecryptRaw(tcp)
 			require.NoError(t, err)
 
-			test.ValidIP(t, p.Data())
+			test.ValidIP(t, tcp.Data())
 
-			s.Inbound(p)
+			s.Inbound(tcp)
 		}
 	}()
 }

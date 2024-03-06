@@ -21,7 +21,19 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
-type proxyer struct {
+func Proxy(c context.Context, srv *Server, raw *itun.RawConn) {
+	p, err := NewProxyer(c, srv, raw)
+	if err != nil {
+		panic(err)
+	}
+
+	err = p.HandShake()
+	if err != nil {
+		panic(err)
+	}
+}
+
+type Proxyer struct {
 	ctx cctx.CancelCtx
 	srv *Server
 	raw *itun.RawConn
@@ -38,14 +50,15 @@ type proxyer struct {
 
 	fake   *faketcp.FakeTCP
 	crypto *crypto.TCP
+
+	ctr             control.Server
+	endConfigNotify chan struct{}
 }
 
-var _ Downlink = (*proxyer)(nil)
+var _ Downlink = (*Proxyer)(nil)
 
-func Proxy(c context.Context, srv *Server, raw *itun.RawConn) {
-	var err error
-
-	var p = &proxyer{
+func NewProxyer(c context.Context, srv *Server, raw *itun.RawConn) (*Proxyer, error) {
+	var p = &Proxyer{
 		ctx: cctx.WithContext(c),
 		srv: srv,
 		raw: raw,
@@ -56,38 +69,48 @@ func Proxy(c context.Context, srv *Server, raw *itun.RawConn) {
 			0,
 		),
 
-		initNotify: make(chan struct{}),
+		initNotify:      make(chan struct{}),
+		endConfigNotify: make(chan struct{}),
 	}
 	p.sessionMgr = NewSessionMgr(p)
+
+	var err error
 	if p.ipstack, err = relraw.NewIPStack(
 		raw.LocalAddrPort().Addr(),
 		raw.RemoteAddrPort().Addr(),
 		header.TCPProtocolNumber,
 	); err != nil {
-		panic(err)
+		return nil, err
 	}
+
+	return p, nil
+}
+
+func (p *Proxyer) HandShake() error {
 	go p.uplinkService()
 	go p.downlinkService()
 
-	tcp, err := p.srv.ctrListener.AcceptBy(p.ctx, raw.RemoteAddrPort())
+	tcp, err := p.srv.ctrListener.AcceptBy(p.ctx, p.raw.RemoteAddrPort())
 	if err != nil {
-		panic(err)
+		return err
 	}
 
-	p.srv.cfg.PrevPackets.Server(p.ctx, tcp)
-	if p.ctx.Err() != nil {
-		panic(p.ctx.Err())
+	err = p.srv.cfg.PrevPackets.Server(p.ctx, tcp)
+	if err != nil {
+		return err
 	}
 
 	key, err := p.srv.cfg.SwapKey.SecretKey(p.ctx, tcp)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	p.crypto, err = crypto.NewTCP(key, p.pseudoSum1)
 	if err != nil {
-		panic(err)
+		return err
 	}
+
+	// todo: NewFakeTCP not need calc csum
 	p.fake = faketcp.NewFakeTCP(
 		p.raw.LocalAddr().Port,
 		p.raw.RemoteAddr().Port,
@@ -99,14 +122,14 @@ func Proxy(c context.Context, srv *Server, raw *itun.RawConn) {
 	<-p.initNotify
 	p.inited.CompareAndSwap(false, true)
 
-	control.Serve(p.ctx, tcp, proxyerImplPtr(p))
+	p.ctr = control.NewServer(tcp, proxyerImplPtr(p))
 
-	<-p.ctx.Done()
-	e := p.ctx.Err()
-	fmt.Println("proxy closed: ", e)
+	go p.controlService()
+	<-p.endConfigNotify
+	return nil
 }
 
-func (p *proxyer) downlinkService() {
+func (p *Proxyer) downlinkService() {
 	dst := p.raw.RemoteAddrPort()
 	mtu := p.raw.MTU()
 
@@ -116,7 +139,7 @@ func (p *proxyer) downlinkService() {
 		p.srv.st.OutboundBy(p.ctx, dst, tcp)
 
 		if p.inited.Load() {
-			p.Downlink(tcp, session.CtrSessID)
+			p.downlink(tcp, session.CtrSessID)
 		} else {
 			p.seq = max(p.seq, header.TCP(tcp.Data()).SequenceNumber())
 
@@ -134,72 +157,89 @@ func (p *proxyer) downlinkService() {
 	}
 }
 
-func (p *proxyer) uplinkService() {
+func (p *Proxyer) uplinkService() {
 	var (
 		mtu     = p.raw.MTU()
 		minSize = header.TCPMinimumSize + session.Size
 
-		b = relraw.NewPacket(0, mtu)
+		seg = relraw.NewPacket(0, mtu)
 	)
 
 	for {
-		b.Sets(0, mtu)
+		seg.Sets(0, mtu)
 
-		err := p.raw.ReadCtx(p.ctx, b)
+		err := p.raw.ReadCtx(p.ctx, seg)
 		if err != nil {
 			p.ctx.Cancel(err)
 			return
-		} else if b.Len() < minSize {
+		} else if seg.Len() < minSize {
 			continue
 		}
 
-		if faketcp.IsFakeTCP(b.Data()) {
+		if faketcp.IsFakeTCP(seg.Data()) {
 			if p.prepareInit.CompareAndSwap(true, false) {
 				close(p.initNotify)
 			}
 
-			err = p.crypto.Decrypt(b)
+			err = p.crypto.Decrypt(seg)
 			if err != nil {
 				p.ctx.Cancel(err)
 				return
 			}
 
-			p.fake.RecvStrip(b)
+			p.fake.RecvStrip(seg)
 
-			id := session.GetID(b)
+			id := session.GetID(seg)
 			if id == session.CtrSessID {
-				p.ipstack.AttachInbound(b)
+				p.ipstack.AttachInbound(seg)
 				if debug.Debug() {
-					test.ValidIP(test.T(), b.Data())
+					test.ValidIP(test.T(), seg.Data())
 				}
 
-				p.srv.st.Inbound(b)
+				p.srv.st.Inbound(seg)
 			} else {
-				s := p.sessionMgr.Get(id)
-				s.Send(b.Data())
+				s, err := p.sessionMgr.Get(id)
+				if err != nil {
+					fmt.Println(err)
+				} else {
+					s.Send(seg)
+				}
 			}
 		} else {
-			p.ack = max(p.ack, header.TCP(b.Data()).AckNumber())
+			p.ack = max(p.ack, header.TCP(seg.Data()).AckNumber())
 
-			p.ipstack.AttachInbound(b)
+			p.ipstack.AttachInbound(seg)
 			if debug.Debug() {
-				test.ValidIP(test.T(), b.Data())
+				test.ValidIP(test.T(), seg.Data())
 			}
-			p.srv.st.Inbound(b)
+			p.srv.st.Inbound(seg)
 		}
 	}
 }
 
-func (p *proxyer) Downlink(b *relraw.Packet, id session.ID) {
+func (p *Proxyer) controlService() {
+	err := p.ctr.Serve(p.ctx)
+	if err != nil {
+		p.ctx.Cancel(err)
+	}
+}
+
+func (p *Proxyer) downlink(pkt *relraw.Packet, id session.ID) error {
 	if debug.Debug() {
 		require.True(test.T(), p.inited.Load())
 	}
 
-	session.SetID(b, id)
-	p.fake.SendAttach(b)
-	p.crypto.Encrypt(b)
+	session.SetID(pkt, id)
 
-	p.raw.WriteCtx(p.ctx, b)
+	p.fake.SendAttach(pkt)
+
+	p.crypto.Encrypt(pkt)
+	if debug.Debug() {
+		test.ValidTCP(test.T(), pkt.Data(), p.pseudoSum1)
+	}
+
+	err := p.raw.WriteCtx(p.ctx, pkt)
+	return err
 }
 
-func (p *proxyer) MTU() int { return p.raw.MTU() }
+func (p *Proxyer) MTU() int { return p.raw.MTU() }

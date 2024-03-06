@@ -1,17 +1,17 @@
 package control
 
 import (
+	"context"
 	"encoding/gob"
 	"net"
 	"net/netip"
 
-	"github.com/lysShub/itun/cctx"
 	"github.com/lysShub/itun/control/internal"
 	"github.com/lysShub/itun/session"
 	pkge "github.com/pkg/errors"
 )
 
-type SrvHandler interface {
+type Handler interface {
 	IPv6() bool
 	EndConfig()
 	AddTCP(addr netip.AddrPort) (session.ID, error)
@@ -22,24 +22,16 @@ type SrvHandler interface {
 	Ping()
 }
 
-func Serve(ctx cctx.CancelCtx, tcp net.Conn, hander SrvHandler) {
-	srv := newGobServer(ctx, tcp, hander)
-	srv.Serve(ctx)
-}
-
 type gobServer struct {
-	ctx cctx.CancelCtx
-	hdr SrvHandler
-
 	conn net.Conn
+	hdr  Handler
 
 	enc *gob.Encoder
 	dec *gob.Decoder
 }
 
-func newGobServer(ctx cctx.CancelCtx, tcp net.Conn, hdr SrvHandler) *gobServer {
+func newGobServer(tcp net.Conn, hdr Handler) *gobServer {
 	var s = &gobServer{
-		ctx:  ctx,
 		hdr:  hdr,
 		conn: tcp,
 		enc:  gob.NewEncoder(tcp),
@@ -48,39 +40,33 @@ func newGobServer(ctx cctx.CancelCtx, tcp net.Conn, hdr SrvHandler) *gobServer {
 	return s
 }
 
-func (s *gobServer) Serve(ctx cctx.CancelCtx) {
+func (s *gobServer) Serve(ctx context.Context) error {
+	defer s.conn.Close()
+
 	var t internal.CtrType
 	var err error
 	for {
-		// todo: s.conn support ctx
-		select {
-		case <-ctx.Done():
-			return
-		default:
-		}
-
 		t, err = s.nextType()
 		if err != nil {
 		} else if err = t.Valid(); err != nil {
 		} else {
-
 			switch t {
 			case internal.IPv6:
-				err = s.IPv6()
+				err = s.handleIPv6()
 			case internal.EndConfig:
-				err = s.EndConfig()
+				err = s.handleEndConfig()
 			case internal.AddTCP:
-				err = s.AddTCP()
+				err = s.handleAddTCP()
 			case internal.DelTCP:
-				err = s.DelTCP()
+				err = s.handleDelTCP()
 			case internal.AddUDP:
-				err = s.AddUDP()
+				err = s.handleAddUDP()
 			case internal.DelUDP:
-				err = s.DelUDP()
+				err = s.handleDelUDP()
 			case internal.PackLoss:
-				err = s.PackLoss()
+				err = s.handlePackLoss()
 			case internal.Ping:
-				err = s.Ping()
+				err = s.handlePing()
 			default:
 				err = pkge.Errorf("not support control type %d", int(t))
 			}
@@ -88,11 +74,11 @@ func (s *gobServer) Serve(ctx cctx.CancelCtx) {
 
 		if err != nil {
 			select {
-			case <-s.ctx.Done():
+			case <-ctx.Done():
+				return ctx.Err()
 			default:
-				s.ctx.Cancel(pkge.WithStack(s.conn.Close()))
+				return err
 			}
-			return
 		}
 	}
 }
@@ -101,7 +87,7 @@ func (s *gobServer) nextType() (t internal.CtrType, err error) {
 	return t, s.dec.Decode(&t)
 }
 
-func (s *gobServer) IPv6() error {
+func (s *gobServer) handleIPv6() error {
 	var req internal.IPv6Req
 	if err := s.dec.Decode(&req); err != nil {
 		return err
@@ -113,7 +99,7 @@ func (s *gobServer) IPv6() error {
 	return s.enc.Encode(resp)
 }
 
-func (s *gobServer) EndConfig() error {
+func (s *gobServer) handleEndConfig() error {
 	var req internal.EndConfigReq
 	if err := s.dec.Decode(&req); err != nil {
 		return err
@@ -125,7 +111,7 @@ func (s *gobServer) EndConfig() error {
 	return s.enc.Encode(resp)
 }
 
-func (s *gobServer) AddTCP() error {
+func (s *gobServer) handleAddTCP() error {
 	var req internal.AddTCPReq
 	if err := s.dec.Decode(&req); err != nil {
 		return err
@@ -140,7 +126,7 @@ func (s *gobServer) AddTCP() error {
 	return s.enc.Encode(resp)
 }
 
-func (s *gobServer) DelTCP() error {
+func (s *gobServer) handleDelTCP() error {
 	var req internal.DelTCPReq
 	if err := s.dec.Decode(&req); err != nil {
 		return err
@@ -152,7 +138,7 @@ func (s *gobServer) DelTCP() error {
 	return s.enc.Encode(resp)
 }
 
-func (s *gobServer) AddUDP() error {
+func (s *gobServer) handleAddUDP() error {
 	var req internal.AddUDPReq
 	if err := s.dec.Decode(&req); err != nil {
 		return err
@@ -167,7 +153,7 @@ func (s *gobServer) AddUDP() error {
 	return s.enc.Encode(resp)
 }
 
-func (s *gobServer) DelUDP() error {
+func (s *gobServer) handleDelUDP() error {
 	var req internal.DelUDPReq
 	if err := s.dec.Decode(&req); err != nil {
 		return err
@@ -179,7 +165,7 @@ func (s *gobServer) DelUDP() error {
 	return s.enc.Encode(resp)
 }
 
-func (s *gobServer) PackLoss() error {
+func (s *gobServer) handlePackLoss() error {
 	var req internal.PackLossReq
 	if err := s.dec.Decode(&req); err != nil {
 		return err
@@ -191,7 +177,7 @@ func (s *gobServer) PackLoss() error {
 	return s.enc.Encode(resp)
 }
 
-func (s *gobServer) Ping() error {
+func (s *gobServer) handlePing() error {
 	var req internal.PingReq
 	if err := s.dec.Decode(&req); err != nil {
 		return err

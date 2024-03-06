@@ -68,11 +68,11 @@ func (u *Ustack) Inbound(ip *relraw.Packet) {
 }
 
 // OutboundBy only use by server, read stack outbound tcp packet
-func (u *Ustack) OutboundBy(ctx context.Context, dst netip.AddrPort, b *relraw.Packet) {
-	_ = u.link.OutboundBy(ctx, dst, b)
+func (u *Ustack) OutboundBy(ctx context.Context, dst netip.AddrPort, tcp *relraw.Packet) {
+	_ = u.link.OutboundBy(ctx, dst, tcp)
 }
 
 // Outbound only use by client
-func (u *Ustack) Outbound(ctx context.Context, b *relraw.Packet) {
-	_ = u.link.Outbound(ctx, b)
+func (u *Ustack) Outbound(ctx context.Context, tcp *relraw.Packet) {
+	_ = u.link.Outbound(ctx, tcp)
 }

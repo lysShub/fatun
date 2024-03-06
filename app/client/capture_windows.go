@@ -15,6 +15,8 @@ import (
 	"github.com/lysShub/divert-go"
 	"github.com/lysShub/itun/session"
 	"github.com/lysShub/relraw"
+	"github.com/lysShub/relraw/test"
+	"github.com/lysShub/relraw/test/debug"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
@@ -30,6 +32,15 @@ const (
 	capturePriority = 1
 	filterPriority  = 2
 )
+
+type capture struct {
+	hdl *divert.Divert
+
+	ipstack *relraw.IPStack
+
+	minSize     int
+	inboundAddr divert.Address
+}
 
 func newCapture(s session.Session) (Capture, error) {
 	var c = &capture{}
@@ -69,36 +80,20 @@ func newCapture(s session.Session) (Capture, error) {
 	return c, nil
 }
 
-type capture struct {
-	hdl *divert.Divert
-
-	ipstack *relraw.IPStack
-
-	minSize int
-
-	inboundAddr divert.Address
-}
-
-type ErrCaptureInvalidPacket string
-
-func (e ErrCaptureInvalidPacket) Error() string {
-	return fmt.Sprintf("capture invalid packet：%s", string(e))
-}
-
-func (c *capture) RecvCtx(ctx context.Context, p *relraw.Packet) (err error) {
-	ip := p.Data()
+func (c *capture) Capture(ctx context.Context, pkg *relraw.Packet) (err error) {
+	ip := pkg.Data()
 	ip = ip[:cap(ip)]
 
 	n, err := c.hdl.RecvCtx(ctx, ip, nil)
 	if err != nil {
 		return err
 	} else if n == 0 {
-		return c.RecvCtx(ctx, p)
+		return c.Capture(ctx, pkg)
 	} else if n < c.minSize {
 		return ErrCaptureInvalidPacket(hex.EncodeToString(ip[:n]))
 	}
 
-	p.SetLen(n)
+	pkg.SetLen(n)
 
 	iphdrLen := 0
 	switch header.IPVersion(ip) {
@@ -108,17 +103,21 @@ func (c *capture) RecvCtx(ctx context.Context, p *relraw.Packet) (err error) {
 		iphdrLen = header.IPv6MinimumSize
 	}
 
-	p.SetHead(p.Head() + iphdrLen)
+	pkg.SetHead(pkg.Head() + iphdrLen)
 
 	// todo: remove tcp/udp checksum pseudo-sum party
 	return nil
 }
 
-func (c *capture) Inject(p *relraw.Packet) error {
+func (c *capture) Inject(pkt *relraw.Packet) error {
 
-	c.ipstack.AttachInbound(p)
+	c.ipstack.AttachInbound(pkt)
 
-	_, err := c.hdl.Send(p.Data(), &c.inboundAddr)
+	if debug.Debug() {
+		test.ValidIP(test.T(), pkt.Data())
+	}
+
+	_, err := c.hdl.Send(pkt.Data(), &c.inboundAddr)
 	return err
 }
 
@@ -173,4 +172,10 @@ func getAddrNIC(addr netip.Addr) (netip.Addr, int, error) {
 	}
 
 	return addr, 0, pkge.Errorf("invalid address %s", addr)
+}
+
+type ErrCaptureInvalidPacket string
+
+func (e ErrCaptureInvalidPacket) Error() string {
+	return fmt.Sprintf("capture invalid packet：%s", string(e))
 }

@@ -2,12 +2,12 @@ package config
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"net"
 	"time"
 
-	"github.com/lysShub/itun/cctx"
 	"github.com/lysShub/itun/crypto"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
@@ -31,48 +31,44 @@ func (e ErrPrevPacketInvalid) Error() string {
 	return fmt.Sprintf("previous pakcet %d is invalid", e)
 }
 
-func (pps PrevPackets) Client(ctx cctx.CancelCtx, conn net.Conn) {
+func (pps PrevPackets) Client(ctx context.Context, conn net.Conn) error {
 	for i := 0; i < len(pps); i++ {
 		if i%2 == 0 {
 			_, err := conn.Write(pps[i])
 			if err != nil {
-				ctx.Cancel(err)
-				return
+				return err
 			}
 		} else {
 			var b = make([]byte, len(pps[i]))
 
 			if _, err := io.ReadFull(conn, b); err != nil {
-				ctx.Cancel(err)
-				return
+				return err
 			}
 			if !bytes.Equal(b, pps[i]) {
-				ctx.Cancel(ErrPrevPacketInvalid(i))
-				return
+				return ErrPrevPacketInvalid(i)
 			}
 		}
 	}
+	return nil
 }
 
-func (pps PrevPackets) Server(ctx cctx.CancelCtx, conn net.Conn) {
+func (pps PrevPackets) Server(ctx context.Context, conn net.Conn) error {
 	for i := 0; i < len(pps); i++ {
 		if i%2 == 0 {
 			var b = make([]byte, len(pps[i]))
 
 			if _, err := io.ReadFull(conn, b); err != nil {
-				ctx.Cancel(err)
-				return
+				return err
 			}
 			if !bytes.Equal(b, pps[i]) {
-				ctx.Cancel(ErrPrevPacketInvalid(i))
-				return
+				return ErrPrevPacketInvalid(i)
 			}
 		} else {
 			_, err := conn.Write(pps[i])
 			if err != nil {
-				ctx.Cancel(err)
-				return
+				return err
 			}
 		}
 	}
+	return nil
 }

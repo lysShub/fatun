@@ -41,15 +41,15 @@ func NewList(size int, mtu int) *List {
 
 var _ stack.LinkEndpoint = (*List)(nil)
 
-func (l *List) Outbound(ctx context.Context, b *relraw.Packet) error {
+func (l *List) Outbound(ctx context.Context, tcp *relraw.Packet) error {
 	pkb := l.list.Get(ctx)
 	if pkb.IsNil() {
 		return ctx.Err()
 	}
 	defer pkb.DecRef()
 
-	b.SetLen(pkb.Size())
-	data := b.Data()
+	tcp.SetLen(pkb.Size())
+	data := tcp.Data()
 
 	n := 0
 	for _, e := range pkb.AsSlices() {
@@ -57,29 +57,29 @@ func (l *List) Outbound(ctx context.Context, b *relraw.Packet) error {
 	}
 
 	if debug.Debug() {
-		test.ValidIP(test.T(), b.Data())
+		test.ValidIP(test.T(), tcp.Data())
 	}
 	switch pkb.NetworkProtocolNumber {
 	case header.IPv4ProtocolNumber:
-		hdrLen := header.IPv4(b.Data()).HeaderLength()
-		b.SetHead(int(hdrLen))
+		hdrLen := header.IPv4(tcp.Data()).HeaderLength()
+		tcp.SetHead(int(hdrLen))
 	case header.IPv6ProtocolNumber:
-		b.SetHead(header.IPv6MinimumSize)
+		tcp.SetHead(header.IPv6MinimumSize)
 	default:
 		panic("")
 	}
 	return nil
 }
 
-func (l *List) OutboundBy(ctx context.Context, dst netip.AddrPort, b *relraw.Packet) error {
+func (l *List) OutboundBy(ctx context.Context, dst netip.AddrPort, tcp *relraw.Packet) error {
 	pkb := l.list.GetBy(ctx, dst)
 	if pkb.IsNil() {
 		return ctx.Err()
 	}
 	defer pkb.DecRef()
 
-	b.SetLen(pkb.Size())
-	data := b.Data()
+	tcp.SetLen(pkb.Size())
+	data := tcp.Data()
 
 	n := 0
 	for _, e := range pkb.AsSlices() {
@@ -87,14 +87,14 @@ func (l *List) OutboundBy(ctx context.Context, dst netip.AddrPort, b *relraw.Pac
 	}
 
 	if debug.Debug() {
-		test.ValidIP(test.T(), b.Data())
+		test.ValidIP(test.T(), tcp.Data())
 	}
 	switch pkb.NetworkProtocolNumber {
 	case header.IPv4ProtocolNumber:
-		hdrLen := header.IPv4(b.Data()).HeaderLength()
-		b.SetHead(int(hdrLen))
+		hdrLen := header.IPv4(tcp.Data()).HeaderLength()
+		tcp.SetHead(int(hdrLen))
 	case header.IPv6ProtocolNumber:
-		b.SetHead(header.IPv6MinimumSize)
+		tcp.SetHead(header.IPv6MinimumSize)
 	default:
 		panic("")
 	}
@@ -155,12 +155,6 @@ func (l *List) NumQueued() int                       { return l.list.Size() }
 func (l *List) ParseHeader(*stack.PacketBuffer) bool { return true }
 func (l *List) SupportedGSO() stack.SupportedGSO     { return l.SupportedGSOKind }
 func (l *List) Wait()                                {}
-
-// func (e *List) Close()
-// func (e *List) Drain() int
-// func (e *Ring) AddNotify(notify Notification) *NotificationHandle
-// func (e *Ring) RemoveNotify(handle *NotificationHandle)
-// func (l *List) InjectInbound(protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer)
 
 type listIface interface {
 	Put(pkb *stack.PacketBuffer) (ok bool)

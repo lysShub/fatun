@@ -62,7 +62,7 @@ func (c *Chan) Inbound(ip *relraw.Packet) {
 	c.Endpoint.InjectInbound(header.IPv4ProtocolNumber, pkb)
 }
 
-func (c *Chan) Outbound(ctx context.Context, b *relraw.Packet) error {
+func (c *Chan) Outbound(ctx context.Context, tcp *relraw.Packet) error {
 	pkb := c.Endpoint.ReadContext(ctx)
 	if pkb.IsNil() {
 		return ctx.Err()
@@ -76,8 +76,8 @@ func (c *Chan) Outbound(ctx context.Context, b *relraw.Packet) error {
 		}
 	}
 
-	b.SetLen(pkb.Size())
-	data := b.Data()
+	tcp.SetLen(pkb.Size())
+	data := tcp.Data()
 
 	n := 0
 	for _, e := range pkb.AsSlices() {
@@ -85,21 +85,21 @@ func (c *Chan) Outbound(ctx context.Context, b *relraw.Packet) error {
 	}
 
 	if debug.Debug() {
-		test.ValidIP(test.T(), b.Data())
+		test.ValidIP(test.T(), tcp.Data())
 	}
 	switch pkb.NetworkProtocolNumber {
 	case header.IPv4ProtocolNumber:
-		hdrLen := header.IPv4(b.Data()).HeaderLength()
-		b.SetHead(int(hdrLen))
+		hdrLen := header.IPv4(tcp.Data()).HeaderLength()
+		tcp.SetHead(int(hdrLen))
 	case header.IPv6ProtocolNumber:
-		b.SetHead(header.IPv6MinimumSize)
+		tcp.SetHead(header.IPv6MinimumSize)
 	default:
 		panic("")
 	}
 	return nil
 }
 
-func (c *Chan) OutboundBy(ctx context.Context, dst netip.AddrPort, b *relraw.Packet) error {
+func (c *Chan) OutboundBy(ctx context.Context, dst netip.AddrPort, tcp *relraw.Packet) error {
 	var pkb *stack.PacketBuffer
 	for pkb.IsNil() {
 		pkb = c.walkBy(dst)
@@ -114,8 +114,8 @@ func (c *Chan) OutboundBy(ctx context.Context, dst netip.AddrPort, b *relraw.Pac
 	}
 	defer pkb.DecRef()
 
-	b.SetLen(pkb.Size())
-	data := b.Data()
+	tcp.SetLen(pkb.Size())
+	data := tcp.Data()
 
 	n := 0
 	for _, e := range pkb.AsSlices() {
@@ -124,10 +124,10 @@ func (c *Chan) OutboundBy(ctx context.Context, dst netip.AddrPort, b *relraw.Pac
 
 	switch pkb.NetworkProtocolNumber {
 	case header.IPv4ProtocolNumber:
-		hdrLen := header.IPv4(b.Data()).HeaderLength()
-		b.SetHead(int(hdrLen))
+		hdrLen := header.IPv4(tcp.Data()).HeaderLength()
+		tcp.SetHead(int(hdrLen))
 	case header.IPv6ProtocolNumber:
-		b.SetHead(header.IPv6MinimumSize)
+		tcp.SetHead(header.IPv6MinimumSize)
 	default:
 		panic("")
 	}

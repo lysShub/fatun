@@ -53,7 +53,6 @@ type Client struct {
 var _ Uplink = (*Client)(nil)
 
 func NewClient(parentCtx context.Context, raw relraw.RawConn, cfg *Config) (*Client, error) {
-	var err error
 	var c = &Client{
 		ctx: cctx.WithContext(parentCtx),
 		cfg: cfg,
@@ -65,6 +64,8 @@ func NewClient(parentCtx context.Context, raw relraw.RawConn, cfg *Config) (*Cli
 		c.raw.LocalAddr().Addr, c.raw.RemoteAddr().Addr,
 		0,
 	)
+
+	var err error
 	if c.st, err = ustack.NewUstack( // todo: set no delay
 		c.raw.LocalAddrPort(),
 		c.raw.MTU(),
@@ -78,77 +79,70 @@ func NewClient(parentCtx context.Context, raw relraw.RawConn, cfg *Config) (*Cli
 	); err != nil {
 		return nil, err
 	}
+
+	return c, nil
+}
+
+func (c *Client) Handshake() error {
 	go c.downlinkService()
 	go c.uplinkService()
 
 	tcp, err := gonet.DialTCPWithBind(
 		c.ctx, c.st,
-		raw.LocalAddrPort(), raw.RemoteAddrPort(),
+		c.raw.LocalAddrPort(), c.raw.RemoteAddrPort(),
 		header.IPv4ProtocolNumber,
 	)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	cfg.PrevPackets.Client(c.ctx, tcp)
-	if c.ctx.Err() != nil {
-		return nil, err
-	}
-
-	key, err := cfg.Config.SwapKey.SecretKey(c.ctx, tcp)
+	err = c.cfg.PrevPackets.Client(c.ctx, tcp)
 	if err != nil {
-		return nil, err
+		return err
+	}
+
+	key, err := c.cfg.Config.SwapKey.SecretKey(c.ctx, tcp)
+	if err != nil {
+		return err
 	}
 	c.crypto, err = crypto.NewTCP(key, c.pseudoSum1)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	c.fake = faketcp.NewFakeTCP(
-		raw.LocalAddrPort().Port(),
-		raw.RemoteAddrPort().Port(),
+		c.raw.LocalAddrPort().Port(),
+		c.raw.RemoteAddrPort().Port(),
 		c.seq, c.ack,
 		&c.pseudoSum1,
 	)
 
 	c.inited.CompareAndSwap(false, true)
 
-	c.ctr = control.NewClient(c.ctx, tcp)
+	c.ctr = control.NewClient(tcp)
 
-	c.ctr.IPv6()
+	c.ctr.IPv6(c.ctx)
 
-	defer func() { fmt.Println("client return") }()
-
-	return c, c.ctr.EndConfig()
-}
-
-func (c *Client) Uplink(b *relraw.Packet, id session.ID) {
-	session.SetID(b, id)
-
-	c.fake.SendAttach(b)
-
-	c.crypto.Encrypt(b)
-
-	c.raw.WriteCtx(context.Background(), b)
+	return c.ctr.EndConfig(c.ctx)
 }
 
 func (c *Client) downlinkService() {
 	mtu := c.MTU()
-	var b = relraw.NewPacket(0, mtu)
+	var tcp = relraw.NewPacket(0, mtu)
 
 	for {
-		b.Sets(0, mtu)
+		tcp.Sets(0, mtu)
 
-		if err := c.raw.ReadCtx(c.ctx, b); err != nil {
+		if err := c.raw.ReadCtx(c.ctx, tcp); err != nil {
 			c.ctx.Cancel(err)
 			return
 		}
 
-		if faketcp.IsFakeTCP(b.Data()) {
+		if faketcp.IsFakeTCP(tcp.Data()) {
 			if !c.inited.Load() {
 				time.Sleep(time.Millisecond * 100)
 			}
 
-			err := c.crypto.Decrypt(b)
+			err := c.crypto.Decrypt(tcp)
 			if err != nil {
 				if debug.Debug() {
 					require.NoError(test.T(), err)
@@ -156,53 +150,78 @@ func (c *Client) downlinkService() {
 				continue
 			}
 
-			c.fake.RecvStrip(b)
+			c.fake.RecvStrip(tcp)
 
-			id := session.GetID(b)
+			id := session.GetID(tcp)
 			if id == session.CtrSessID {
-				c.ipstack.AttachInbound(b)
-				c.st.Inbound(b)
+
+				c.ipstack.AttachInbound(tcp)
+				c.st.Inbound(tcp)
 			} else {
-				s := c.sessionMgr.Get(id)
-				s.Inject(b)
+				s, err := c.sessionMgr.Get(id)
+				if err != nil {
+					fmt.Println(err) // todo: log
+					continue
+				}
+
+				err = s.Inject(tcp)
+				if err != nil {
+					c.sessionMgr.Del(id, err)
+				}
 			}
 		} else {
-			c.ack = max(c.ack, header.TCP(b.Data()).AckNumber())
+			c.ack = max(c.ack, header.TCP(tcp.Data()).AckNumber())
 
 			{
-				tcp := header.TCP(b.Data())
+				tcp := header.TCP(tcp.Data())
 				if tcp.Flags().Contains(header.TCPFlagPsh) {
 					fmt.Println("recv", string(tcp.Payload()))
 				}
 			}
 
-			c.ipstack.AttachInbound(b)
-			c.st.Inbound(b)
+			c.ipstack.AttachInbound(tcp)
+			c.st.Inbound(tcp)
 		}
 	}
 }
 
 func (c *Client) uplinkService() {
 	mtu := c.MTU()
-	var b = relraw.NewPacket(0, mtu)
+	var pkt = relraw.NewPacket(0, mtu)
 
 	for {
-		b.Sets(0, mtu)
-		c.st.Outbound(c.ctx, b)
+		pkt.Sets(0, mtu)
+		c.st.Outbound(c.ctx, pkt)
 
 		if c.inited.Load() {
-			c.Uplink(b, session.CtrSessID)
+			c.uplink(pkt, session.CtrSessID)
 		} else {
-			c.seq = max(c.seq, header.TCP(b.Data()).SequenceNumber())
+			c.seq = max(c.seq, header.TCP(pkt.Data()).SequenceNumber())
 
 			// recover to ip packet
-			b.SetHead(0)
-			c.raw.Write(b.Data())
+			pkt.SetHead(0)
+			c.raw.Write(pkt.Data())
 		}
 	}
 }
 
+func (c *Client) uplink(pkt *relraw.Packet, id session.ID) error {
+	if debug.Debug() {
+		require.True(test.T(), c.inited.Load())
+	}
+
+	session.SetID(pkt, id)
+
+	c.fake.SendAttach(pkt)
+
+	c.crypto.Encrypt(pkt)
+
+	err := c.raw.WriteCtx(context.Background(), pkt)
+	return err
+}
+
 func (c *Client) MTU() int { return c.raw.MTU() }
+
 func (c *Client) AddProxy(s session.Session) error {
 	addr := c.raw.LocalAddrPort()
 	if !s.IsValid() {
@@ -215,7 +234,7 @@ func (c *Client) AddProxy(s session.Session) error {
 
 	switch s.Proto {
 	case itun.TCP:
-		resp, err := c.ctr.AddTCP(s.DstAddr)
+		resp, err := c.ctr.AddTCP(c.ctx, s.DstAddr)
 		if err != nil {
 			return err
 		} else if resp.Err != nil {

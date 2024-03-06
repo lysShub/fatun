@@ -14,11 +14,13 @@ import (
 
 var (
 	caddr = netip.AddrPortFrom(netip.AddrFrom4([4]byte{
-		172, 25, 32, 1,
+		// 172, 25, 32, 1,
+		192, 168, 16, 1,
 	}), 19986)
 
 	saddr = netip.AddrPortFrom(netip.AddrFrom4([4]byte{
-		172, 25, 38, 4,
+		// 172, 25, 38, 4,
+		192, 168, 21, 146,
 	}), 8080)
 
 	ht = time.Hour

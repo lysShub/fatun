@@ -27,11 +27,11 @@ func Test_Control(t *testing.T) {
 
 	// server
 	go func() {
-		ctx := cctx.WithContext(parentCtx)
+		// ctx := cctx.WithContext(parentCtx)
 
-		var tcp net.Conn
+		// var tcp net.Conn
 
-		Serve(ctx, tcp, &mockServer{})
+		// Serve(ctx, tcp, &mockServer{})
 	}()
 
 	// client
@@ -40,11 +40,11 @@ func Test_Control(t *testing.T) {
 
 		var tcp net.Conn
 
-		client := NewClient(ctx, tcp)
+		client := NewClient(tcp)
 		require.NoError(t, ctx.Err())
 		defer client.Close()
 
-		ipv6, err := client.IPv6()
+		ipv6, err := client.IPv6(ctx)
 		require.NoError(t, err)
 		require.True(t, ipv6)
 	}
@@ -67,9 +67,9 @@ func Test_Control_Client_Close(t *testing.T) {
 	go func() {
 		ctx := cctx.WithContext(parentCtx)
 
-		var tcp net.Conn
+		// var tcp net.Conn
 
-		Serve(ctx, tcp, &mockServer{})
+		// Serve(ctx, tcp, &mockServer{})
 
 		<-ctx.Done()
 		require.True(t, errors.Is(ctx.Err(), io.EOF))
@@ -84,11 +84,11 @@ func Test_Control_Client_Close(t *testing.T) {
 
 		runNum = runtime.NumGoroutine()
 
-		client := NewClient(ctx, tcp)
+		client := NewClient(tcp)
 		require.NoError(t, ctx.Err())
 		defer client.Close()
 
-		ipv6, err := client.IPv6()
+		ipv6, err := client.IPv6(ctx)
 		require.NoError(t, err)
 		require.True(t, ipv6)
 
@@ -115,7 +115,7 @@ type mockServer struct {
 	InitedCfg bool
 }
 
-var _ SrvHandler = (*mockServer)(nil)
+var _ Handler = (*mockServer)(nil)
 
 func (h *mockServer) IPv6() bool {
 	return true

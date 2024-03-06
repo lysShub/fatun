@@ -38,7 +38,7 @@ func NewFakeTCP(locPort, remPort uint16, initSeq, initAck uint32, pseudoSum1 *ui
 
 // SendAttach input tcp payload, attach tcp header, and return
 // tcp packet.
-func (f *FakeTCP) SendAttach(p *relraw.Packet) {
+func (f *FakeTCP) SendAttach(seg *relraw.Packet) {
 	var hdr = make(header.TCP, header.TCPMinimumSize)
 	hdr.Encode(&header.TCPFields{
 		SrcPort:       f.lport,
@@ -53,18 +53,18 @@ func (f *FakeTCP) SendAttach(p *relraw.Packet) {
 	})
 	hdr[fakeFlagOff] |= fakeFlag
 
-	f.seq.Add(uint32(p.Len()))
-	p.Attach(hdr)
+	f.seq.Add(uint32(seg.Len()))
+	seg.Attach(hdr)
 
 	if f.pseudoSum1 != nil {
-		tcp := header.TCP(p.Data())
+		tcp := header.TCP(seg.Data())
 		psum := checksum.Combine(*f.pseudoSum1, uint16(len(tcp)))
 
 		sum := checksum.Checksum(tcp, psum)
 		tcp.SetChecksum(^sum)
 
 		if debug.Debug() {
-			test.ValidTCP(test.T(), p.Data(), *f.pseudoSum1)
+			test.ValidTCP(test.T(), seg.Data(), *f.pseudoSum1)
 		}
 	}
 

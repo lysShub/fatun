@@ -5,8 +5,12 @@ package server
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net/netip"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/lysShub/itun"
 	"github.com/lysShub/itun/cctx"
@@ -14,184 +18,212 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 
 	"github.com/lysShub/relraw"
-	"github.com/lysShub/relraw/tcp/bpf"
-	pkge "github.com/pkg/errors"
 )
 
 type Downlink interface {
-	Downlink(b *relraw.Packet, id session.ID)
+	downlink(pkt *relraw.Packet, id session.ID) error
 	MTU() int
 }
 
 type SessionMgr struct {
-	proxyer *proxyer
+	proxyer *Proxyer
 	idmgr   *session.IdMgr
 
-	sync.RWMutex
+	ticker  *time.Ticker
+	closeCh chan struct{}
 
+	mu sync.RWMutex
 	// record mapping session id and Session
 	sessionMap map[session.ID]*Session
-
 	// filter reduplicate add session
 	idMap map[session.Session]session.ID
-
-	ka *itun.Keepalive
 }
 
-func NewSessionMgr(pxyer *proxyer) *SessionMgr {
+func NewSessionMgr(pxyer *Proxyer) *SessionMgr {
 	mgr := &SessionMgr{
 		proxyer: pxyer,
+		idmgr:   session.NewIDMgr(),
+
+		ticker:  time.NewTicker(time.Minute), // todo: from config
+		closeCh: make(chan struct{}),
 
 		sessionMap: make(map[session.ID]*Session, 16),
 		idMap:      make(map[session.Session]session.ID, 16),
-		ka:         itun.NewKeepalive(pxyer.srv.cfg.ProxyerIdeleTimeout),
 	}
 
-	go mgr.keepalive(context.Background())
+	go mgr.keepalive()
 	return mgr
 }
 
-func (sm *SessionMgr) Add(ctx cctx.CancelCtx, session session.Session) (*Session, error) {
-	sm.RLock()
-	id, has := sm.idMap[session]
-	sm.RUnlock()
+func (sm *SessionMgr) Get(id session.ID) (s *Session, err error) {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	s = sm.sessionMap[id]
+
+	if s == nil {
+		err = session.ErrInvalidID(id)
+	}
+	return s, err
+}
+
+func (sm *SessionMgr) Add(s session.Session) (*Session, error) {
+	sm.mu.RLock()
+	_, has := sm.idMap[s]
+	sm.mu.RUnlock()
 	if has {
-		return sm.Get(id), nil
+		return nil, session.ErrExistSession(s)
 	}
 
 	id, err := sm.idmgr.Get()
 	if err != nil {
 		return nil, err
 	}
-	port, err := sm.proxyer.srv.ap.GetPort(session.Proto, session.DstAddr)
+
+	locPort, err := sm.proxyer.srv.ap.GetPort(s.Proto, s.DstAddr)
 	if err != nil {
 		return nil, err
 	}
-	locAddr := netip.AddrPortFrom(sm.proxyer.srv.Addr.Addr(), port)
-	s, err := NewSession(
-		ctx, sm.proxyer, id, session,
-		locAddr, sm.ka.Task(),
+
+	ns, err := newSession(
+		sm.proxyer.ctx, sm.proxyer,
+		id, s,
+		netip.AddrPortFrom(sm.proxyer.srv.Addr.Addr(), locPort),
 	)
 	if err != nil {
 		return nil, err
 	}
 
-	sm.Lock()
-	sm.sessionMap[id] = s
-	sm.idMap[session] = id
-	sm.Unlock()
-	return s, nil
+	sm.mu.Lock()
+	sm.sessionMap[id] = ns
+	sm.idMap[s] = id
+	sm.mu.Unlock()
+	return ns, nil
 }
 
-func (sm *SessionMgr) Del(id session.ID) (err error) {
-	s := sm.Get(id)
-	if s != nil {
-		err = s.Close()
-		sm.idmgr.Put(s.ID())
+func (sm *SessionMgr) Del(id session.ID, cause error) (err error) {
+	s, err := sm.Get(id)
+	if err != nil {
+		return err
+	} else {
+		return sm.del(s, cause)
+	}
+}
 
-		sm.Lock()
-		delete(sm.idMap, s.session)
-		delete(sm.sessionMap, id)
-		sm.Unlock()
+func (sm *SessionMgr) del(s *Session, cause error) error {
+	err := errors.Join(
+		s.close(cause),
+		sm.proxyer.srv.ap.DelPort(
+			s.session.Proto,
+			s.locAddr.Port(),
+			s.session.DstAddr,
+		),
+	)
+
+	sm.mu.Lock()
+	delete(sm.sessionMap, s.ID())
+	delete(sm.idMap, s.session)
+	sm.mu.Unlock()
+
+	return err
+}
+
+func (sm *SessionMgr) keepalive() {
+	var ss = make([]*Session, 0, 8)
+
+	for {
+		ss = ss[:0]
+		select {
+		case <-sm.ticker.C:
+			sm.mu.RLock()
+			for _, e := range sm.sessionMap {
+				if e.tick() {
+					ss = append(ss, e)
+				}
+			}
+			sm.mu.RUnlock()
+		case <-sm.closeCh:
+			return
+		}
+
+		for _, e := range ss {
+			sm.del(e, itun.KeepaliveExceeded)
+		}
+	}
+}
+
+func (sm *SessionMgr) Close() (err error) {
+	select {
+	case <-sm.closeCh:
+		return nil // closed
+	default:
+		close(sm.closeCh)
+		sm.ticker.Stop()
+	}
+
+	var ss = make([]*Session, 0, len(sm.sessionMap))
+	sm.mu.Lock()
+	for _, e := range sm.sessionMap {
+		ss = append(ss, e)
+	}
+	clear(sm.sessionMap)
+	clear(sm.idMap)
+	sm.mu.Unlock()
+
+	for _, e := range ss {
+		err = errors.Join(
+			err,
+			sm.del(e, context.Canceled),
+		)
 	}
 	return err
 }
 
-func (sm *SessionMgr) Get(id session.ID) *Session {
-	sm.RLock()
-	defer sm.RUnlock()
-	return sm.sessionMap[id]
-}
-
-func (sm *SessionMgr) keepalive(ctx context.Context) {
-	var idleSessions = make([]session.ID, 0, 16)
-
-	ticker := sm.ka.Ticker()
-	for {
-		select {
-		case <-ticker:
-		case <-ctx.Done():
-			return
-		}
-
-		sm.RLock()
-		for id, s := range sm.sessionMap {
-			if s.Idle() {
-				idleSessions = append(idleSessions, id)
-				if len(idleSessions) == cap(idleSessions) {
-					break
-				}
-			}
-		}
-		sm.RUnlock()
-
-		for _, id := range idleSessions {
-			if err := sm.Del(id); err != nil {
-				panic(err)
-			}
-		}
-		idleSessions = idleSessions[:0]
-	}
-}
-
 type Session struct {
-	ctx     cctx.CancelCtx
+	ctx    cctx.CancelCtx
+	closed atomic.Bool
+
 	id      session.ID
+	locAddr netip.AddrPort
 	session session.Session
 
-	capture relraw.RawConn
+	sender Sender
 
-	task *itun.Task
+	cnt atomic.Uint32
 }
 
-type sender interface {
-	Send(ctx context.Context, b *relraw.Packet, id session.ID)
-	MTU() int
-}
-
-func NewSession(
-	ctx cctx.CancelCtx, down Downlink,
+func newSession(
+	proxyerCtx cctx.CancelCtx, down Downlink,
 	id session.ID, session session.Session,
-	locAddr netip.AddrPort, task *itun.Task,
+	locAddr netip.AddrPort,
 ) (*Session, error) {
-
-	var se = &Session{
-		ctx:     cctx.WithContext(ctx),
+	var s = &Session{
+		ctx:     cctx.WithContext(proxyerCtx),
 		id:      id,
+		locAddr: locAddr,
 		session: session,
-		task:    task,
 	}
 
 	var err error
-	switch session.Proto {
-	case itun.TCP:
-		se.capture, err = bpf.Connect(locAddr, session.DstAddr, relraw.UsedPort())
-		if err != nil {
-			return nil, err
-		}
-	default:
-		// todo: udp
-		return nil, pkge.Errorf("not support itun number %d", session.Proto)
+	s.sender, err = NewSender(locAddr, session.Proto, session.DstAddr)
+	if err != nil {
+		return nil, err
 	}
 
-	go se.recvService(down)
-	return se, nil
+	go s.downlinkService(down)
+	return s, nil
 }
 
 func (s *Session) ID() session.ID {
 	return s.id
 }
 
-// recv from server and write to raw
-func (s *Session) recvService(sdr Downlink) {
-	mtu := sdr.MTU()
-	b := relraw.NewPacket(
-		64, mtu, 16,
-	)
+func (s *Session) downlinkService(down Downlink) {
+	mtu := down.MTU()
+	seg := relraw.NewPacket(0, mtu)
 
 	for {
-		b.Sets(0, mtu)
-		err := s.capture.ReadCtx(s.ctx, b)
+		seg.Sets(0, mtu)
+		err := s.sender.Recv(s.ctx, seg)
 		if err != nil {
 			s.ctx.Cancel(err)
 			return
@@ -199,34 +231,50 @@ func (s *Session) recvService(sdr Downlink) {
 
 		switch s.session.Proto {
 		case itun.TCP:
-			header.TCP(b.Data()).SetDestinationPortWithChecksumUpdate(s.session.SrcAddr.Port())
+			header.TCP(seg.Data()).SetDestinationPortWithChecksumUpdate(s.session.SrcAddr.Port())
 		case itun.UDP:
-			header.UDP(b.Data()).SetDestinationPortWithChecksumUpdate(s.session.SrcAddr.Port())
+			header.UDP(seg.Data()).SetDestinationPortWithChecksumUpdate(s.session.SrcAddr.Port())
 		default:
 		}
 
-		sdr.Downlink(b, s.id)
-		// if err != nil {
-		// 	s.ctx.Cancel(err)
-		// 	return
-		// }
-		s.task.Action()
+		err = down.downlink(seg, s.id)
+		if err != nil {
+			s.ctx.Cancel(err)
+			return
+		}
 	}
 }
 
-// Send write uplink proxy-data
-func (s *Session) Send(b []byte) error {
-	s.task.Action()
-	_, err := s.capture.Write(b)
-	return err
+func (s *Session) Send(pkt *relraw.Packet) error {
+	return s.sender.Send(pkt)
 }
 
-func (s *Session) Idle() bool {
-	return s.task.Idle()
+func (s *Session) tick() bool {
+	select {
+	case <-s.ctx.Done():
+		return true
+	default:
+	}
+
+	const magic uint32 = 0x45a2319f
+	if s.cnt.Load() == magic {
+		return true
+	} else {
+		s.cnt.Store(magic)
+		return false
+	}
 }
 
-func (s *Session) Close() error {
-	err := s.capture.Close()
-	s.ctx.Cancel(nil)
-	return err
+func (s *Session) close(cause error) error {
+	if s.closed.CompareAndSwap(false, true) {
+		s.ctx.Cancel(cause)
+
+		err := errors.Join(
+			s.ctx.Err(),
+			s.sender.Close(),
+		)
+		fmt.Println(err) // tood: log
+		return err
+	}
+	return nil
 }
