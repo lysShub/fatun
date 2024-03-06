@@ -26,7 +26,6 @@ import (
 	"time"
 
 	"github.com/lysShub/itun/ustack"
-	"github.com/lysShub/relraw/test/debug"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
@@ -130,6 +129,105 @@ func (l *TCPListener) Addr() net.Addr {
 	return fullToTCPAddr(a)
 }
 
+type deadlineTimer struct {
+	// mu protects the fields below.
+	mu sync.Mutex
+
+	readTimer     *time.Timer
+	readCancelCh  chan struct{}
+	writeTimer    *time.Timer
+	writeCancelCh chan struct{}
+}
+
+func (d *deadlineTimer) init() {
+	d.readCancelCh = make(chan struct{})
+	d.writeCancelCh = make(chan struct{})
+}
+
+func (d *deadlineTimer) readCancel() <-chan struct{} {
+	d.mu.Lock()
+	c := d.readCancelCh
+	d.mu.Unlock()
+	return c
+}
+func (d *deadlineTimer) writeCancel() <-chan struct{} {
+	d.mu.Lock()
+	c := d.writeCancelCh
+	d.mu.Unlock()
+	return c
+}
+
+// setDeadline contains the shared logic for setting a deadline.
+//
+// cancelCh and timer must be pointers to deadlineTimer.readCancelCh and
+// deadlineTimer.readTimer or deadlineTimer.writeCancelCh and
+// deadlineTimer.writeTimer.
+//
+// setDeadline must only be called while holding d.mu.
+func (d *deadlineTimer) setDeadline(cancelCh *chan struct{}, timer **time.Timer, t time.Time) {
+	if *timer != nil && !(*timer).Stop() {
+		*cancelCh = make(chan struct{})
+	}
+
+	// Create a new channel if we already closed it due to setting an already
+	// expired time. We won't race with the timer because we already handled
+	// that above.
+	select {
+	case <-*cancelCh:
+		*cancelCh = make(chan struct{})
+	default:
+	}
+
+	// "A zero value for t means I/O operations will not time out."
+	// - net.Conn.SetDeadline
+	if t.IsZero() {
+		*timer = nil
+		return
+	}
+
+	timeout := t.Sub(time.Now())
+	if timeout <= 0 {
+		close(*cancelCh)
+		return
+	}
+
+	// Timer.Stop returns whether or not the AfterFunc has started, but
+	// does not indicate whether or not it has completed. Make a copy of
+	// the cancel channel to prevent this code from racing with the next
+	// call of setDeadline replacing *cancelCh.
+	ch := *cancelCh
+	*timer = time.AfterFunc(timeout, func() {
+		close(ch)
+	})
+}
+
+// SetReadDeadline implements net.Conn.SetReadDeadline and
+// net.PacketConn.SetReadDeadline.
+func (d *deadlineTimer) SetReadDeadline(t time.Time) error {
+	d.mu.Lock()
+	d.setDeadline(&d.readCancelCh, &d.readTimer, t)
+	d.mu.Unlock()
+	return nil
+}
+
+// SetWriteDeadline implements net.Conn.SetWriteDeadline and
+// net.PacketConn.SetWriteDeadline.
+func (d *deadlineTimer) SetWriteDeadline(t time.Time) error {
+	d.mu.Lock()
+	d.setDeadline(&d.writeCancelCh, &d.writeTimer, t)
+	d.mu.Unlock()
+	return nil
+}
+
+// SetDeadline implements net.Conn.SetDeadline and net.PacketConn.SetDeadline.
+func (d *deadlineTimer) SetDeadline(t time.Time) error {
+	d.mu.Lock()
+	d.setDeadline(&d.readCancelCh, &d.readTimer, t)
+	d.setDeadline(&d.writeCancelCh, &d.writeTimer, t)
+	d.mu.Unlock()
+	return nil
+}
+
 // A TCPConn is a wrapper around a TCP tcpip.Endpoint that implements the net.Conn
 // interface.
 type TCPConn struct {
@@ -156,6 +254,7 @@ func NewTCPConn(wq *waiter.Queue, ep tcpip.Endpoint) *TCPConn {
 		wq: wq,
 		ep: ep,
 	}
+	c.deadlineTimer.init()
 	return c
 }
 
@@ -200,12 +299,8 @@ func (l *TCPListener) Accept(ctx context.Context) (net.Conn, error) {
 
 // Accept implements net.Conn.Accept.
 func (l *TCPListener) AcceptBy(ctx context.Context, src netip.AddrPort) (net.Conn, error) {
-	var addr = &tcpip.FullAddress{
-		Addr: tcpip.AddrFromSlice(src.Addr().AsSlice()),
-		Port: src.Port(),
-	}
-
-	n, wq, err := l.ep.Accept(addr)
+	fsrc := toFullAddr(src)
+	n, wq, err := l.ep.Accept(&fsrc)
 	if _, ok := err.(*tcpip.ErrWouldBlock); ok {
 		// Create wait queue entry that notifies a channel.
 		waitEntry, notifyCh := waiter.NewChannelEntry(waiter.ReadableEvents)
@@ -213,7 +308,7 @@ func (l *TCPListener) AcceptBy(ctx context.Context, src netip.AddrPort) (net.Con
 		defer l.wq.EventUnregister(&waitEntry)
 
 		for {
-			n, wq, err = l.ep.Accept(addr)
+			n, wq, err = l.ep.Accept(&fsrc)
 
 			if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
 				break
@@ -247,10 +342,12 @@ type opErrorer interface {
 
 // commonRead implements the common logic between net.Conn.Read and
 // net.PacketConn.ReadFrom.
-func commonRead(ctx context.Context, b []byte, ep tcpip.Endpoint, wq *waiter.Queue, addr *tcpip.FullAddress, errorer opErrorer) (int, error) {
+func commonRead(ctx context.Context, b []byte, ep tcpip.Endpoint, wq *waiter.Queue, deadline <-chan struct{}, addr *tcpip.FullAddress, errorer opErrorer) (int, error) {
 	select {
-	case <-ctx.Done():
+	case <-deadline:
 		return 0, errorer.newOpError("read", &timeoutError{})
+	case <-ctx.Done():
+		return 0, ctx.Err()
 	default:
 	}
 
@@ -269,6 +366,8 @@ func commonRead(ctx context.Context, b []byte, ep tcpip.Endpoint, wq *waiter.Que
 				break
 			}
 			select {
+			case <-deadline:
+				return 0, errorer.newOpError("read", &timeoutError{})
 			case <-ctx.Done():
 				return 0, ctx.Err()
 			case <-notifyCh:
@@ -295,18 +394,8 @@ func (c *TCPConn) Read(b []byte) (int, error) {
 	c.readMu.Lock()
 	defer c.readMu.Unlock()
 
-	n, err := commonRead(basectx, b, c.ep, c.wq, nil, c)
-	if n != 0 {
-		c.ep.ModerateRecvBuf(n)
-	}
-	return n, err
-}
-
-func (c *TCPConn) ReadCtx(ctx context.Context, b []byte) (int, error) {
-	c.readMu.Lock()
-	defer c.readMu.Unlock()
-
-	n, err := commonRead(ctx, b, c.ep, c.wq, nil, c)
+	deadline := c.readCancel()
+	n, err := commonRead(backgroundCtx, b, c.ep, c.wq, deadline, nil, c)
 	if n != 0 {
 		c.ep.ModerateRecvBuf(n)
 	}
@@ -315,6 +404,15 @@ func (c *TCPConn) ReadCtx(ctx context.Context, b []byte) (int, error) {
 
 // Write implements net.Conn.Write.
 func (c *TCPConn) Write(b []byte) (int, error) {
+	deadline := c.writeCancel()
+
+	// Check if deadlineTimer has already expired.
+	select {
+	case <-deadline:
+		return 0, c.newOpError("write", &timeoutError{})
+	default:
+	}
+
 	// We must handle two soft failure conditions simultaneously:
 	//  1. Write may write nothing and return *tcpip.ErrWouldBlock.
 	//     If this happens, we need to register for notifications if we have
@@ -347,7 +445,12 @@ func (c *TCPConn) Write(b []byte) (int, error) {
 				// Don't wait immediately after registration in case more data
 				// became available between when we last checked and when we setup
 				// the notification.
-				<-ch
+				select {
+				case <-deadline:
+					return nbytes, c.newOpError("write", &timeoutError{})
+				case <-ch:
+					continue
+				}
 			}
 		default:
 			return nbytes, c.newOpError("write", errors.New(err.String()))
@@ -420,13 +523,6 @@ func fullToUDPAddr(addr tcpip.FullAddress) *net.UDPAddr {
 	return &net.UDPAddr{IP: net.IP(addr.Addr.AsSlice()), Port: int(addr.Port)}
 }
 
-func toFullAddr(addr netip.AddrPort) tcpip.FullAddress {
-	return tcpip.FullAddress{
-		Addr: tcpip.AddrFromSlice(addr.Addr().AsSlice()),
-		Port: addr.Port(),
-	}
-}
-
 // DialTCP creates a new TCPConn connected to the specified address.
 func DialTCP(s *ustack.Ustack, addr netip.AddrPort, network tcpip.NetworkProtocolNumber) (*TCPConn, error) {
 	return DialContextTCP(context.Background(), s, addr, network)
@@ -436,7 +532,6 @@ func DialTCP(s *ustack.Ustack, addr netip.AddrPort, network tcpip.NetworkProtoco
 // remoteAddress with its local address bound to localAddr.
 func DialTCPWithBind(ctx context.Context, s *ustack.Ustack, localAddr, remoteAddr netip.AddrPort, network tcpip.NetworkProtocolNumber) (*TCPConn, error) {
 	flocalAddr, fremoteAddr := toFullAddr(localAddr), toFullAddr(remoteAddr)
-
 	// Create TCP endpoint, then connect.
 	var wq waiter.Queue
 	ep, err := s.NewEndpoint(tcp.ProtocolNumber, network, &wq)
@@ -509,6 +604,7 @@ func NewUDPConn(wq *waiter.Queue, ep tcpip.Endpoint) *UDPConn {
 		ep: ep,
 		wq: wq,
 	}
+	c.deadlineTimer.init()
 	return c
 }
 
@@ -582,13 +678,12 @@ func (c *UDPConn) Read(b []byte) (int, error) {
 	return bytesRead, err
 }
 
-var basectx = context.Background()
-
 // ReadFrom implements net.PacketConn.ReadFrom.
 func (c *UDPConn) ReadFrom(b []byte) (int, net.Addr, error) {
+	deadline := c.readCancel()
 
 	var addr tcpip.FullAddress
-	n, err := commonRead(basectx, b, c.ep, c.wq, &addr, c)
+	n, err := commonRead(backgroundCtx, b, c.ep, c.wq, deadline, &addr, c)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -601,6 +696,15 @@ func (c *UDPConn) Write(b []byte) (int, error) {
 
 // WriteTo implements net.PacketConn.WriteTo.
 func (c *UDPConn) WriteTo(b []byte, addr net.Addr) (int, error) {
+	deadline := c.writeCancel()
+
+	// Check if deadline has already expired.
+	select {
+	case <-deadline:
+		return 0, c.newRemoteOpError("write", addr, &timeoutError{})
+	default:
+	}
+
 	// If we're being called by Write, there is no addr
 	writeOptions := tcpip.WriteOptions{}
 	if addr != nil {
@@ -620,7 +724,11 @@ func (c *UDPConn) WriteTo(b []byte, addr net.Addr) (int, error) {
 		c.wq.EventRegister(&waitEntry)
 		defer c.wq.EventUnregister(&waitEntry)
 		for {
-			<-notifyCh
+			select {
+			case <-deadline:
+				return int(n), c.newRemoteOpError("write", addr, &timeoutError{})
+			case <-notifyCh:
+			}
 
 			n, err = c.ep.Write(&r, writeOptions)
 			if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
@@ -651,27 +759,11 @@ func (c *UDPConn) LocalAddr() net.Addr {
 	return fullToUDPAddr(a)
 }
 
-// todo: recover deateline
+var backgroundCtx = context.Background()
 
-type deadlineTimer struct{}
-
-func (d *deadlineTimer) SetReadDeadline(t time.Time) error {
-	if debug.Debug() {
-		panic("not support")
+func toFullAddr(addr netip.AddrPort) tcpip.FullAddress {
+	return tcpip.FullAddress{
+		Addr: tcpip.AddrFromSlice(addr.Addr().AsSlice()),
+		Port: addr.Port(),
 	}
-	return nil
-}
-
-func (d *deadlineTimer) SetWriteDeadline(t time.Time) error {
-	if debug.Debug() {
-		panic("not support")
-	}
-	return nil
-}
-
-func (d *deadlineTimer) SetDeadline(t time.Time) error {
-	if debug.Debug() {
-		panic("not support")
-	}
-	return nil
 }
