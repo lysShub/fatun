@@ -87,7 +87,7 @@ func (sm *SessionMgr) Add(proxyerCtx context.Context, down Downlink, s session.S
 		return nil, err
 	}
 
-	locPort, err := sm.ap.GetPort(s.Proto, s.DstAddr)
+	locPort, err := sm.ap.GetPort(s.Proto, s.Dst)
 	if err != nil {
 		return nil, err
 	}
@@ -123,7 +123,7 @@ func (sm *SessionMgr) del(s *Session, cause error) error {
 		sm.ap.DelPort(
 			s.session.Proto,
 			s.locAddr.Port(),
-			s.session.DstAddr,
+			s.session.Dst,
 		),
 	)
 
@@ -212,7 +212,7 @@ func newSession(
 	}
 
 	var err error
-	s.sender, err = sender.NewSender(locAddr, session.Proto, session.DstAddr)
+	s.sender, err = sender.NewSender(locAddr, session.Proto, session.Dst)
 	if err != nil {
 		return nil, err
 	}
@@ -239,9 +239,9 @@ func (s *Session) downlinkService(down Downlink) {
 
 		switch s.session.Proto {
 		case itun.TCP:
-			header.TCP(seg.Data()).SetDestinationPortWithChecksumUpdate(s.session.SrcAddr.Port())
+			header.TCP(seg.Data()).SetDestinationPortWithChecksumUpdate(s.session.Src.Port())
 		case itun.UDP:
-			header.UDP(seg.Data()).SetDestinationPortWithChecksumUpdate(s.session.SrcAddr.Port())
+			header.UDP(seg.Data()).SetDestinationPortWithChecksumUpdate(s.session.Src.Port())
 		default:
 		}
 

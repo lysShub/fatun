@@ -7,10 +7,8 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
-	"net"
 	"net/netip"
-
-	pkge "github.com/pkg/errors"
+	"strings"
 
 	"github.com/lysShub/divert-go"
 	"github.com/lysShub/itun/session"
@@ -44,10 +42,10 @@ type capture struct {
 func newCapture(s session.Session) (Capture, error) {
 	var c = &capture{}
 
-	if addr, nic, err := getAddrNIC(s.SrcAddr.Addr()); err != nil {
+	if addr, nic, err := divert.Gateway(s.Src.Addr()); err != nil {
 		return nil, err
 	} else {
-		s.SrcAddr = netip.AddrPortFrom(addr, s.SrcAddr.Port())
+		s.Src = netip.AddrPortFrom(addr, s.Src.Port())
 
 		var inbound divert.Address
 		inbound.SetOutbound(false)
@@ -58,7 +56,7 @@ func newCapture(s session.Session) (Capture, error) {
 
 	var err error
 	c.ipstack, err = relraw.NewIPStack(
-		s.SrcAddr.Addr(), s.DstAddr.Addr(),
+		s.Src.Addr(), s.Dst.Addr(),
 		tcpip.TransportProtocolNumber(s.Proto),
 		// todo: option
 	)
@@ -68,10 +66,11 @@ func newCapture(s session.Session) (Capture, error) {
 
 	filter := fmt.Sprintf(
 		"%s and localAddr=%s and localPort=%d and remoteAddr=%s and remotePort=%d",
-		s.Proto, s.SrcAddr.Addr(), s.SrcAddr.Port(), s.DstAddr.Addr(), s.DstAddr.Port(),
+		strings.ToLower(s.Proto.String()), s.Src.Addr(), s.Src.Port(), s.Dst.Addr(), s.Dst.Port(),
 	)
 
-	c.hdl, err = divert.Open(filter, divert.NETWORK, capturePriority, divert.READ_ONLY|divert.WRITE_ONLY)
+	// todo: support forway
+	c.hdl, err = divert.Open(filter, divert.NETWORK, capturePriority, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -104,7 +103,6 @@ func (c *capture) Capture(ctx context.Context, pkg *relraw.Packet) (err error) {
 
 	pkg.SetHead(pkg.Head() + iphdrLen)
 
-	// todo: remove tcp/udp checksum pseudo-sum party
 	return nil
 }
 
@@ -121,57 +119,6 @@ func (c *capture) Inject(pkt *relraw.Packet) error {
 }
 
 func (c *capture) Close() error { return c.hdl.Close() }
-
-func getAddrNIC(addr netip.Addr) (netip.Addr, int, error) {
-	if addr.IsLoopback() {
-		c, err := net.DialUDP("udp", nil, &net.UDPAddr{IP: net.ParseIP("8.8.8.8"), Port: 53})
-		if err != nil {
-			return addr, 0, pkge.WithStack(err)
-		}
-
-		defAddr, err := netip.ParseAddrPort(c.LocalAddr().String())
-		if err != nil {
-			return addr, 0, pkge.WithStack(err)
-		}
-		addr = defAddr.Addr()
-	}
-
-	ifs, err := net.Interfaces()
-	if err != nil {
-		return addr, 0, err
-	}
-
-	for _, i := range ifs {
-		as, err := i.Addrs()
-		if err != nil {
-			return addr, 0, pkge.WithStack(err)
-		}
-		for _, a := range as {
-			var sub netip.Prefix
-			switch a := a.(type) {
-			case *net.IPAddr:
-				if ip := a.IP.To4(); ip != nil {
-					sub = netip.PrefixFrom(netip.AddrFrom4([4]byte(ip)), 32)
-				} else {
-					sub = netip.PrefixFrom(netip.AddrFrom16([16]byte(a.IP)), 128)
-				}
-			case *net.IPNet:
-				sub, err = netip.ParsePrefix(a.String())
-				if err != nil {
-					continue
-				}
-			default:
-				return addr, 0, pkge.Errorf("unknow address type %T", a)
-			}
-
-			if sub.Contains(addr) {
-				return addr, i.Index, nil
-			}
-		}
-	}
-
-	return addr, 0, pkge.Errorf("invalid address %s", addr)
-}
 
 type ErrCaptureInvalidPacket string
 

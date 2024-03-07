@@ -29,8 +29,8 @@ func NewSessionMgr() *SessionMgr {
 }
 
 func (sm *SessionMgr) Add(clientCtx context.Context, up Uplink, s session.Session, id session.ID) error {
-	if _, err := sm.Get(id); err != nil {
-		return err
+	if _, err := sm.Get(id); err == nil {
+		return session.ErrExistID(id)
 	}
 
 	session, err := newSession(clientCtx, up, id, s)

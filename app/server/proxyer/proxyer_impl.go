@@ -4,9 +4,12 @@
 package proxyer
 
 import (
+	"context"
+	"log/slog"
 	"net/netip"
 
 	"github.com/lysShub/itun"
+	"github.com/lysShub/itun/app"
 	"github.com/lysShub/itun/control"
 	"github.com/lysShub/itun/session"
 )
@@ -34,13 +37,19 @@ func (pi *proxyerImpl) AddTCP(addr netip.AddrPort) (session.ID, error) {
 	s, err := pi.sessionMgr.Add(
 		pi.ctx, (*Proxyer)(pi),
 		session.Session{
-			SrcAddr: pi.raw.RemoteAddrPort(),
-			Proto:   itun.TCP,
-			DstAddr: addr,
+			Src:   pi.raw.RemoteAddrPort(),
+			Proto: itun.TCP,
+			Dst:   addr,
 		},
 	)
 	if err != nil {
+		pi.logger.Error(err.Error(), app.TraceAttr(err))
 		return 0, err
+	} else {
+		pi.logger.LogAttrs(context.Background(), slog.LevelInfo, "add tcp session",
+			slog.Attr{Key: "dst", Value: slog.StringValue(addr.String())},
+			slog.Attr{Key: "id", Value: slog.IntValue(int(s.ID()))},
+		)
 	}
 	return s.ID(), nil
 }
@@ -52,8 +61,8 @@ func (pi *proxyerImpl) AddUDP(addr netip.AddrPort) (session.ID, error) {
 	s, err := pi.sessionMgr.Add(
 		pi.ctx, (*Proxyer)(pi),
 		session.Session{
-			Proto:   itun.UDP,
-			DstAddr: addr,
+			Proto: itun.UDP,
+			Dst:   addr,
 		},
 	)
 	if err != nil {

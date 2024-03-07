@@ -2,6 +2,7 @@ package session
 
 import (
 	"encoding/binary"
+	"fmt"
 	"net/netip"
 
 	"github.com/lysShub/itun"
@@ -48,15 +49,19 @@ const (
 )
 
 type Session struct {
-	SrcAddr netip.AddrPort
-	Proto   itun.Proto
-	DstAddr netip.AddrPort
+	Src   netip.AddrPort
+	Proto itun.Proto
+	Dst   netip.AddrPort
 }
 
 func (s *Session) IsValid() bool {
-	return s.SrcAddr.IsValid() &&
+	return s.Src.IsValid() &&
 		s.Proto.IsValid() &&
-		s.DstAddr.IsValid()
+		s.Dst.IsValid()
+}
+
+func (s *Session) String() string {
+	return fmt.Sprintf("%s:%s->%s", s.Proto, s.Src, s.Dst)
 }
 
 func (s *Session) MinPacketSize() int {
@@ -74,7 +79,7 @@ func (s *Session) MinPacketSize() int {
 		panic("")
 	}
 
-	if s.SrcAddr.Addr().Is4() {
+	if s.Src.Addr().Is4() {
 		minSize += header.IPv4MinimumSize
 	} else {
 		minSize += header.IPv6MinimumSize
@@ -83,9 +88,9 @@ func (s *Session) MinPacketSize() int {
 }
 
 func ErrInvalidSession(s Session) error {
-	return pkge.Errorf("invalid %s session %s->%s", s.Proto, s.SrcAddr, s.DstAddr)
+	return pkge.New(s.String())
 }
 
 func ErrExistSession(s Session) error {
-	return pkge.Errorf("exist %s session %s->%s", s.Proto, s.SrcAddr, s.DstAddr)
+	return pkge.New(s.String())
 }

@@ -36,6 +36,7 @@ type ustack struct {
 
 var _ Ustack = (*ustack)(nil)
 
+// todo: set no delay
 func NewUstack(addr netip.AddrPort, mtu int) (Ustack, error) {
 	var u = &ustack{
 		addr: tcpip.FullAddress{Addr: tcpip.AddrFrom4(addr.Addr().As4()), Port: addr.Port()},

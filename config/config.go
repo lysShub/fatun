@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"time"
 
@@ -13,6 +14,8 @@ import (
 )
 
 type Config struct {
+	Log slog.Handler
+
 	// client set first tcp packet, server recv and check it, then replay
 	// second tcp packet, etc.
 	PrevPackets PrevPackets //todo: support mutiple data set

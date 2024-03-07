@@ -79,9 +79,9 @@ func (f *filter) proxyByNameService() {
 				fmt.Println(name)
 				if f.processName == name {
 					s := session.Session{
-						SrcAddr: netip.AddrPortFrom(s.LocalAddr(), s.LocalPort),
-						Proto:   itun.Proto(s.Protocol),
-						DstAddr: netip.AddrPortFrom(s.RemoteAddr(), s.RemotePort),
+						Src:   netip.AddrPortFrom(s.LocalAddr(), s.LocalPort),
+						Proto: itun.Proto(s.Protocol),
+						Dst:   netip.AddrPortFrom(s.RemoteAddr(), s.RemotePort),
 					}
 
 					if !slices.Contains(f.processNameProtos, s.Proto) {

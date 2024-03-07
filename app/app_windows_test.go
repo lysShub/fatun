@@ -1,16 +1,19 @@
-package app
+package app_test
 
 import (
 	"context"
 	"fmt"
 	"io"
 	"net"
+	"net/netip"
 	"testing"
 
 	gdivert "github.com/lysShub/divert-go"
+	"github.com/lysShub/itun"
 	"github.com/lysShub/itun/app/client"
 	"github.com/lysShub/itun/config"
 	"github.com/lysShub/itun/crypto"
+	"github.com/lysShub/itun/session"
 	"github.com/lysShub/relraw/tcp/divert"
 	"github.com/lysShub/relraw/test"
 	"github.com/stretchr/testify/require"
@@ -39,8 +42,15 @@ func TestXxxx(t *testing.T) {
 
 	err = c.Handshake()
 	require.NoError(t, err)
-
 	defer c.Close()
+
+	err = c.AddProxy(session.Session{
+		Src:   netip.AddrPortFrom(netip.AddrFrom4([4]byte{192, 168, 43, 35}), 12345),
+		Proto: itun.TCP,
+		Dst:   netip.AddrPortFrom(netip.AddrFrom4([4]byte{8, 8, 8, 8}), 80),
+	})
+	require.NoError(t, err)
+
 }
 
 func Test_TCP(t *testing.T) {

@@ -33,9 +33,10 @@ type Config struct {
 }
 
 type Client struct {
-	ctx cctx.CancelCtx
-	cfg *Config
-	raw *itun.RawConn
+	ctx  cctx.CancelCtx
+	cfg  *Config
+	raw  *itun.RawConn
+	self session.Session
 
 	sessionMgr *cs.SessionMgr
 	st         ustack.Ustack
@@ -58,6 +59,11 @@ func NewClient(parentCtx context.Context, raw relraw.RawConn, cfg *Config) (*Cli
 		ctx: cctx.WithContext(parentCtx),
 		cfg: cfg,
 		raw: itun.WrapRawConn(raw, cfg.MTU),
+		self: session.Session{
+			Src:   raw.LocalAddrPort(),
+			Proto: itun.TCP,
+			Dst:   raw.RemoteAddrPort(),
+		},
 
 		sessionMgr: cs.NewSessionMgr(),
 	}
@@ -68,7 +74,7 @@ func NewClient(parentCtx context.Context, raw relraw.RawConn, cfg *Config) (*Cli
 	)
 
 	var err error
-	if c.st, err = ustack.NewUstack( // todo: set no delay
+	if c.st, err = ustack.NewUstack(
 		c.raw.LocalAddrPort(),
 		c.raw.MTU(),
 	); err != nil {
@@ -122,7 +128,11 @@ func (c *Client) Handshake() error {
 
 	c.ctr = control.NewClient(tcp)
 
-	c.ctr.IPv6(c.ctx)
+	ipv6, err := c.ctr.IPv6(c.ctx)
+	if err != nil {
+		return err
+	}
+	fmt.Println("ipv6", ipv6)
 
 	return c.ctr.EndConfig(c.ctx)
 }
@@ -225,18 +235,15 @@ func (c *Client) Uplink(pkt *relraw.Packet, id session.ID) error {
 func (c *Client) MTU() int { return c.raw.MTU() }
 
 func (c *Client) AddProxy(s session.Session) error {
-	addr := c.raw.LocalAddrPort()
 	if !s.IsValid() {
 		return session.ErrInvalidSession(s)
-	} else if s.SrcAddr.Addr() != addr.Addr() {
-		return pkge.Errorf("client %s can't proxy ip %s", addr.Addr(), s.SrcAddr.Addr())
-	} else if s.SrcAddr.Port() == addr.Port() {
-		return pkge.Errorf("can't proxy self")
+	} else if c.self == s {
+		return pkge.Errorf("can't proxy self %s", s)
 	}
 
 	switch s.Proto {
 	case itun.TCP:
-		resp, err := c.ctr.AddTCP(c.ctx, s.DstAddr)
+		resp, err := c.ctr.AddTCP(c.ctx, s.Dst)
 		if err != nil {
 			return err
 		} else if resp.Err != nil {

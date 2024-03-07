@@ -6,11 +6,13 @@ package proxyer
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/netip"
 	"sync/atomic"
 
 	"github.com/lysShub/itun"
+	"github.com/lysShub/itun/app"
 	"github.com/lysShub/itun/app/server/adapter"
 	ss "github.com/lysShub/itun/app/server/proxyer/session"
 	"github.com/lysShub/itun/cctx"
@@ -33,26 +35,33 @@ type Server interface {
 
 	// accept control connect
 	AcceptBy(ctx context.Context, src netip.AddrPort) (net.Conn, error)
-
 	Stack() ustack.Ustack
+
+	Logger() *slog.Logger
 }
 
 func Proxy(c context.Context, srv Server, raw *itun.RawConn) {
 	p, err := NewProxyer(c, srv, raw)
 	if err != nil {
-		panic(err)
+		return
 	}
 
 	err = p.HandShake()
 	if err != nil {
-		panic(err)
+		return
+	}
+
+	err = p.Do()
+	if err != nil {
+		return
 	}
 }
 
 type Proxyer struct {
-	ctx cctx.CancelCtx
-	srv Server
-	raw *itun.RawConn
+	ctx    cctx.CancelCtx
+	srv    Server
+	raw    *itun.RawConn
+	logger *slog.Logger
 
 	sessionMgr *ss.SessionMgr
 
@@ -78,6 +87,9 @@ func NewProxyer(c context.Context, srv Server, raw *itun.RawConn) (*Proxyer, err
 		ctx: cctx.WithContext(c),
 		srv: srv,
 		raw: raw,
+		logger: slog.New(srv.Logger().WithGroup("proxy").Handler().WithAttrs([]slog.Attr{
+			{Key: "src", Value: slog.StringValue(raw.RemoteAddrPort().String())},
+		})),
 
 		sessionMgr: ss.NewSessionMgr(srv.PortAdapter(), raw.LocalAddrPort().Addr()),
 
@@ -100,10 +112,11 @@ func NewProxyer(c context.Context, srv Server, raw *itun.RawConn) (*Proxyer, err
 		return nil, err
 	}
 
+	p.logger.Info("accept")
 	return p, nil
 }
 
-func (p *Proxyer) HandShake() error {
+func (p *Proxyer) HandShake() (err error) {
 	go p.uplinkService()
 	go p.downlinkService()
 
@@ -115,13 +128,16 @@ func (p *Proxyer) HandShake() error {
 	cfg := p.srv.Config()
 
 	if err = cfg.PrevPackets.Server(p.ctx, tcp); err != nil {
+		p.logger.Error(err.Error(), app.TraceAttr(err))
 		return err
 	}
 	if key, err := cfg.SwapKey.SecretKey(p.ctx, tcp); err != nil {
+		p.logger.Error(err.Error(), app.TraceAttr(err))
 		return err
 	} else {
 		p.crypto, err = crypto.NewTCP(key, p.pseudoSum1)
 		if err != nil {
+			p.logger.Error(err.Error(), app.TraceAttr(err))
 			return err
 		}
 	}
@@ -142,7 +158,21 @@ func (p *Proxyer) HandShake() error {
 
 	go p.controlService()
 	<-p.endConfigNotify
+
+	p.logger.Info("work")
 	return nil
+}
+
+func (p *Proxyer) Do() error {
+	<-p.ctx.Done()
+
+	err := p.ctx.Err()
+	if err != nil {
+		p.logger.Error(err.Error(), app.TraceAttr(err))
+	} else {
+		p.logger.Info("exit")
+	}
+	return err
 }
 
 func (p *Proxyer) downlinkService() {
