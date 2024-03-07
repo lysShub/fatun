@@ -1,6 +1,3 @@
-//go:build linux
-// +build linux
-
 package proxyer
 
 import (
@@ -46,14 +43,17 @@ func Proxy(c context.Context, srv Server, raw *itun.RawConn) {
 		return
 	}
 
-	err = p.HandShake()
+	err = p.handShake()
 	if err != nil {
 		return
 	}
 
-	err = p.Do()
-	if err != nil {
-		return
+	<-p.ctx.Done()
+
+	if err := p.ctx.Err(); err != nil {
+		p.logger.Error(err.Error(), app.TraceAttr(err))
+	} else {
+		p.logger.Info("exit")
 	}
 }
 
@@ -79,8 +79,6 @@ type Proxyer struct {
 	ctr             control.Server
 	endConfigNotify chan struct{}
 }
-
-var _ ss.Downlink = (*Proxyer)(nil)
 
 func NewProxyer(c context.Context, srv Server, raw *itun.RawConn) (*Proxyer, error) {
 	var p = &Proxyer{
@@ -112,11 +110,11 @@ func NewProxyer(c context.Context, srv Server, raw *itun.RawConn) (*Proxyer, err
 		return nil, err
 	}
 
-	p.logger.Info("accept")
+	p.logger.Info("accepted")
 	return p, nil
 }
 
-func (p *Proxyer) HandShake() (err error) {
+func (p *Proxyer) handShake() (err error) {
 	go p.uplinkService()
 	go p.downlinkService()
 
@@ -154,25 +152,13 @@ func (p *Proxyer) HandShake() (err error) {
 	<-p.initNotify
 	p.inited.CompareAndSwap(false, true)
 
-	p.ctr = control.NewServer(tcp, proxyerImplPtr(p))
+	p.ctr = control.NewServer(tcp, controlImplPtr(p))
 
 	go p.controlService()
 	<-p.endConfigNotify
 
-	p.logger.Info("work")
+	p.logger.Info("connected")
 	return nil
-}
-
-func (p *Proxyer) Do() error {
-	<-p.ctx.Done()
-
-	err := p.ctx.Err()
-	if err != nil {
-		p.logger.Error(err.Error(), app.TraceAttr(err))
-	} else {
-		p.logger.Info("exit")
-	}
-	return err
 }
 
 func (p *Proxyer) downlinkService() {
@@ -186,7 +172,7 @@ func (p *Proxyer) downlinkService() {
 		st.OutboundBy(p.ctx, dst, tcp)
 
 		if p.inited.Load() {
-			p.Downlink(tcp, session.CtrSessID)
+			p.downlink(tcp, session.CtrSessID)
 		} else {
 			p.seq = max(p.seq, header.TCP(tcp.Data()).SequenceNumber())
 
@@ -272,7 +258,7 @@ func (p *Proxyer) controlService() {
 	}
 }
 
-func (p *Proxyer) Downlink(pkt *relraw.Packet, id session.ID) error {
+func (p *Proxyer) downlink(pkt *relraw.Packet, id session.ID) error {
 	if debug.Debug() {
 		require.True(test.T(), p.inited.Load())
 	}
@@ -289,5 +275,3 @@ func (p *Proxyer) Downlink(pkt *relraw.Packet, id session.ID) error {
 	err := p.raw.WriteCtx(p.ctx, pkt)
 	return err
 }
-
-func (p *Proxyer) MTU() int { return p.raw.MTU() }

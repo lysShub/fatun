@@ -1,6 +1,3 @@
-//go:build linux
-// +build linux
-
 package proxyer
 
 import (
@@ -10,56 +7,68 @@ import (
 
 	"github.com/lysShub/itun"
 	"github.com/lysShub/itun/app"
+	ss "github.com/lysShub/itun/app/server/proxyer/session"
 	"github.com/lysShub/itun/control"
 	"github.com/lysShub/itun/session"
+	"github.com/lysShub/relraw"
 )
 
-type proxyerImpl Proxyer
+type sessionImpl Proxyer
 
-type proxyerImplPtr = *proxyerImpl
+type proxyerImplPtr = *sessionImpl
 
-var _ control.Handler = (proxyerImplPtr)(nil)
+var _ ss.Proxyer = (proxyerImplPtr)(nil)
 
-func (pi *proxyerImpl) IPv6() bool {
+func (s *sessionImpl) Downlink(pkt *relraw.Packet, id session.ID) error {
+	return (*Proxyer)(s).downlink(pkt, id)
+}
+func (s *sessionImpl) MTU() int                                   { return s.raw.MTU() }
+func (s *sessionImpl) Context() context.Context                   { return s.ctx }
+func (s *sessionImpl) Del(id session.ID, cause error) (err error) { return s.sessionMgr.Del(id, cause) }
+func (s *sessionImpl) Error(msg string, args ...any)              { s.logger.Error(msg, args...) }
+
+type controlImpl Proxyer
+
+type controlImplPtr = *controlImpl
+
+var _ control.Handler = (controlImplPtr)(nil)
+
+func (c *controlImpl) IPv6() bool {
 	return true
 }
-
-func (pi *proxyerImpl) EndConfig() {
+func (c *controlImpl) EndConfig() {
 	select {
-	case <-pi.endConfigNotify:
+	case <-c.endConfigNotify:
 	default:
-		close(pi.endConfigNotify)
+		close(c.endConfigNotify)
 	}
 }
-
-// todo: error 不要把server堆栈返回处理咯
-func (pi *proxyerImpl) AddTCP(addr netip.AddrPort) (session.ID, error) {
-	s, err := pi.sessionMgr.Add(
-		pi.ctx, (*Proxyer)(pi),
+func (c *controlImpl) AddTCP(addr netip.AddrPort) (session.ID, error) {
+	s, err := c.sessionMgr.Add(
+		proxyerImplPtr(c),
 		session.Session{
-			Src:   pi.raw.RemoteAddrPort(),
+			Src:   c.raw.RemoteAddrPort(),
 			Proto: itun.TCP,
 			Dst:   addr,
 		},
 	)
 	if err != nil {
-		pi.logger.Error(err.Error(), app.TraceAttr(err))
+		c.logger.Error(err.Error(), app.TraceAttr(err))
 		return 0, err
 	} else {
-		pi.logger.LogAttrs(context.Background(), slog.LevelInfo, "add tcp session",
+		c.logger.LogAttrs(context.Background(), slog.LevelInfo, "add tcp session",
 			slog.Attr{Key: "dst", Value: slog.StringValue(addr.String())},
 			slog.Attr{Key: "id", Value: slog.IntValue(int(s.ID()))},
 		)
 	}
 	return s.ID(), nil
 }
-func (pi *proxyerImpl) DelTCP(id session.ID) error {
-	return pi.sessionMgr.Del(id, nil)
+func (c *controlImpl) DelTCP(id session.ID) error {
+	return c.sessionMgr.Del(id, nil)
 }
-
-func (pi *proxyerImpl) AddUDP(addr netip.AddrPort) (session.ID, error) {
-	s, err := pi.sessionMgr.Add(
-		pi.ctx, (*Proxyer)(pi),
+func (c *controlImpl) AddUDP(addr netip.AddrPort) (session.ID, error) {
+	s, err := c.sessionMgr.Add(
+		proxyerImplPtr(c),
 		session.Session{
 			Proto: itun.UDP,
 			Dst:   addr,
@@ -70,13 +79,10 @@ func (pi *proxyerImpl) AddUDP(addr netip.AddrPort) (session.ID, error) {
 	}
 	return s.ID(), nil
 }
-func (pi *proxyerImpl) DelUDP(id session.ID) error {
-	return pi.sessionMgr.Del(id, nil)
+func (c *controlImpl) DelUDP(id session.ID) error {
+	return c.sessionMgr.Del(id, nil)
 }
-
-func (pi *proxyerImpl) PackLoss() float32 {
+func (c *controlImpl) PackLoss() float32 {
 	return 0
 }
-
-func (pi *proxyerImpl) Ping() {
-}
+func (c *controlImpl) Ping() {}

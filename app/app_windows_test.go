@@ -39,10 +39,7 @@ func TestXxxx(t *testing.T) {
 
 	c, err := client.NewClient(ctx, raw, cfg)
 	require.NoError(t, err)
-
-	err = c.Handshake()
-	require.NoError(t, err)
-	defer c.Close()
+	defer c.Close(nil)
 
 	err = c.AddProxy(session.Session{
 		Src:   netip.AddrPortFrom(netip.AddrFrom4([4]byte{192, 168, 43, 35}), 12345),
@@ -50,7 +47,6 @@ func TestXxxx(t *testing.T) {
 		Dst:   netip.AddrPortFrom(netip.AddrFrom4([4]byte{8, 8, 8, 8}), 80),
 	})
 	require.NoError(t, err)
-
 }
 
 func Test_TCP(t *testing.T) {

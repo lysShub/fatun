@@ -3,11 +3,11 @@ package client
 import (
 	"context"
 	"errors"
-	"fmt"
+	"log/slog"
 	"sync/atomic"
-	"time"
 
 	"github.com/lysShub/itun"
+	"github.com/lysShub/itun/app"
 	cs "github.com/lysShub/itun/app/client/session"
 	"github.com/lysShub/itun/cctx"
 	"github.com/lysShub/itun/config"
@@ -33,13 +33,16 @@ type Config struct {
 }
 
 type Client struct {
-	ctx  cctx.CancelCtx
-	cfg  *Config
-	raw  *itun.RawConn
-	self session.Session
+	ctx    cctx.CancelCtx
+	cfg    *Config
+	raw    *itun.RawConn
+	logger *slog.Logger
+
+	self   session.Session
+	closed atomic.Bool
 
 	sessionMgr *cs.SessionMgr
-	st         ustack.Ustack
+	stack      ustack.Ustack
 
 	pseudoSum1 uint16
 	seq, ack   uint32
@@ -52,12 +55,13 @@ type Client struct {
 	ctr    control.Client
 }
 
-var _ cs.Uplink = (*Client)(nil)
-
 func NewClient(parentCtx context.Context, raw relraw.RawConn, cfg *Config) (*Client, error) {
 	var c = &Client{
 		ctx: cctx.WithContext(parentCtx),
 		cfg: cfg,
+		logger: slog.New(cfg.Log.WithGroup("proxy").WithAttrs([]slog.Attr{
+			{Key: "src", Value: slog.StringValue(raw.LocalAddrPort().String())},
+		})),
 		raw: itun.WrapRawConn(raw, cfg.MTU),
 		self: session.Session{
 			Src:   raw.LocalAddrPort(),
@@ -74,48 +78,48 @@ func NewClient(parentCtx context.Context, raw relraw.RawConn, cfg *Config) (*Cli
 	)
 
 	var err error
-	if c.st, err = ustack.NewUstack(
+	if c.stack, err = ustack.NewUstack(
 		c.raw.LocalAddrPort(),
 		c.raw.MTU(),
 	); err != nil {
-		return nil, err
+		return nil, c.Close(err)
 	}
 
 	if c.ipstack, err = relraw.NewIPStack(
 		c.raw.LocalAddrPort().Addr(), c.raw.RemoteAddrPort().Addr(),
 		header.TCPProtocolNumber,
 	); err != nil {
-		return nil, err
+		return nil, c.Close(err)
 	}
 
-	return c, nil
+	return c, c.handshake()
 }
 
-func (c *Client) Handshake() error {
+func (c *Client) handshake() error {
 	go c.downlinkService()
 	go c.uplinkService()
 
 	tcp, err := gonet.DialTCPWithBind(
-		c.ctx, c.st,
+		c.ctx, c.stack,
 		c.raw.LocalAddrPort(), c.raw.RemoteAddrPort(),
 		header.IPv4ProtocolNumber,
 	)
 	if err != nil {
-		return err
+		return c.Close(err)
 	}
 
 	err = c.cfg.PrevPackets.Client(c.ctx, tcp)
 	if err != nil {
-		return err
+		return c.Close(err)
 	}
 
 	key, err := c.cfg.Config.SwapKey.SecretKey(c.ctx, tcp)
 	if err != nil {
-		return err
+		return c.Close(err)
 	}
 	c.crypto, err = crypto.NewTCP(key, c.pseudoSum1)
 	if err != nil {
-		return err
+		return c.Close(err)
 	}
 	c.fake = faketcp.NewFakeTCP(
 		c.raw.LocalAddrPort().Port(),
@@ -128,37 +132,37 @@ func (c *Client) Handshake() error {
 
 	c.ctr = control.NewClient(tcp)
 
-	ipv6, err := c.ctr.IPv6(c.ctx)
-	if err != nil {
-		return err
+	if _, err = c.ctr.IPv6(c.ctx); err != nil {
+		return c.Close(err)
 	}
-	fmt.Println("ipv6", ipv6)
+	if err = c.ctr.EndConfig(c.ctx); err != nil {
+		return c.Close(err)
+	}
 
-	return c.ctr.EndConfig(c.ctx)
+	return nil
 }
 
 func (c *Client) downlinkService() {
-	mtu := c.MTU()
+	mtu := c.raw.MTU()
 	var tcp = relraw.NewPacket(0, mtu)
 
 	for {
 		tcp.Sets(0, mtu)
 
-		if err := c.raw.ReadCtx(c.ctx, tcp); err != nil {
-			c.ctx.Cancel(err)
+		err := c.raw.ReadCtx(c.ctx, tcp)
+		if err != nil {
+			c.Close(err)
 			return
 		}
 
 		if faketcp.IsFakeTCP(tcp.Data()) {
-			if !c.inited.Load() {
-				time.Sleep(time.Millisecond * 100)
-			}
+			// if !c.inited.Load() {
+			//     todo: maybe attack
+			// }
 
-			err := c.crypto.Decrypt(tcp)
+			err = c.crypto.Decrypt(tcp)
 			if err != nil {
-				if debug.Debug() {
-					require.NoError(test.T(), err)
-				}
+				c.logger.Warn(err.Error(), app.TraceAttr(err))
 				continue
 			}
 
@@ -166,58 +170,70 @@ func (c *Client) downlinkService() {
 
 			id := session.GetID(tcp)
 			if id == session.CtrSessID {
-
 				c.ipstack.AttachInbound(tcp)
-				c.st.Inbound(tcp)
+				if debug.Debug() {
+					test.ValidIP(test.T(), tcp.Data())
+				}
+
+				c.stack.Inbound(tcp)
 			} else {
 				s, err := c.sessionMgr.Get(id)
 				if err != nil {
-					fmt.Println(err) // todo: log
+					c.logger.Warn(err.Error(), app.TraceAttr(err))
 					continue
 				}
 
-				err = s.Inject(tcp)
-				if err != nil {
-					c.sessionMgr.Del(id, err)
-				}
+				s.Inject(tcp)
 			}
 		} else {
 			c.ack = max(c.ack, header.TCP(tcp.Data()).AckNumber())
 
-			{
-				tcp := header.TCP(tcp.Data())
-				if tcp.Flags().Contains(header.TCPFlagPsh) {
-					fmt.Println("recv", string(tcp.Payload()))
-				}
+			c.ipstack.AttachInbound(tcp)
+			if debug.Debug() {
+				test.ValidIP(test.T(), tcp.Data())
 			}
 
-			c.ipstack.AttachInbound(tcp)
-			c.st.Inbound(tcp)
+			c.stack.Inbound(tcp)
 		}
 	}
 }
 
 func (c *Client) uplinkService() {
-	mtu := c.MTU()
+	mtu := c.raw.MTU()
 	var pkt = relraw.NewPacket(0, mtu)
 
+	var err error
 	for {
 		pkt.Sets(0, mtu)
-		c.st.Outbound(c.ctx, pkt)
+		err = c.stack.Outbound(c.ctx, pkt)
+		if err != nil {
+			break
+		}
 
 		if c.inited.Load() {
-			c.Uplink(pkt, session.CtrSessID)
+			err = c.uplink(pkt, session.CtrSessID)
+			if err != nil {
+				break
+			}
 		} else {
 			c.seq = max(c.seq, header.TCP(pkt.Data()).SequenceNumber())
 
 			// recover to ip packet
 			pkt.SetHead(0)
-			c.raw.Write(pkt.Data())
+			if debug.Debug() {
+				test.ValidIP(test.T(), pkt.Data())
+			}
+
+			_, err = c.raw.Write(pkt.Data())
+			if err != nil {
+				break
+			}
 		}
 	}
+	c.Close(err)
 }
 
-func (c *Client) Uplink(pkt *relraw.Packet, id session.ID) error {
+func (c *Client) uplink(pkt *relraw.Packet, id session.ID) error {
 	if debug.Debug() {
 		require.True(test.T(), c.inited.Load())
 	}
@@ -231,8 +247,6 @@ func (c *Client) Uplink(pkt *relraw.Packet, id session.ID) error {
 	err := c.raw.WriteCtx(context.Background(), pkt)
 	return err
 }
-
-func (c *Client) MTU() int { return c.raw.MTU() }
 
 func (c *Client) AddProxy(s session.Session) error {
 	if !s.IsValid() {
@@ -249,16 +263,39 @@ func (c *Client) AddProxy(s session.Session) error {
 		} else if resp.Err != nil {
 			panic(resp.Err)
 		}
-		return c.sessionMgr.Add(c.ctx, c, s, resp.ID)
+		return c.sessionMgr.Add(sessionIpmlPtr(c), s, resp.ID)
 	default:
-		panic("impossible")
+		panic("not support")
 	}
 }
 
-func (c *Client) Close() error {
-	err := errors.Join(
-		c.ctr.Close(),
-	)
+func (c *Client) Close(cause error) (err error) {
+	if c.closed.CompareAndSwap(false, true) {
+		err = cause
 
-	return err
+		if c.ctr != nil {
+			err = errors.Join(err,
+				c.ctr.Close(),
+			)
+		}
+		if c.stack != nil {
+			// todo:
+		}
+		if c.sessionMgr != nil {
+			err = errors.Join(err,
+				c.sessionMgr.Close(),
+			)
+		}
+		if c.raw != nil {
+			err = errors.Join(err,
+				c.raw.Close(),
+			)
+		}
+
+		c.ctx.Cancel(err)
+		return err
+	} else {
+		<-c.ctx.Done()
+		return c.ctx.Err()
+	}
 }

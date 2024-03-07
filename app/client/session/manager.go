@@ -28,12 +28,12 @@ func NewSessionMgr() *SessionMgr {
 	return sm
 }
 
-func (sm *SessionMgr) Add(clientCtx context.Context, up Uplink, s session.Session, id session.ID) error {
+func (sm *SessionMgr) Add(client Client, s session.Session, id session.ID) error {
 	if _, err := sm.Get(id); err == nil {
 		return session.ErrExistID(id)
 	}
 
-	session, err := newSession(clientCtx, up, id, s)
+	session, err := newSession(client, id, s)
 	if err != nil {
 		return err
 	}
@@ -65,13 +65,11 @@ func (sm *SessionMgr) Del(id session.ID, cause error) error {
 }
 
 func (sm *SessionMgr) del(s *Session, cause error) error {
-	err := s.close(cause)
-
 	sm.mu.Lock()
-	defer sm.mu.Unlock()
-
 	delete(sm.sessions, s.id)
-	return err
+	sm.mu.Unlock()
+
+	return s.close(cause)
 }
 
 func (sm *SessionMgr) keepalive() {

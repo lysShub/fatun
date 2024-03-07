@@ -5,7 +5,7 @@ import (
 	"net/netip"
 	"sync"
 
-	// "github.com/lysShub/itun/ustack/link/ring"
+	pkge "github.com/pkg/errors"
 
 	"github.com/lysShub/relraw"
 	"github.com/lysShub/relraw/test"
@@ -44,7 +44,7 @@ var _ stack.LinkEndpoint = (*List)(nil)
 func (l *List) Outbound(ctx context.Context, tcp *relraw.Packet) error {
 	pkb := l.list.Get(ctx)
 	if pkb.IsNil() {
-		return ctx.Err()
+		return pkge.WithStack(ctx.Err())
 	}
 	defer pkb.DecRef()
 
@@ -74,7 +74,7 @@ func (l *List) Outbound(ctx context.Context, tcp *relraw.Packet) error {
 func (l *List) OutboundBy(ctx context.Context, dst netip.AddrPort, tcp *relraw.Packet) error {
 	pkb := l.list.GetBy(ctx, dst)
 	if pkb.IsNil() {
-		return ctx.Err()
+		return pkge.WithStack(ctx.Err())
 	}
 	defer pkb.DecRef()
 
@@ -255,15 +255,13 @@ func (s *slice) getBy(dst netip.AddrPort) (pkb *stack.PacketBuffer) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if len(s.s) > 0 {
-		for i, e := range s.s {
-			if match(e, dst) {
-				pkb = s.s[i]
+	for i, e := range s.s {
+		if match(e, dst) {
+			pkb = s.s[i]
 
-				n := copy(s.s[i:], s.s[i+1:])
-				s.s = s.s[:i+n]
-				return pkb
-			}
+			n := copy(s.s[i:], s.s[i+1:])
+			s.s = s.s[:i+n]
+			return pkb
 		}
 	}
 	return nil

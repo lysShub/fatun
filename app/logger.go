@@ -12,8 +12,12 @@ import (
 	pkge "github.com/pkg/errors"
 )
 
+// TraceAttr get github.com/pkg/errors stack trace as slog.Addr
 func TraceAttr(err error) slog.Attr {
 	type trace interface{ StackTrace() pkge.StackTrace }
+
+	// todo: maybe series connection
+	// todo: test errors.Join()
 
 	// only hit innermost trace
 	var te trace
@@ -25,30 +29,30 @@ func TraceAttr(err error) slog.Attr {
 		e = errors.Unwrap(e)
 	}
 
+	var attrs []slog.Attr
 	if te != nil {
 		st := te.StackTrace()
 
-		attrs := make([]slog.Attr, 0, len(st)-1)
+		attrs = make([]slog.Attr, 0, len(st)-1)
 		for i := 0; i < len(st)-2; i++ {
 			attrs = append(attrs, slog.Attr{
 				Key:   strconv.Itoa(i),
 				Value: position(st[i]),
 			})
 		}
-
-		// add call self position
-		var pcs = make([]uintptr, 1)
-		n := runtime.Callers(2, pcs)
-		if n == 1 {
-			attrs = append(attrs, slog.Attr{
-				Key:   strconv.Itoa(len(st) - 1),
-				Value: position(pkge.Frame(pcs[0])),
-			})
-		}
-
-		return slog.Attr{Key: "trace", Value: slog.GroupValue(attrs...)}
 	}
-	return slog.Attr{}
+
+	// add call self position
+	var pcs = make([]uintptr, 1)
+	n := runtime.Callers(2, pcs)
+	if n == 1 {
+		attrs = append(attrs, slog.Attr{
+			Key:   strconv.Itoa(len(attrs)),
+			Value: position(pkge.Frame(pcs[0])),
+		})
+	}
+
+	return slog.Attr{Key: "trace", Value: slog.GroupValue(attrs...)}
 }
 
 func position(f pkge.Frame) slog.Value {

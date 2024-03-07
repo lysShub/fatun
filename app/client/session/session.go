@@ -3,22 +3,27 @@ package session
 import (
 	"context"
 	"errors"
-	"fmt"
 	"sync/atomic"
 
+	"github.com/lysShub/itun/app"
 	"github.com/lysShub/itun/app/client/capture"
 	"github.com/lysShub/itun/cctx"
 	"github.com/lysShub/itun/session"
 	"github.com/lysShub/relraw"
 )
 
-type Uplink interface {
+type Client interface {
+	Context() context.Context
+	Del(id session.ID, cause error) error
+	Error(msg string, args ...any)
+
 	Uplink(pkt *relraw.Packet, id session.ID) error
 	MTU() int
 }
 
 type Session struct {
 	ctx    cctx.CancelCtx
+	client Client
 	closed atomic.Bool
 
 	session session.Session
@@ -30,11 +35,13 @@ type Session struct {
 }
 
 func newSession(
-	clientCtx context.Context, up Uplink,
+	client Client,
 	id session.ID, session session.Session,
 ) (s *Session, err error) {
 	s = &Session{
-		ctx:     cctx.WithContext(clientCtx),
+		ctx:    cctx.WithContext(client.Context()),
+		client: client,
+
 		session: session,
 		id:      id,
 	}
@@ -43,47 +50,44 @@ func newSession(
 		return nil, err
 	}
 
-	go s.uplinkService(up)
+	go s.uplinkService()
 	return s, nil
 }
 
-func (s *Session) uplinkService(up Uplink) {
-	var mtu = up.MTU()
+func (s *Session) uplinkService() {
+	var mtu = s.client.MTU()
 	seg := relraw.NewPacket(0, mtu)
 
 	for {
 		seg.Sets(0, mtu)
-		if err := s.capture.Capture(s.ctx, seg); err != nil {
-			s.ctx.Cancel(err)
+		s.cnt.Add(1)
+
+		err := s.capture.Capture(s.ctx, seg)
+		if err != nil {
+			s.client.Del(s.id, err)
 			return
 		}
 
 		// todo: reset tcp mss
 
-		up.Uplink(seg, session.ID(s.id))
-		s.cnt.Add(1)
+		err = s.client.Uplink(seg, session.ID(s.id))
+		if err != nil {
+			s.client.Del(s.id, err)
+			return
+		}
 	}
 }
 
-func (s *Session) Inject(seg *relraw.Packet) error {
-	select {
-	case <-s.ctx.Done():
-		return s.ctx.Err()
-	default:
-	}
-	s.cnt.Add(1)
-
+func (s *Session) Inject(seg *relraw.Packet) {
 	err := s.capture.Inject(seg)
-	return err
+	if err != nil {
+		s.client.Del(s.id, err)
+	}
+
+	s.cnt.Add(1)
 }
 
 func (s *Session) tick() bool {
-	select {
-	case <-s.ctx.Done():
-		return true
-	default:
-	}
-
 	const magic uint32 = 0x23df83a0
 	if s.cnt.Load() == magic {
 		return true
@@ -97,12 +101,12 @@ func (s *Session) close(cause error) error {
 	if s.closed.CompareAndSwap(false, true) {
 		s.ctx.Cancel(cause)
 
-		err := s.ctx.Err()
-		err = errors.Join(err,
+		err := errors.Join(
+			s.ctx.Err(),
 			s.capture.Close(),
 		)
 
-		fmt.Println(err) // tood: log
+		s.client.Error(err.Error(), app.TraceAttr(err))
 		return err
 	}
 	return nil
