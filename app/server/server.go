@@ -82,7 +82,7 @@ func NewServer(l relraw.Listener, cfg *Config) (*Server, error) {
 }
 
 func (s *Server) Serve(ctx context.Context) error {
-	s.logger.Info("starting", "listen", s.Addr.String())
+	s.logger.Info("starting")
 	for {
 		select {
 		case <-ctx.Done():

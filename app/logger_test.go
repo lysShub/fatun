@@ -33,19 +33,18 @@ func a() error {
 func b() error {
 	e := a()
 	if e != nil {
-		// return pkge.WithMessage(e, "b-call")
 		return pkge.WithStack(e)
 	}
 
-	e = errors.New("xxxb")
-	e = pkge.WithMessage(e, "b-call")
-	return pkge.WithStack(e)
+	return nil
 }
 
 func c() error {
 	e := b()
 	if e != nil {
-		return pkge.WithMessage(e, "c-call")
+		err := pkge.WithStack(errors.New("c-fail"))
+
+		return app.Join(e, err)
 	}
 
 	return nil

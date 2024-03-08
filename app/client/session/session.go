@@ -2,7 +2,6 @@ package session
 
 import (
 	"context"
-	"errors"
 	"sync/atomic"
 
 	"github.com/lysShub/itun/app"
@@ -101,7 +100,7 @@ func (s *Session) close(cause error) error {
 	if s.closed.CompareAndSwap(false, true) {
 		s.ctx.Cancel(cause)
 
-		err := errors.Join(
+		err := app.Join(
 			s.ctx.Err(),
 			s.capture.Close(),
 		)

@@ -1,12 +1,12 @@
 package adapter
 
 import (
-	"errors"
 	"net/netip"
 	"sort"
 	"sync"
 
 	"github.com/lysShub/itun"
+	"github.com/lysShub/itun/app"
 	pkge "github.com/pkg/errors"
 )
 
@@ -186,9 +186,9 @@ func (a *Ports) Close() (err error) {
 		case itun.UDP:
 			e = a.mgr.DelUDPPort(pk.loaclPort)
 		default:
-			e = errors.Join(err, itun.ErrInvalidProto(pk.proto))
+			e = app.Join(err, itun.ErrInvalidProto(pk.proto))
 		}
-		err = errors.Join(err, e)
+		err = app.Join(err, e)
 	}
 
 	a.ports = map[portKey]*AddrSet{}

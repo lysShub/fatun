@@ -4,23 +4,10 @@ import (
 	"context"
 	"encoding/gob"
 	"net"
-	"net/netip"
 
 	"github.com/lysShub/itun/control/internal"
-	"github.com/lysShub/itun/session"
 	pkge "github.com/pkg/errors"
 )
-
-type Handler interface {
-	IPv6() bool
-	EndConfig()
-	AddTCP(addr netip.AddrPort) (session.ID, error)
-	DelTCP(id session.ID) error
-	AddUDP(addr netip.AddrPort) (session.ID, error)
-	DelUDP(id session.ID) error
-	PackLoss() float32
-	Ping()
-}
 
 type gobServer struct {
 	conn net.Conn
@@ -55,14 +42,10 @@ func (s *gobServer) Serve(ctx context.Context) error {
 				err = s.handleIPv6()
 			case internal.EndConfig:
 				err = s.handleEndConfig()
-			case internal.AddTCP:
-				err = s.handleAddTCP()
-			case internal.DelTCP:
-				err = s.handleDelTCP()
-			case internal.AddUDP:
-				err = s.handleAddUDP()
-			case internal.DelUDP:
-				err = s.handleDelUDP()
+			case internal.AddSession:
+				err = s.handleAddSession()
+			case internal.DelSession:
+				err = s.handleDelSession()
 			case internal.PackLoss:
 				err = s.handlePackLoss()
 			case internal.Ping:
@@ -111,57 +94,30 @@ func (s *gobServer) handleEndConfig() error {
 	return s.enc.Encode(resp)
 }
 
-func (s *gobServer) handleAddTCP() error {
-	var req internal.AddTCPReq
+func (s *gobServer) handleAddSession() error {
+	var req internal.AddSessionReq
 	if err := s.dec.Decode(&req); err != nil {
 		return err
 	}
 
-	id, err := s.hdr.AddTCP(netip.AddrPort(req))
+	id, err := s.hdr.AddSession(req)
 
-	var resp internal.AddTCPResp = internal.AddTCPResp{
+	var resp = internal.AddSessionResp{
 		ID:  id,
 		Err: err,
 	}
 	return s.enc.Encode(resp)
 }
 
-func (s *gobServer) handleDelTCP() error {
-	var req internal.DelTCPReq
+func (s *gobServer) handleDelSession() error {
+	var req internal.DelSessionReq
 	if err := s.dec.Decode(&req); err != nil {
 		return err
 	}
 
-	_ = s.hdr.DelTCP(req)
+	_ = s.hdr.DelSession(req)
 
-	var resp internal.DelTCPResp
-	return s.enc.Encode(resp)
-}
-
-func (s *gobServer) handleAddUDP() error {
-	var req internal.AddUDPReq
-	if err := s.dec.Decode(&req); err != nil {
-		return err
-	}
-
-	id, err := s.hdr.AddUDP(netip.AddrPort(req))
-
-	var resp internal.AddUDPResp = internal.AddUDPResp{
-		ID:  id,
-		Err: err,
-	}
-	return s.enc.Encode(resp)
-}
-
-func (s *gobServer) handleDelUDP() error {
-	var req internal.DelUDPReq
-	if err := s.dec.Decode(&req); err != nil {
-		return err
-	}
-
-	_ = s.hdr.DelUDP(req)
-
-	var resp internal.DelUDPResp
+	var resp internal.DelSessionResp
 	return s.enc.Encode(resp)
 }
 

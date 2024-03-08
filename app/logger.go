@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/lysShub/relraw/test/debug"
+
 	pkge "github.com/pkg/errors"
 )
 
@@ -17,21 +19,21 @@ func TraceAttr(err error) slog.Attr {
 	type trace interface{ StackTrace() pkge.StackTrace }
 
 	// todo: maybe series connection
-	// todo: test errors.Join()
+	// todo: test app.Join()
 
 	// only hit innermost trace
-	var te trace
+	var t trace
 	for e := err; e != nil; {
 		if e1, ok := e.(trace); ok {
-			te = e1
+			t = e1
 		}
 
 		e = errors.Unwrap(e)
 	}
 
 	var attrs []slog.Attr
-	if te != nil {
-		st := te.StackTrace()
+	if t != nil {
+		st := t.StackTrace()
 
 		attrs = make([]slog.Attr, 0, len(st)-1)
 		for i := 0; i < len(st)-2; i++ {
@@ -78,9 +80,10 @@ var base string
 func init() {
 	var err error
 	base, err = os.Getwd()
-	if err == nil {
+	if !debug.Debug() && err == nil {
 		base = filepath.Dir(base)
 		base = filepath.Dir(base)
+		base = filepath.ToSlash(base)
 	}
 }
 

@@ -1,8 +1,6 @@
 package internal
 
 import (
-	"net/netip"
-
 	"github.com/lysShub/itun/session"
 	pkge "github.com/pkg/errors"
 )
@@ -22,10 +20,8 @@ const (
 
 	IPv6
 	EndConfig
-	AddTCP
-	DelTCP
-	AddUDP
-	DelUDP
+	AddSession
+	DelSession
 	PackLoss
 	Ping
 
@@ -38,23 +34,14 @@ type IPv6Resp bool
 type EndConfigReq struct{}
 type EndConfigResp struct{}
 
-type AddTCPReq = netip.AddrPort
-type AddTCPResp struct {
+type AddSessionReq = session.Session
+type AddSessionResp struct {
 	ID  session.ID
 	Err error
 }
 
-type DelTCPReq = session.ID
-type DelTCPResp struct{}
-
-type AddUDPReq netip.AddrPort
-type AddUDPResp struct {
-	ID  session.ID
-	Err error
-}
-
-type DelUDPReq = session.ID
-type DelUDPResp struct{}
+type DelSessionReq = session.ID
+type DelSessionResp struct{}
 
 type PackLossReq struct{}
 type PackLossResp float32

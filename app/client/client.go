@@ -2,8 +2,8 @@ package client
 
 import (
 	"context"
-	"errors"
 	"log/slog"
+	"os"
 	"sync/atomic"
 
 	"github.com/lysShub/itun"
@@ -56,10 +56,15 @@ type Client struct {
 }
 
 func NewClient(parentCtx context.Context, raw relraw.RawConn, cfg *Config) (*Client, error) {
+	log := cfg.Log
+	if log == nil {
+		log = slog.NewJSONHandler(os.Stdout, nil)
+	}
+
 	var c = &Client{
 		ctx: cctx.WithContext(parentCtx),
 		cfg: cfg,
-		logger: slog.New(cfg.Log.WithGroup("proxy").WithAttrs([]slog.Attr{
+		logger: slog.New(log.WithGroup("proxy").WithAttrs([]slog.Attr{
 			{Key: "src", Value: slog.StringValue(raw.LocalAddrPort().String())},
 		})),
 		raw: itun.WrapRawConn(raw, cfg.MTU),
@@ -255,39 +260,37 @@ func (c *Client) AddProxy(s session.Session) error {
 		return pkge.Errorf("can't proxy self %s", s)
 	}
 
-	switch s.Proto {
-	case itun.TCP:
-		resp, err := c.ctr.AddTCP(c.ctx, s.Dst)
-		if err != nil {
-			return err
-		} else if resp.Err != nil {
-			panic(resp.Err)
-		}
+	resp, err := c.ctr.AddSession(c.ctx, s)
+	if err != nil {
+		return err
+	} else if resp.Err != nil {
+		c.logger.Warn(resp.Err.Error(), "add session", s.String())
+		return resp.Err
+	} else {
 		return c.sessionMgr.Add(sessionIpmlPtr(c), s, resp.ID)
-	default:
-		panic("not support")
 	}
 }
 
 func (c *Client) Close(cause error) (err error) {
 	if c.closed.CompareAndSwap(false, true) {
 		err = cause
-
 		if c.ctr != nil {
-			err = errors.Join(err,
+			err = app.Join(err,
 				c.ctr.Close(),
 			)
 		}
 		if c.stack != nil {
-			// todo:
+			err = app.Join(err,
+				c.stack.Close(),
+			)
 		}
 		if c.sessionMgr != nil {
-			err = errors.Join(err,
+			err = app.Join(err,
 				c.sessionMgr.Close(),
 			)
 		}
 		if c.raw != nil {
-			err = errors.Join(err,
+			err = app.Join(err,
 				c.raw.Close(),
 			)
 		}

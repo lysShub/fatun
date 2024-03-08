@@ -17,6 +17,7 @@ import (
 )
 
 type Ustack interface {
+	Close() error
 	Inbound(ip *relraw.Packet)
 	OutboundBy(ctx context.Context, dst netip.AddrPort, ip *relraw.Packet) error
 	Outbound(ctx context.Context, ip *relraw.Packet) error
@@ -35,6 +36,8 @@ type ustack struct {
 }
 
 var _ Ustack = (*ustack)(nil)
+
+const nicid tcpip.NICID = 1234
 
 // todo: set no delay
 func NewUstack(addr netip.AddrPort, mtu int) (Ustack, error) {
@@ -73,7 +76,10 @@ func NewUstack(addr netip.AddrPort, mtu int) (Ustack, error) {
 	return u, nil
 }
 
-const nicid tcpip.NICID = 1234
+func (u *ustack) Close() error {
+	u.Stack.Destroy()
+	return nil
+}
 
 func (u *ustack) Inbound(ip *relraw.Packet) {
 	u.link.Inbound(ip)

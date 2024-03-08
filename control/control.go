@@ -3,21 +3,29 @@ package control
 import (
 	"context"
 	"net"
-	"net/netip"
 
 	"github.com/lysShub/itun/cctx"
 	"github.com/lysShub/itun/session"
 )
+
+type Handler interface {
+	IPv6() bool
+	EndConfig()
+	AddSession(s session.Session) (session.ID, error)
+	DelSession(id session.ID) error
+	PackLoss() float32
+	Ping()
+}
 
 type Client interface {
 	Close() error
 
 	IPv6(ctx context.Context) (bool, error)
 	EndConfig(ctx context.Context) error
-	AddTCP(ctx context.Context, addr netip.AddrPort) (*AddTCP, error)
-	DelTCP(ctx context.Context, id session.ID) error
-	AddUDP(ctx context.Context, addr netip.AddrPort) (*AddUDP, error)
-	DelUDP(ctx context.Context, id session.ID) error
+
+	AddSession(ctx context.Context, s session.Session) (*AddSession, error)
+	DelSession(ctx context.Context, id session.ID) error
+
 	PackLoss(ctx context.Context) (float32, error)
 	Ping(ctx context.Context) error
 }

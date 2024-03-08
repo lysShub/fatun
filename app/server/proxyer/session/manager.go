@@ -2,12 +2,12 @@ package session
 
 import (
 	"context"
-	"errors"
 	"net/netip"
 	"sync"
 	"time"
 
 	"github.com/lysShub/itun"
+	"github.com/lysShub/itun/app"
 	"github.com/lysShub/itun/app/server/adapter"
 	"github.com/lysShub/itun/session"
 )
@@ -108,7 +108,7 @@ func (sm *SessionMgr) del(s *Session, cause error) error {
 	delete(sm.idMap, s.session)
 	sm.mu.Unlock()
 
-	err := errors.Join(
+	err := app.Join(
 		s.close(cause),
 		sm.ap.DelPort(
 			s.session.Proto,
@@ -162,7 +162,7 @@ func (sm *SessionMgr) Close() (err error) {
 	sm.mu.Unlock()
 
 	for _, e := range ss {
-		err = errors.Join(
+		err = app.Join(
 			err,
 			sm.del(e, context.Canceled),
 		)

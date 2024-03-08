@@ -2,7 +2,6 @@ package session
 
 import (
 	"context"
-	"errors"
 	"net/netip"
 	"sync/atomic"
 
@@ -126,7 +125,7 @@ func (s *Session) close(cause error) error {
 	if s.closed.CompareAndSwap(false, true) {
 		s.ctx.Cancel(cause)
 
-		err := errors.Join(
+		err := app.Join(
 			s.ctx.Err(),
 			s.sender.Close(),
 		)

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/gob"
 	"net"
-	"net/netip"
 
 	"github.com/lysShub/itun/control/internal"
 	"github.com/lysShub/itun/session"
@@ -60,54 +59,28 @@ func (c *gobClient) EndConfig(ctx context.Context) error {
 	return c.dec.Decode(&internal.EndConfigResp{})
 }
 
-type AddTCP internal.AddTCPResp
+type AddSession internal.AddSessionResp
 
-func (c *gobClient) AddTCP(ctx context.Context, addr netip.AddrPort) (*AddTCP, error) {
-	if err := c.nextType(internal.AddTCP); err != nil {
+func (c *gobClient) AddSession(ctx context.Context, s session.Session) (*AddSession, error) {
+	if err := c.nextType(internal.AddSession); err != nil {
 		return nil, err
 	}
-	if err := c.enc.Encode(internal.AddTCPReq(addr)); err != nil {
+	if err := c.enc.Encode(internal.AddSessionReq(s)); err != nil {
 		return nil, err
 	}
-	var resp AddTCP
-	err := c.dec.Decode(&resp)
-	return &resp, err
+	var resp = &internal.AddSessionResp{}
+	err := c.dec.Decode(resp)
+	return (*AddSession)(resp), err
 }
 
-func (c *gobClient) DelTCP(ctx context.Context, id session.ID) error {
-	if err := c.nextType(internal.DelTCP); err != nil {
+func (c *gobClient) DelSession(ctx context.Context, id session.ID) error {
+	if err := c.nextType(internal.DelSession); err != nil {
 		return err
 	}
-	if err := c.enc.Encode(internal.DelTCPReq(id)); err != nil {
+	if err := c.enc.Encode(internal.DelSessionReq(id)); err != nil {
 		return err
 	}
-	var resp internal.DelTCPResp
-	err := c.dec.Decode(&resp)
-	return err
-}
-
-type AddUDP internal.AddUDPResp
-
-func (c *gobClient) AddUDP(ctx context.Context, addr netip.AddrPort) (*AddUDP, error) {
-	if err := c.nextType(internal.AddUDP); err != nil {
-		return nil, err
-	}
-	if err := c.enc.Encode(internal.AddUDPReq(addr)); err != nil {
-		return nil, err
-	}
-	var resp AddUDP
-	err := c.dec.Decode(&resp)
-	return &resp, err
-}
-
-func (c *gobClient) DelUDP(ctx context.Context, id session.ID) error {
-	if err := c.nextType(internal.DelUDP); err != nil {
-		return err
-	}
-	if err := c.enc.Encode(internal.DelUDPReq(id)); err != nil {
-		return err
-	}
-	var resp internal.DelUDPResp
+	var resp internal.DelSessionResp
 	err := c.dec.Decode(&resp)
 	return err
 }

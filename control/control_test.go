@@ -123,16 +123,10 @@ func (h *mockServer) IPv6() bool {
 func (h *mockServer) EndConfig() {
 	h.InitedCfg = true
 }
-func (h *mockServer) AddTCP(addr netip.AddrPort) (session.ID, error) {
+func (h *mockServer) AddSession(s session.Session) (session.ID, error) {
 	return 1, nil
 }
-func (h *mockServer) DelTCP(id session.ID) error {
-	return nil
-}
-func (h *mockServer) AddUDP(addr netip.AddrPort) (session.ID, error) {
-	return 2, nil
-}
-func (h *mockServer) DelUDP(id session.ID) error {
+func (h *mockServer) DelSession(id session.ID) error {
 	return nil
 }
 func (h *mockServer) PackLoss() float32 { return 0.01 }
