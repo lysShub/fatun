@@ -7,16 +7,19 @@ import (
 	"context"
 	"time"
 
-	"github.com/lysShub/itun/session"
+	"github.com/lysShub/itun/app/client/filter"
+	"github.com/lysShub/itun/cctx"
 	"github.com/lysShub/relraw"
+	pkge "github.com/pkg/errors"
 )
 
 type capture struct {
 }
 
-func newCapture(s session.Session) (Capture, error) {
+func newCapture(ctx cctx.CancelCtx, hit filter.Hitter, opt any) Capture {
 	// return nil, errors.New("implement")
-	return &capture{}, nil
+	panic(pkge.New("todo implement"))
+	return nil
 }
 
 func (c *capture) Capture(ctx context.Context, pkt *relraw.Packet) (err error) {

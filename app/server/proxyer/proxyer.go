@@ -270,6 +270,7 @@ func (p *Proxyer) downlink(pkt *relraw.Packet, id session.ID) error {
 	p.crypto.Encrypt(pkt)
 	if debug.Debug() {
 		test.ValidTCP(test.T(), pkt.Data(), p.pseudoSum1)
+		require.True(test.T(), faketcp.IsFakeTCP(pkt.Data()))
 	}
 
 	err := p.raw.WriteCtx(p.ctx, pkt)

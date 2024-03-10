@@ -64,6 +64,13 @@ func (s *Session) String() string {
 	return fmt.Sprintf("%s:%s->%s", s.Proto, s.Src, s.Dst)
 }
 
+func (s *Session) IPVersion() int {
+	if s.Src.Addr().Is4() {
+		return 4
+	}
+	return 6
+}
+
 func (s *Session) MinPacketSize() int {
 	var minSize int
 	switch s.Proto {

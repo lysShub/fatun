@@ -9,9 +9,6 @@ import (
 	"github.com/lysShub/itun/control"
 	"github.com/lysShub/itun/session"
 	"github.com/lysShub/relraw"
-	"github.com/lysShub/relraw/test"
-	"github.com/lysShub/relraw/test/debug"
-	"github.com/stretchr/testify/require"
 )
 
 type sessionImpl Proxyer
@@ -45,10 +42,6 @@ func (c *controlImpl) EndConfig() {
 	}
 }
 func (c *controlImpl) AddSession(sess session.Session) (session.ID, error) {
-	if debug.Debug() {
-		require.Equal(test.T(), c.raw.RemoteAddrPort().Addr(), sess.Src)
-	}
-
 	s, err := c.sessionMgr.Add(
 		proxyerImplPtr(c), sess,
 	)

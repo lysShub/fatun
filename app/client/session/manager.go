@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/lysShub/itun"
+	"github.com/lysShub/itun/app/client/capture"
 	"github.com/lysShub/itun/session"
 )
 
@@ -28,7 +29,7 @@ func NewSessionMgr() *SessionMgr {
 	return sm
 }
 
-func (sm *SessionMgr) Add(client Client, s session.Session, id session.ID) error {
+func (sm *SessionMgr) Add(client Client, s capture.Session, id session.ID) error {
 	if _, err := sm.Get(id); err == nil {
 		return session.ErrExistID(id)
 	}

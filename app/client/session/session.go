@@ -15,6 +15,7 @@ type Client interface {
 	Context() context.Context
 	Del(id session.ID, cause error) error
 	Error(msg string, args ...any)
+	DelSession(s capture.Session)
 
 	Uplink(pkt *relraw.Packet, id session.ID) error
 	MTU() int
@@ -23,30 +24,24 @@ type Client interface {
 type Session struct {
 	ctx    cctx.CancelCtx
 	client Client
+	id     session.ID
 	closed atomic.Bool
 
-	session session.Session
-	id      session.ID
-
-	capture capture.Capture
+	capture capture.Session
 
 	cnt atomic.Uint32
 }
 
 func newSession(
-	client Client,
-	id session.ID, session session.Session,
+	client Client, id session.ID,
+	session capture.Session,
 ) (s *Session, err error) {
 	s = &Session{
 		ctx:    cctx.WithContext(client.Context()),
 		client: client,
 
-		session: session,
+		capture: session,
 		id:      id,
-	}
-	s.capture, err = capture.NewCapture(session)
-	if err != nil {
-		return nil, err
 	}
 
 	go s.uplinkService()
@@ -55,13 +50,13 @@ func newSession(
 
 func (s *Session) uplinkService() {
 	var mtu = s.client.MTU()
-	seg := relraw.NewPacket(0, mtu)
+	pkt := relraw.NewPacket(0, mtu)
 
 	for {
-		seg.Sets(0, mtu)
+		pkt.Sets(0, mtu)
 		s.cnt.Add(1)
 
-		err := s.capture.Capture(s.ctx, seg)
+		err := s.capture.Capture(s.ctx, pkt)
 		if err != nil {
 			s.client.Del(s.id, err)
 			return
@@ -69,7 +64,7 @@ func (s *Session) uplinkService() {
 
 		// todo: reset tcp mss
 
-		err = s.client.Uplink(seg, session.ID(s.id))
+		err = s.client.Uplink(pkt, session.ID(s.id))
 		if err != nil {
 			s.client.Del(s.id, err)
 			return
@@ -77,8 +72,8 @@ func (s *Session) uplinkService() {
 	}
 }
 
-func (s *Session) Inject(seg *relraw.Packet) {
-	err := s.capture.Inject(seg)
+func (s *Session) Inject(pkt *relraw.Packet) {
+	err := s.capture.Inject(pkt)
 	if err != nil {
 		s.client.Del(s.id, err)
 	}
@@ -100,13 +95,10 @@ func (s *Session) close(cause error) error {
 	if s.closed.CompareAndSwap(false, true) {
 		s.ctx.Cancel(cause)
 
-		err := app.Join(
-			s.ctx.Err(),
-			s.capture.Close(),
-		)
+		s.client.DelSession(s.capture)
 
-		s.client.Error(err.Error(), app.TraceAttr(err))
-		return err
+		s.client.Error(cause.Error(), app.TraceAttr(cause))
+		return cause
 	}
 	return nil
 }

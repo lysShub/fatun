@@ -5,14 +5,19 @@ import (
 	"github.com/lysShub/itun/session"
 )
 
+// Hitter validate the session is hit rule.
+type Hitter interface {
+	Hit(s session.Session) bool
+	HitOnce(s session.Session) bool
+}
+
 type Filter interface {
-	ProxyCh() <-chan session.Session
+	Hitter
 
-	EnableDefaultRule() error
-	DisableDefaultRule() error
+	AddDefaultRule() error
+	DelDefaultRule() error
 
-	// todo: temp
-	AddRule(proto itun.Proto, pname string) error
-
-	// DelRule()error
+	// todo: simple
+	AddRule(process string, proto itun.Proto) error
+	DelRule(process string, proto itun.Proto) error
 }

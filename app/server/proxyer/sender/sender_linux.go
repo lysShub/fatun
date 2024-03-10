@@ -6,6 +6,7 @@ package sender
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/netip"
 
 	"github.com/lysShub/itun"
@@ -29,6 +30,8 @@ func newSender(loc netip.AddrPort, proto itun.Proto, dst netip.AddrPort) (*sende
 	if err != nil {
 		return nil, err
 	}
+
+	fmt.Println("newSender", loc.String(), dst.String())
 
 	switch proto {
 	case itun.TCP:
@@ -57,7 +60,8 @@ func (s *sender) Send(pkt *relraw.Packet) error {
 }
 
 func (s *sender) Recv(ctx context.Context, pkt *relraw.Packet) error {
-	return s.raw.ReadCtx(ctx, pkt)
+	err := s.raw.ReadCtx(ctx, pkt)
+	return err
 }
 
 func (s *sender) Close() error {

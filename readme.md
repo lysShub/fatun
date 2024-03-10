@@ -8,6 +8,7 @@ TODO:
         a. PrevPackets-SwapKey阶段需要，CtrSession需要
         b. 需要吧gonet拷贝过来, 然后增加AcceptBy
         c. 需要连接管理
+    3. 抽象出Conn
 
 
 

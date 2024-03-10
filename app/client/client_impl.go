@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 
+	"github.com/lysShub/itun/app/client/capture"
 	cs "github.com/lysShub/itun/app/client/session"
 	"github.com/lysShub/itun/session"
 	"github.com/lysShub/relraw"
@@ -24,4 +25,8 @@ func (s *sessionIpml) Del(id session.ID, cause error) error {
 }
 func (s *sessionIpml) Error(msg string, args ...any) {
 	s.logger.Error(msg, args...)
+}
+
+func (s *sessionIpml) DelSession(sess capture.Session) {
+	s.capture.Del(sess.Session())
 }

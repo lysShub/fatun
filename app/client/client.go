@@ -8,6 +8,7 @@ import (
 
 	"github.com/lysShub/itun"
 	"github.com/lysShub/itun/app"
+	"github.com/lysShub/itun/app/client/capture"
 	cs "github.com/lysShub/itun/app/client/session"
 	"github.com/lysShub/itun/cctx"
 	"github.com/lysShub/itun/config"
@@ -33,10 +34,11 @@ type Config struct {
 }
 
 type Client struct {
-	ctx    cctx.CancelCtx
-	cfg    *Config
-	raw    *itun.RawConn
-	logger *slog.Logger
+	ctx     cctx.CancelCtx
+	cfg     *Config
+	raw     *itun.RawConn
+	logger  *slog.Logger
+	capture capture.Capture
 
 	self   session.Session
 	closed atomic.Bool
@@ -55,7 +57,7 @@ type Client struct {
 	ctr    control.Client
 }
 
-func NewClient(parentCtx context.Context, raw relraw.RawConn, cfg *Config) (*Client, error) {
+func NewClient(parentCtx context.Context, raw relraw.RawConn, capture capture.Capture, cfg *Config) (*Client, error) {
 	log := cfg.Log
 	if log == nil {
 		log = slog.NewJSONHandler(os.Stdout, nil)
@@ -64,10 +66,12 @@ func NewClient(parentCtx context.Context, raw relraw.RawConn, cfg *Config) (*Cli
 	var c = &Client{
 		ctx: cctx.WithContext(parentCtx),
 		cfg: cfg,
+		raw: itun.WrapRawConn(raw, cfg.MTU),
 		logger: slog.New(log.WithGroup("proxy").WithAttrs([]slog.Attr{
 			{Key: "src", Value: slog.StringValue(raw.LocalAddrPort().String())},
 		})),
-		raw: itun.WrapRawConn(raw, cfg.MTU),
+		capture: capture,
+
 		self: session.Session{
 			Src:   raw.LocalAddrPort(),
 			Proto: itun.TCP,
@@ -253,14 +257,12 @@ func (c *Client) uplink(pkt *relraw.Packet, id session.ID) error {
 	return err
 }
 
-func (c *Client) AddProxy(s session.Session) error {
-	if !s.IsValid() {
-		return session.ErrInvalidSession(s)
-	} else if c.self == s {
+func (c *Client) AddProxy(s capture.Session) error {
+	if c.self == s.Session() {
 		return pkge.Errorf("can't proxy self %s", s)
 	}
 
-	resp, err := c.ctr.AddSession(c.ctx, s)
+	resp, err := c.ctr.AddSession(c.ctx, s.Session())
 	if err != nil {
 		return err
 	} else if resp.Err != nil {

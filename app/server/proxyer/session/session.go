@@ -105,6 +105,14 @@ func (s *Session) downlinkService() {
 }
 
 func (s *Session) Send(pkt *relraw.Packet) {
+	switch s.session.Proto {
+	case itun.TCP:
+		header.TCP(pkt.Data()).SetSourcePortWithChecksumUpdate(s.locAddr.Port())
+	case itun.UDP:
+		header.UDP(pkt.Data()).SetSourcePortWithChecksumUpdate(s.locAddr.Port())
+	default:
+	}
+
 	err := s.sender.Send(pkt)
 	if err != nil {
 		s.proxyer.Del(s.id, err)

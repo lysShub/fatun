@@ -3,104 +3,124 @@ package filter
 import (
 	"fmt"
 	"net/netip"
-	"slices"
+	"sync"
+	"syscall"
 
-	"github.com/lysShub/divert-go"
 	"github.com/lysShub/itun"
 	"github.com/lysShub/itun/cctx"
 	"github.com/lysShub/itun/session"
+	pkge "github.com/pkg/errors"
+	"github.com/shirou/gopsutil/v3/net"
 	"github.com/shirou/gopsutil/v3/process"
 )
 
-const (
-	filterPriority = 2
-)
-
 type filter struct {
-	ctx     cctx.CancelCtx
-	proxyCh chan session.Session
+	ctx cctx.CancelCtx
 
-	processName       string
-	processNameProtos []itun.Proto
+	// tood: delete
+	conns   map[session.Session]bool // hited
+	connsMu sync.RWMutex
 }
 
-func NewFilter(ctx cctx.CancelCtx) *filter {
+func NewFilter(ctx cctx.CancelCtx) (*filter, error) {
 	f := &filter{
-		ctx:     ctx,
-		proxyCh: make(chan session.Session, 8),
+		ctx: ctx,
+
+		conns: make(map[session.Session]bool, 16),
 	}
-	return f
+	return f, nil
 }
 
-func (f *filter) ProxyCh() <-chan session.Session {
-	return f.proxyCh
+func (f *filter) Hit(s session.Session) bool {
+	f.connsMu.RLock()
+	_, ok := f.conns[s]
+	f.connsMu.RUnlock()
+	return ok
 }
 
-func (f *filter) EnableDefaultRule() error {
-	return nil // todo:
+func (f *filter) HitOnce(s session.Session) bool {
+	f.connsMu.RLock()
+	hited, ok := f.conns[s]
+	f.connsMu.RUnlock()
+	if ok {
+		return !hited
+	}
+
+	return false
 }
 
-func (f *filter) DisableDefaultRule() error {
+func (f *filter) AddDefaultRule() error {
+	return pkge.New("not implement")
+}
+
+func (f *filter) DelDefaultRule() error {
+	return pkge.New("not implement")
+}
+
+func (f *filter) AddRule(process string, proto itun.Proto) error {
+	go f.processService(process, proto)
 	return nil
 }
 
-func (f *filter) AddRule(proto itun.Proto, pname string) error {
-	if f.processName == "" {
-		go f.proxyByNameService()
-	}
-
-	if slices.Contains(f.processNameProtos, proto) {
-		return nil
-	}
-	f.processNameProtos = append(f.processNameProtos, proto)
-	return nil
-}
-
-func (f *filter) proxyByNameService() {
-	var s = "!ipv6 and event=CONNECT"
-	d, err := divert.Open(s, divert.SOCKET, filterPriority, divert.READ_ONLY|divert.SNIFF)
-	if err != nil {
-		f.ctx.Cancel(err)
-		return
-	}
-
-	var addr divert.Address
-	for {
-		_, err := d.Recv(nil, &addr)
-		if err != nil {
-			f.ctx.Cancel(err)
-			return
-		}
-
-		s := addr.Socket()
-
-		if p, err := process.NewProcess(int32(s.ProcessId)); err == nil {
-			if name, err := p.Name(); err == nil {
-				fmt.Println(name)
-				if f.processName == name {
-					s := session.Session{
-						Src:   netip.AddrPortFrom(s.LocalAddr(), s.LocalPort),
-						Proto: itun.Proto(s.Protocol),
-						Dst:   netip.AddrPortFrom(s.RemoteAddr(), s.RemotePort),
-					}
-
-					if !slices.Contains(f.processNameProtos, s.Proto) {
-						fmt.Println("还不支持的proto ", s.Proto.String())
-					} else if !s.IsValid() {
-						fmt.Println("不合法的session", (session.ErrInvalidSession(s)).Error())
-					}
-
-					select {
-					case f.proxyCh <- s:
-					default:
-						fmt.Println("block")
-					}
-				}
-			}
-		}
-	}
+func (f *filter) DelRule(process string, proto itun.Proto) error {
+	return pkge.New("not implement")
 }
 
 func (f *filter) Close() error {
-	return nil
+	return pkge.New("not implement")
+}
+
+func (f *filter) processService(name string, proto itun.Proto) {
+
+	ps, err := process.Processes()
+	if err != nil {
+		panic(err)
+	}
+
+	var pids []int32
+	for _, e := range ps {
+		if n, _ := e.Name(); n == name {
+			pids = append(pids, e.Pid)
+		}
+	}
+
+	if len(pids) == 0 {
+		// todo: wait process start
+		panic("wait process start")
+	}
+
+	fmt.Println(pids)
+
+	for _, e := range pids {
+		ns, err := net.ConnectionsPid("tcp4", e) // strings.ToLower(proto.String())
+		if err != nil {
+			continue
+		}
+		for _, n := range ns {
+			s := toSession(n)
+			fmt.Println(s.String())
+
+			f.connsMu.Lock()
+			f.conns[s] = false // todo: validate
+			f.connsMu.Unlock()
+		}
+	}
+}
+
+func toSession(stat net.ConnectionStat) session.Session {
+	var p itun.Proto
+	switch stat.Type {
+	case syscall.SOCK_STREAM:
+		p = itun.TCP
+	case syscall.SOCK_DGRAM:
+		p = itun.UDP
+	default:
+		panic("")
+	}
+
+	return session.Session{
+		Src:   netip.AddrPortFrom(netip.MustParseAddr(stat.Laddr.IP), uint16(stat.Laddr.Port)),
+		Proto: p,
+		Dst:   netip.AddrPortFrom(netip.MustParseAddr(stat.Raddr.IP), uint16(stat.Raddr.Port)),
+	}
 }
