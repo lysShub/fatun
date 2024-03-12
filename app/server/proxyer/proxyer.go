@@ -140,6 +140,10 @@ func (p *Proxyer) handShake() (err error) {
 		}
 	}
 
+	// wait init: when recve first fakt tcp packet
+	p.prepareInit.CompareAndSwap(false, true)
+	<-p.initNotify
+
 	// todo: NewFakeTCP not need calc csum
 	p.fake = faketcp.NewFakeTCP(
 		p.raw.LocalAddr().Port,
@@ -147,8 +151,6 @@ func (p *Proxyer) handShake() (err error) {
 		p.seq, p.ack, &p.pseudoSum1,
 	)
 
-	// wait init: when recve first fakt tcp packet
-	p.prepareInit.CompareAndSwap(false, true)
 	<-p.initNotify
 	p.inited.CompareAndSwap(false, true)
 
@@ -174,7 +176,9 @@ func (p *Proxyer) downlinkService() {
 		if p.inited.Load() {
 			p.downlink(tcp, session.CtrSessID)
 		} else {
-			p.seq = max(p.seq, header.TCP(tcp.Data()).SequenceNumber())
+			tcphdr := header.TCP(tcp.Data())
+			p.seq = max(p.seq, tcphdr.SequenceNumber()+uint32(len(tcphdr.Payload())))
+			p.ack = max(p.ack, tcphdr.AckNumber())
 
 			// recover to ip packet
 			tcp.SetHead(0)
@@ -212,7 +216,9 @@ func (p *Proxyer) uplinkService() {
 
 		if faketcp.IsFakeTCP(seg.Data()) {
 			if p.prepareInit.CompareAndSwap(true, false) {
-				close(p.initNotify)
+				p.initNotify <- struct{}{}
+				p.initNotify <- struct{}{}
+				// close(p.initNotify)
 			}
 
 			err = p.crypto.Decrypt(seg)
@@ -240,7 +246,7 @@ func (p *Proxyer) uplinkService() {
 				}
 			}
 		} else {
-			p.ack = max(p.ack, header.TCP(seg.Data()).AckNumber())
+			// p.ack = max(p.ack, header.TCP(seg.Data()).AckNumber())
 
 			p.ipstack.AttachInbound(seg)
 			if debug.Debug() {

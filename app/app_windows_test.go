@@ -21,11 +21,7 @@ import (
 )
 
 func TestXxxx(t *testing.T) {
-	// gdivert.Load(gdivert.DLL, gdivert.Sys)
-	gdivert.Load(
-		`D:\gopath\pkg\mod\github.com\lys!shub\divert-go@v0.0.0-20240229084335-43e1fa8ed87b\embed\WinDivert64.dll`,
-		`D:\gopath\pkg\mod\github.com\lys!shub\divert-go@v0.0.0-20240229084335-43e1fa8ed87b\embed\WinDivert64.sys`,
-	)
+	gdivert.Load(gdivert.Mem)
 	defer gdivert.Release()
 	ctx := context.Background()
 
@@ -83,7 +79,7 @@ func Test_TCP(t *testing.T) {
 }
 
 func Test_Capture(t *testing.T) {
-	gdivert.Load(gdivert.DLL, gdivert.Sys)
+	gdivert.Load(gdivert.Mem)
 	defer gdivert.Release()
 
 	ctx := cctx.WithContext(context.Background())

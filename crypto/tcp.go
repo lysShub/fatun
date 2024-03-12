@@ -44,7 +44,7 @@ func (g *TCP) Encrypt(tcp *relraw.Packet) {
 	tcp.AllocTail(Bytes)
 	tcphdr := header.TCP(tcp.Data())
 	tcphdr.SetSequenceNumber(tcphdr.SequenceNumber() + g.enOffsetDelta)
-	tcphdr.SetAckNumber(tcphdr.AckNumber() + g.enOffsetDelta)
+	// tcphdr.SetAckNumber(tcphdr.AckNumber() + g.enOffsetDelta)
 	g.enOffsetDelta += Bytes
 
 	i := tcphdr.DataOffset()
@@ -109,10 +109,10 @@ func (g *TCP) Decrypt(tcp *relraw.Packet) error {
 	if err != nil {
 		return err
 	}
-
 	tcphdr = tcphdr[:len(tcphdr)-Bytes]
+
 	tcphdr.SetSequenceNumber(tcphdr.SequenceNumber() - g.deOffsetDelta)
-	tcphdr.SetAckNumber(tcphdr.AckNumber() - g.deOffsetDelta)
+	// tcphdr.SetAckNumber(tcphdr.AckNumber() - g.deOffsetDelta)
 	g.deOffsetDelta += Bytes
 
 	tcphdr.SetChecksum(0)

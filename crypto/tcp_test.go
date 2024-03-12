@@ -101,7 +101,7 @@ func Test_Conn(t *testing.T) {
 	c, s := test.NewMockRaw(
 		t, header.TCPProtocolNumber,
 		caddr, saddr,
-		test.ValidAddr, test.ValidChecksum,
+		test.ValidAddr, test.ValidChecksum, test.PacketLoss(0.05),
 	)
 
 	go func() {

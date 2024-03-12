@@ -78,7 +78,7 @@ func ListenTCP(s ustack.Ustack, addr netip.AddrPort, network tcpip.NetworkProtoc
 	faddr := toFullAddr(addr)
 	// Create a TCP endpoint, bind it, then start listening.
 	var wq waiter.Queue
-	ep, err := s.NewEndpoint(tcp.ProtocolNumber, network, &wq)
+	ep, err := s.Stack().NewEndpoint(tcp.ProtocolNumber, network, &wq)
 	if err != nil {
 		return nil, errors.New(err.String())
 	}
@@ -534,7 +534,7 @@ func DialTCPWithBind(ctx context.Context, s ustack.Ustack, localAddr, remoteAddr
 	flocalAddr, fremoteAddr := toFullAddr(localAddr), toFullAddr(remoteAddr)
 	// Create TCP endpoint, then connect.
 	var wq waiter.Queue
-	ep, err := s.NewEndpoint(tcp.ProtocolNumber, network, &wq)
+	ep, err := s.Stack().NewEndpoint(tcp.ProtocolNumber, network, &wq)
 	if err != nil {
 		return nil, errors.New(err.String())
 	}
@@ -615,7 +615,7 @@ func NewUDPConn(wq *waiter.Queue, ep tcpip.Endpoint) *UDPConn {
 // If raddr is nil, the UDPConn is left unconnected.
 func DialUDP(s ustack.Ustack, laddr, raddr *tcpip.FullAddress, network tcpip.NetworkProtocolNumber) (*UDPConn, error) {
 	var wq waiter.Queue
-	ep, err := s.NewEndpoint(udp.ProtocolNumber, network, &wq)
+	ep, err := s.Stack().NewEndpoint(udp.ProtocolNumber, network, &wq)
 	if err != nil {
 		return nil, errors.New(err.String())
 	}

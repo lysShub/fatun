@@ -88,12 +88,8 @@ func (f *FakeTCP) RecvStrip(tcp *relraw.Packet) {
 		test.ValidTCP(test.T(), hdr, *f.pseudoSum1)
 	}
 
-	new := hdr.SequenceNumber() + uint32(len(hdr.Payload()))
-	old := f.ack.Load()
-
-	if new > old {
-		f.ack.Store(new)
-	}
+	new := hdr.SequenceNumber()
+	f.ack.Store(max(f.ack.Load(), new))
 
 	// remove tcp header
 	tcp.SetHead(tcp.Head() + int(hdr.DataOffset()))

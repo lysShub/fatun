@@ -29,6 +29,7 @@ func UnicomStackAndRaw(t *testing.T, s ustack.Ustack, raw *itun.RawConn, pseudoS
 				return
 			}
 
+			ip.SetHead(0)
 			test.ValidIP(t, ip.Data())
 
 			c.EncryptRaw(ip)

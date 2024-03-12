@@ -126,7 +126,7 @@ func (s *capture) Del(sess sess.Session) {
 
 func (s *capture) tcpService() error {
 	filter := "outbound and !loopback and ip and tcp.Syn"
-	d, err := divert.Open(filter, divert.NETWORK, s.priority, 0)
+	d, err := divert.Open(filter, divert.Network, s.priority, 0)
 	if err != nil {
 		return s.Close(err)
 	}
@@ -183,7 +183,7 @@ func (s *capture) tcpService() error {
 
 func (s *capture) udpService() error {
 	filter := "outbound and !loopback and ip and udp"
-	d, err := divert.Open(filter, divert.NETWORK, s.priority, 0)
+	d, err := divert.Open(filter, divert.Network, s.priority, 0)
 	if err != nil {
 		return s.Close(err)
 	}
@@ -261,7 +261,7 @@ type session struct {
 	s sess.Session
 
 	buff chan []byte
-	d    *divert.Divert
+	d    *divert.Handle
 
 	inboundAddr *divert.Address
 	ipstack     *relraw.IPStack
@@ -284,7 +284,7 @@ func newSession(
 		strings.ToLower(s.Proto.String()), s.Src.Addr(), s.Src.Port(), s.Dst.Addr(), s.Dst.Port(),
 	)
 
-	c.d, err = divert.Open(filter, divert.NETWORK, priority, 0)
+	c.d, err = divert.Open(filter, divert.Network, priority, 0)
 	if err != nil {
 		return nil, err
 	}

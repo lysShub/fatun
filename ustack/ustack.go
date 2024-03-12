@@ -13,21 +13,20 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
-	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 type Ustack interface {
 	Close() error
 	Inbound(ip *relraw.Packet)
-	OutboundBy(ctx context.Context, dst netip.AddrPort, ip *relraw.Packet) error
-	Outbound(ctx context.Context, ip *relraw.Packet) error
+	OutboundBy(ctx context.Context, dst netip.AddrPort, tcp *relraw.Packet) error
+	Outbound(ctx context.Context, tcp *relraw.Packet) error
 
-	NewEndpoint(tcpip.TransportProtocolNumber, tcpip.NetworkProtocolNumber, *waiter.Queue) (tcpip.Endpoint, tcpip.Error)
+	Stack() *stack.Stack
 }
 
 // user mode tcp stack
 type ustack struct {
-	*stack.Stack
+	stack *stack.Stack
 
 	addr  tcpip.FullAddress
 	proto tcpip.NetworkProtocolNumber
@@ -53,7 +52,7 @@ func NewUstack(addr netip.AddrPort, mtu int) (Ustack, error) {
 		u.proto = header.IPv6ProtocolNumber
 		npf = ipv6.NewProtocol
 	}
-	u.Stack = stack.New(stack.Options{
+	u.stack = stack.New(stack.Options{
 		NetworkProtocols:   []stack.NetworkProtocolFactory{npf},
 		TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol},
 		HandleLocal:        false,
@@ -61,14 +60,14 @@ func NewUstack(addr netip.AddrPort, mtu int) (Ustack, error) {
 
 	// u.link = link.NewChan(16, mtu)
 	u.link = link.NewList(16, mtu)
-	if err := u.Stack.CreateNIC(nicid, u.link); err != nil {
+	if err := u.stack.CreateNIC(nicid, u.link); err != nil {
 		return nil, errors.New(err.String())
 	}
-	u.Stack.AddProtocolAddress(nicid, tcpip.ProtocolAddress{
+	u.stack.AddProtocolAddress(nicid, tcpip.ProtocolAddress{
 		Protocol:          u.proto,
 		AddressWithPrefix: u.addr.Addr.WithPrefix(),
 	}, stack.AddressProperties{})
-	u.Stack.SetRouteTable([]tcpip.Route{
+	u.stack.SetRouteTable([]tcpip.Route{
 		{Destination: header.IPv4EmptySubnet, NIC: nicid},
 		{Destination: header.IPv6EmptySubnet, NIC: nicid},
 	})
@@ -77,9 +76,13 @@ func NewUstack(addr netip.AddrPort, mtu int) (Ustack, error) {
 }
 
 func (u *ustack) Close() error {
-	u.Stack.Destroy()
+	u.stack.Stats()
+
+	u.stack.Destroy()
 	return nil
 }
+
+func (u *ustack) Stack() *stack.Stack { return u.stack }
 
 func (u *ustack) Inbound(ip *relraw.Packet) {
 	u.link.Inbound(ip)

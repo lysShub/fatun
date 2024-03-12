@@ -195,8 +195,6 @@ func (c *Client) downlinkService() {
 				s.Inject(tcp)
 			}
 		} else {
-			c.ack = max(c.ack, header.TCP(tcp.Data()).AckNumber())
-
 			c.ipstack.AttachInbound(tcp)
 			if debug.Debug() {
 				test.ValidIP(test.T(), tcp.Data())
@@ -225,7 +223,9 @@ func (c *Client) uplinkService() {
 				break
 			}
 		} else {
-			c.seq = max(c.seq, header.TCP(pkt.Data()).SequenceNumber())
+			tcphdr := header.TCP(pkt.Data())
+			c.seq = max(c.seq, tcphdr.SequenceNumber()+uint32(len(tcphdr.Payload())))
+			c.ack = max(c.ack, tcphdr.AckNumber())
 
 			// recover to ip packet
 			pkt.SetHead(0)

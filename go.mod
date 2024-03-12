@@ -3,12 +3,12 @@ module github.com/lysShub/itun
 go 1.21
 
 require (
-	github.com/lysShub/relraw v0.0.0-20240305052638-f5d8ffe55e0e
+	github.com/lysShub/relraw v0.0.0-20240311103726-42edded40296
 	golang.org/x/sys v0.16.0
 )
 
 require (
-	github.com/lysShub/divert-go v0.0.0-20240229084335-43e1fa8ed87b
+	github.com/lysShub/divert-go v0.0.0-20240311102940-fad389ab4dae
 	github.com/stretchr/testify v1.8.4
 	golang.org/x/net v0.20.0
 	gvisor.dev/gvisor v0.0.0-20230916030846-1d82564559db
@@ -28,10 +28,8 @@ require (
 
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/ebitengine/purego v0.5.1 // indirect
 	github.com/google/btree v1.1.2 // indirect
-	github.com/lysShub/dll-go v0.0.0-20240131092034-3f09ae5eff72 // indirect
-	github.com/lysShub/wintun-go v0.0.0-20240131112415-8f3bf638af49 // indirect
+	github.com/lysShub/wintun-go v0.0.0-20240311102803-07195f507e37 // indirect
 	github.com/pkg/errors v0.9.1
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/shirou/gopsutil/v3 v3.24.1
