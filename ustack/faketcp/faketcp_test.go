@@ -13,7 +13,8 @@ func Test_FakeTCP(t *testing.T) {
 	var pseudoSum1 uint16 = 1111
 
 	var f = faketcp.NewFakeTCP(
-		19986, 8080, 1234, 5678, &pseudoSum1,
+		19986, 8080,
+		faketcp.InitSeqAck(1234, 5678), faketcp.PseudoSum1(pseudoSum1),
 	)
 
 	var data = make([]byte, 16)

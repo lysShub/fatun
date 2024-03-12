@@ -14,9 +14,7 @@ import (
 type TCP struct {
 	c cipher.AEAD
 
-	enOffsetDelta uint32
-	deOffsetDelta uint32
-	pseudoSum1    uint16
+	pseudoSum1 uint16
 }
 
 const Bytes = 16
@@ -24,6 +22,11 @@ const nonces = 12
 
 // NewTCP a tcp crypter, use AES-GCM
 func NewTCP(key [Bytes]byte, pseudoSum1 uint16) (*TCP, error) {
+	// todo: encrypt will add Bytes data, but not update seq, only move Overhead to Option
+	//
+	//	https://www.iana.org/assignments/tcp-parameters/tcp-parameters.xhtml
+	//	https://www.geeksforgeeks.org/options-field-in-tcp-header/
+
 	var g = &TCP{pseudoSum1: pseudoSum1}
 
 	if block, err := aes.NewCipher(key[:]); err != nil {
@@ -40,23 +43,18 @@ func (g *TCP) Encrypt(tcp *relraw.Packet) {
 	if debug.Debug() {
 		test.ValidTCP(test.T(), tcp.Data(), g.pseudoSum1)
 	}
-
 	tcp.AllocTail(Bytes)
 	tcphdr := header.TCP(tcp.Data())
-	tcphdr.SetSequenceNumber(tcphdr.SequenceNumber() + g.enOffsetDelta)
-	// tcphdr.SetAckNumber(tcphdr.AckNumber() + g.enOffsetDelta)
-	g.enOffsetDelta += Bytes
 
 	i := tcphdr.DataOffset()
 	g.c.Seal(tcphdr[i:i], tcphdr[:nonces], tcphdr[i:], tcphdr[:header.TCPChecksumOffset])
-
 	tcphdr = tcphdr[:len(tcphdr)+Bytes]
+
 	tcphdr.SetChecksum(0)
 	psosum := checksum.Combine(g.pseudoSum1, uint16(len(tcphdr)))
 	tcphdr.SetChecksum(^checksum.Checksum(tcphdr, psosum))
 
 	tcp.SetLen(len(tcphdr))
-
 	if debug.Debug() {
 		test.ValidTCP(test.T(), tcp.Data(), g.pseudoSum1)
 	}
@@ -101,7 +99,6 @@ func (g *TCP) Decrypt(tcp *relraw.Packet) error {
 	if debug.Debug() {
 		test.ValidTCP(test.T(), tcp.Data(), g.pseudoSum1)
 	}
-
 	tcphdr := header.TCP(tcp.Data())
 
 	i := tcphdr.DataOffset()
@@ -111,16 +108,11 @@ func (g *TCP) Decrypt(tcp *relraw.Packet) error {
 	}
 	tcphdr = tcphdr[:len(tcphdr)-Bytes]
 
-	tcphdr.SetSequenceNumber(tcphdr.SequenceNumber() - g.deOffsetDelta)
-	// tcphdr.SetAckNumber(tcphdr.AckNumber() - g.deOffsetDelta)
-	g.deOffsetDelta += Bytes
-
 	tcphdr.SetChecksum(0)
 	psosum := checksum.Combine(g.pseudoSum1, uint16(len(tcphdr)))
 	tcphdr.SetChecksum(^checksum.Checksum(tcphdr, psosum))
 
 	tcp.SetLen(len(tcphdr))
-
 	if debug.Debug() {
 		test.ValidTCP(test.T(), tcp.Data(), g.pseudoSum1)
 	}

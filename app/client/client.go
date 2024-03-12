@@ -131,10 +131,8 @@ func (c *Client) handshake() error {
 		return c.Close(err)
 	}
 	c.fake = faketcp.NewFakeTCP(
-		c.raw.LocalAddrPort().Port(),
-		c.raw.RemoteAddrPort().Port(),
-		c.seq, c.ack,
-		&c.pseudoSum1,
+		c.raw.LocalAddrPort().Port(), c.raw.RemoteAddrPort().Port(),
+		faketcp.InitSeqAck(c.seq, c.ack), faketcp.PseudoSum1(c.pseudoSum1), faketcp.SeqOverhead(crypto.Bytes),
 	)
 
 	c.inited.CompareAndSwap(false, true)
@@ -195,6 +193,8 @@ func (c *Client) downlinkService() {
 				s.Inject(tcp)
 			}
 		} else {
+			c.ack = max(c.ack, header.TCP(tcp.Data()).SequenceNumber())
+
 			c.ipstack.AttachInbound(tcp)
 			if debug.Debug() {
 				test.ValidIP(test.T(), tcp.Data())
@@ -225,7 +225,7 @@ func (c *Client) uplinkService() {
 		} else {
 			tcphdr := header.TCP(pkt.Data())
 			c.seq = max(c.seq, tcphdr.SequenceNumber()+uint32(len(tcphdr.Payload())))
-			c.ack = max(c.ack, tcphdr.AckNumber())
+			// c.ack = max(c.ack, tcphdr.AckNumber())
 
 			// recover to ip packet
 			pkt.SetHead(0)

@@ -65,19 +65,6 @@ func TestXxxx(t *testing.T) {
 	}
 }
 
-func Test_TCP(t *testing.T) {
-	conn, err := net.DialTCP("tcp", test.TCPAddr(caddr), test.TCPAddr(saddr))
-	require.NoError(t, err)
-
-	_, err = conn.Write([]byte("hello"))
-	require.NoError(t, err)
-
-	b, err := io.ReadAll(conn)
-	require.NoError(t, err)
-
-	fmt.Println(len(b))
-}
-
 func Test_Capture(t *testing.T) {
 	gdivert.Load(gdivert.Mem)
 	defer gdivert.Release()
@@ -100,4 +87,22 @@ func Test_Capture(t *testing.T) {
 		return
 	}
 
+}
+
+func Test_TCP(t *testing.T) {
+	conn, err := net.DialTCP("tcp", test.TCPAddr(caddr), test.TCPAddr(saddr))
+	require.NoError(t, err)
+
+	_, err = conn.Write([]byte("hello"))
+	require.NoError(t, err)
+
+	_, err = conn.Write([]byte("world"))
+	require.NoError(t, err)
+
+	var b = make([]byte, 10)
+
+	_, err = io.ReadFull(conn, b)
+	require.NoError(t, err)
+
+	fmt.Println(len(b))
 }

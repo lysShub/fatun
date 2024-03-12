@@ -146,9 +146,8 @@ func (p *Proxyer) handShake() (err error) {
 
 	// todo: NewFakeTCP not need calc csum
 	p.fake = faketcp.NewFakeTCP(
-		p.raw.LocalAddr().Port,
-		p.raw.RemoteAddr().Port,
-		p.seq, p.ack, &p.pseudoSum1,
+		p.raw.LocalAddr().Port, p.raw.RemoteAddr().Port,
+		faketcp.InitSeqAck(p.seq, p.ack), faketcp.PseudoSum1(p.pseudoSum1), faketcp.SeqOverhead(crypto.Bytes),
 	)
 
 	<-p.initNotify
@@ -178,7 +177,7 @@ func (p *Proxyer) downlinkService() {
 		} else {
 			tcphdr := header.TCP(tcp.Data())
 			p.seq = max(p.seq, tcphdr.SequenceNumber()+uint32(len(tcphdr.Payload())))
-			p.ack = max(p.ack, tcphdr.AckNumber())
+			// p.ack = max(p.ack, tcphdr.AckNumber())
 
 			// recover to ip packet
 			tcp.SetHead(0)
@@ -246,7 +245,7 @@ func (p *Proxyer) uplinkService() {
 				}
 			}
 		} else {
-			// p.ack = max(p.ack, header.TCP(seg.Data()).AckNumber())
+			p.ack = max(p.ack, header.TCP(seg.Data()).SequenceNumber())
 
 			p.ipstack.AttachInbound(seg)
 			if debug.Debug() {

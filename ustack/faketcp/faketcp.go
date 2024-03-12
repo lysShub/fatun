@@ -1,6 +1,7 @@
 package faketcp
 
 import (
+	"math/rand"
 	"sync/atomic"
 
 	"github.com/lysShub/relraw"
@@ -15,24 +16,71 @@ import (
 // todo: more reasonable wnd
 type FakeTCP struct {
 	lport, rport uint16
-	seq          atomic.Uint32
-	ack          atomic.Uint32
 
 	// todo: use alloce tcp header bytes
 	// header []byte
 
+	seq atomic.Uint32
+	ack atomic.Uint32
+
+	seqOverhead uint32
+
 	pseudoSum1 *uint16
 }
 
-// NewFakeTCP set fake tcp header
-func NewFakeTCP(locPort, remPort uint16, initSeq, initAck uint32, pseudoSum1 *uint16) *FakeTCP {
-	f := &FakeTCP{
-		lport:      locPort,
-		rport:      remPort,
-		pseudoSum1: pseudoSum1,
+type options struct {
+	initSeq       uint32
+	initAck       uint32
+	seqOverhead   uint32
+	pseudoSum1    uint16
+	pseudoSum1Set bool
+}
+
+func defaultOpts() *options {
+	return &options{
+		initSeq: rand.Uint32(),
+		initAck: rand.Uint32(),
 	}
-	f.seq.Store(initSeq)
-	f.ack.Store(initAck)
+}
+
+func InitSeqAck(seq, ack uint32) func(opt *options) {
+	return func(opt *options) {
+		opt.initSeq = seq
+		opt.initAck = ack
+	}
+}
+
+// SeqOverhead additional seq delta each tcp packet
+func SeqOverhead(delta uint32) func(opt *options) {
+	return func(opt *options) { opt.seqOverhead = delta }
+}
+
+// PseudoSum1 if set, will calc tcp header checksum
+func PseudoSum1(s uint16) func(opt *options) {
+	return func(opt *options) {
+		opt.pseudoSum1 = s
+		opt.pseudoSum1Set = true
+	}
+}
+
+// NewFakeTCP set fake tcp header
+func NewFakeTCP(locPort, remPort uint16, opts ...func(opt *options)) *FakeTCP {
+	opt := defaultOpts()
+	for _, e := range opts {
+		e(opt)
+	}
+
+	f := &FakeTCP{
+		lport:       locPort,
+		rport:       remPort,
+		seqOverhead: opt.seqOverhead,
+	}
+	f.seq.Store(opt.initSeq)
+	f.ack.Store(opt.initAck)
+	if opt.pseudoSum1Set {
+		f.pseudoSum1 = new(uint16)
+		*f.pseudoSum1 = opt.pseudoSum1
+	}
 	return f
 }
 
@@ -41,21 +89,22 @@ func NewFakeTCP(locPort, remPort uint16, initSeq, initAck uint32, pseudoSum1 *ui
 func (f *FakeTCP) SendAttach(seg *relraw.Packet) {
 	var hdr = make(header.TCP, header.TCPMinimumSize)
 	hdr.Encode(&header.TCPFields{
-		SrcPort:       f.lport,
-		DstPort:       f.rport,
-		SeqNum:        f.seq.Load(),
-		AckNum:        f.ack.Load(),
-		DataOffset:    header.TCPMinimumSize,
+		SrcPort:    f.lport,
+		DstPort:    f.rport,
+		SeqNum:     f.seq.Load(),
+		AckNum:     f.ack.Load(),
+		DataOffset: header.TCPMinimumSize,
+		// todo: if ACK not increase，not set ack，otherwise: TCP segment of a reassembled PDU
 		Flags:         header.TCPFlagPsh | header.TCPFlagAck,
 		WindowSize:    0xff32, // todo: mock
 		Checksum:      0,
 		UrgentPointer: 0,
 	})
-	hdr[fakeFlagOff] |= fakeFlag
+	hdr[fakeFlagOffset] |= fakeFlag
 
-	f.seq.Add(uint32(seg.Len()))
+	f.seq.Add(uint32(seg.Len()) + f.seqOverhead)
+
 	seg.Attach(hdr)
-
 	if f.pseudoSum1 != nil {
 		tcp := header.TCP(seg.Data())
 		psum := checksum.Combine(*f.pseudoSum1, uint16(len(tcp)))
@@ -77,7 +126,7 @@ func (f *FakeTCP) RecvStrip(tcp *relraw.Packet) {
 
 	// actually no need the header anymore
 	if debug.Debug() {
-		hdr[fakeFlagOff] ^= fakeFlag
+		hdr[fakeFlagOffset] ^= fakeFlag
 		require.False(test.T(), IsFakeTCP(hdr))
 
 		const sumDelta = uint16(fakeFlag) << 8
@@ -88,18 +137,17 @@ func (f *FakeTCP) RecvStrip(tcp *relraw.Packet) {
 		test.ValidTCP(test.T(), hdr, *f.pseudoSum1)
 	}
 
-	new := hdr.SequenceNumber()
-	f.ack.Store(max(f.ack.Load(), new))
+	f.ack.Store(max(f.ack.Load(), hdr.SequenceNumber()))
 
 	// remove tcp header
 	tcp.SetHead(tcp.Head() + int(hdr.DataOffset()))
 }
 
 const (
-	fakeFlagOff = header.TCPDataOffset
-	fakeFlag    = 0b10
+	fakeFlagOffset = header.TCPDataOffset
+	fakeFlag       = 0b10
 )
 
 func IsFakeTCP(tcphdr header.TCP) bool {
-	return tcphdr[fakeFlagOff]&fakeFlag == fakeFlag
+	return tcphdr[fakeFlagOffset]&fakeFlag == fakeFlag
 }
