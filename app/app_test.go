@@ -8,7 +8,7 @@ import (
 	"github.com/lysShub/itun/config"
 	"github.com/lysShub/itun/crypto"
 	"github.com/lysShub/relraw"
-	pkge "github.com/pkg/errors"
+	"github.com/pkg/errors"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
@@ -61,7 +61,7 @@ func (c *tkServer) Valid(tk []byte) (key crypto.Key, err error) {
 	if string(tk) == "hello" {
 		return crypto.Key{1: 1}, nil
 	}
-	return crypto.Key{}, pkge.Errorf("invalid token")
+	return crypto.Key{}, errors.Errorf("invalid token")
 }
 
 var pps = config.PrevPackets{

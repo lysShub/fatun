@@ -55,13 +55,16 @@ func TestXxxx(t *testing.T) {
 		s, err := capture.Get(ctx)
 		require.NoError(t, err)
 
-		fmt.Println("AddProxy", s.String())
+		fmt.Println("Capture Session", s.String())
 
 		// capture.Del(s.Session())
 		// return
 
 		err = c.AddProxy(s)
 		require.NoError(t, err)
+
+		fmt.Println("AddProxy", s.String())
+
 	}
 }
 

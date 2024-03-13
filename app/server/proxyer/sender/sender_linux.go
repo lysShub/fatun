@@ -5,9 +5,10 @@ package sender
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/netip"
+
+	"github.com/pkg/errors"
 
 	"github.com/lysShub/itun"
 	"github.com/lysShub/relraw"

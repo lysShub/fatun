@@ -2,7 +2,6 @@ package control
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -10,6 +9,8 @@ import (
 	"runtime"
 	"testing"
 	"time"
+
+	"github.com/pkg/errors"
 
 	"github.com/lysShub/itun/cctx"
 	"github.com/lysShub/itun/session"

@@ -2,18 +2,34 @@ package session
 
 import (
 	"context"
+	"log/slog"
 	"net/netip"
 	"sync/atomic"
 
 	"github.com/lysShub/itun"
-	"github.com/lysShub/itun/app"
 	"github.com/lysShub/itun/app/server/proxyer/sender"
 	"github.com/lysShub/itun/cctx"
+	"github.com/lysShub/itun/errorx"
 	"github.com/lysShub/itun/session"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 
 	"github.com/lysShub/relraw"
 )
+
+type Proxyer interface {
+	// proxyer context
+	Context() context.Context
+
+	// session manager delete
+	Del(id session.ID, cause error) (err error)
+
+	// logger
+	Logger() *slog.Logger
+
+	// proxyer downlink
+	Downlink(pkt *relraw.Packet, id session.ID) error
+	MTU() int
+}
 
 type Session struct {
 	ctx     cctx.CancelCtx
@@ -27,21 +43,6 @@ type Session struct {
 	sender sender.Sender
 
 	cnt atomic.Uint32
-}
-
-type Proxyer interface {
-	// proxyer context
-	Context() context.Context
-
-	// session manager delete
-	Del(id session.ID, cause error) (err error)
-
-	// log error
-	Error(msg string, args ...any)
-
-	// proxyer downlink
-	Downlink(pkt *relraw.Packet, id session.ID) error
-	MTU() int
 }
 
 func newSession(
@@ -133,12 +134,20 @@ func (s *Session) close(cause error) error {
 	if s.closed.CompareAndSwap(false, true) {
 		s.ctx.Cancel(cause)
 
-		err := app.Join(
+		err := errorx.Join(
 			s.ctx.Err(),
 			s.sender.Close(),
 		)
-		s.proxyer.Error(err.Error(), app.TraceAttr(err))
+
+		if errorx.Temporary(err) {
+			s.proxyer.Logger().Warn(err.Error())
+		} else {
+			s.proxyer.Logger().Error(err.Error(), errorx.TraceAttr(err))
+		}
 		return err
 	}
 	return nil
 }
+
+func (s *Session) LocalAddr() netip.AddrPort  { return s.locAddr }
+func (s *Session) RemoteAddr() netip.AddrPort { return s.session.Dst }

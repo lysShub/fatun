@@ -1,7 +1,6 @@
-package app
+package errorx
 
 import (
-	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -9,17 +8,16 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/lysShub/relraw/test/debug"
-
-	pkge "github.com/pkg/errors"
+	"github.com/pkg/errors"
 )
 
-// TraceAttr get github.com/pkg/errors stack trace as slog.Addr
+// TraceAttr get github.com/pkg/errors stack trace as slog.Attr
+//
+// Example:
+//
+//	slog.Error(err.Error(), xerr.TraceAttr(err))
 func TraceAttr(err error) slog.Attr {
-	type trace interface{ StackTrace() pkge.StackTrace }
-
-	// todo: maybe series connection
-	// todo: test app.Join()
+	type trace interface{ StackTrace() errors.StackTrace }
 
 	// only hit innermost trace
 	var t trace
@@ -50,14 +48,14 @@ func TraceAttr(err error) slog.Attr {
 	if n == 1 {
 		attrs = append(attrs, slog.Attr{
 			Key:   strconv.Itoa(len(attrs)),
-			Value: position(pkge.Frame(pcs[0])),
+			Value: position(errors.Frame(pcs[0])),
 		})
 	}
 
 	return slog.Attr{Key: "trace", Value: slog.GroupValue(attrs...)}
 }
 
-func position(f pkge.Frame) slog.Value {
+func position(f errors.Frame) slog.Value {
 	pc := uintptr(f) - 1
 	fn := runtime.FuncForPC(pc)
 	if fn == nil {
@@ -80,7 +78,7 @@ var base string
 func init() {
 	var err error
 	base, err = os.Getwd()
-	if !debug.Debug() && err == nil {
+	if err == nil {
 		base = filepath.Dir(base)
 		base = filepath.Dir(base)
 		base = filepath.ToSlash(base)

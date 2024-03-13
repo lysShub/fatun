@@ -2,9 +2,10 @@ package crypto_test
 
 import (
 	"context"
-	"errors"
 	"io"
 	"testing"
+
+	"github.com/pkg/errors"
 
 	"github.com/lysShub/itun"
 	"github.com/lysShub/itun/crypto"

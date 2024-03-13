@@ -7,7 +7,7 @@ import (
 
 	"github.com/lysShub/itun"
 	"github.com/lysShub/relraw"
-	pkge "github.com/pkg/errors"
+	"github.com/pkg/errors"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
@@ -34,11 +34,11 @@ func GetID(seg *relraw.Packet) ID {
 }
 
 func ErrInvalidID(id ID) error {
-	return pkge.Errorf("invalid session id %d", id)
+	return errors.Errorf("invalid session id %d", id)
 }
 
 func ErrExistID(id ID) error {
-	return pkge.Errorf("exist session id %d", id)
+	return errors.Errorf("exist session id %d", id)
 }
 
 const CtrSessID ID = 0xffff
@@ -95,9 +95,9 @@ func (s *Session) MinPacketSize() int {
 }
 
 func ErrInvalidSession(s Session) error {
-	return pkge.New(s.String())
+	return errors.New(s.String())
 }
 
 func ErrExistSession(s Session) error {
-	return pkge.New(s.String())
+	return errors.New(s.String())
 }

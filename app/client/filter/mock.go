@@ -8,7 +8,7 @@ import (
 
 	"github.com/lysShub/itun"
 	"github.com/lysShub/itun/session"
-	pkge "github.com/pkg/errors"
+	"github.com/pkg/errors"
 	"github.com/shirou/gopsutil/v3/net"
 	"github.com/shirou/gopsutil/v3/process"
 )
@@ -25,19 +25,19 @@ func NewMock(process string) *mock {
 }
 
 func (m *mock) AddDefaultRule() error {
-	return pkge.New("not implement")
+	return errors.New("not implement")
 }
 func (m *mock) DelDefaultRule() error {
-	return pkge.New("not implement")
+	return errors.New("not implement")
 }
 func (m *mock) AddRule(process string, proto itun.Proto) error {
-	return pkge.New("not implement")
+	return errors.New("not implement")
 }
 func (m *mock) DelRule(process string, proto itun.Proto) error {
-	return pkge.New("not implement")
+	return errors.New("not implement")
 }
 func (m *mock) Hit(s session.Session) bool {
-	panic(pkge.New("not implement"))
+	panic(errors.New("not implement"))
 }
 func (m *mock) HitOnce(s session.Session) bool {
 	if s.Proto != itun.TCP {

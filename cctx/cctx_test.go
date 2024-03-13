@@ -2,9 +2,10 @@ package cctx_test
 
 import (
 	"context"
-	"errors"
 	"testing"
 	"time"
+
+	"github.com/pkg/errors"
 
 	"github.com/lysShub/itun/cctx"
 	"github.com/stretchr/testify/require"

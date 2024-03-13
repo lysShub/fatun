@@ -4,9 +4,9 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/lysShub/itun/app"
 	ss "github.com/lysShub/itun/app/server/proxyer/session"
 	"github.com/lysShub/itun/control"
+	"github.com/lysShub/itun/errorx"
 	"github.com/lysShub/itun/session"
 	"github.com/lysShub/relraw"
 )
@@ -23,7 +23,7 @@ func (s *sessionImpl) Downlink(pkt *relraw.Packet, id session.ID) error {
 func (s *sessionImpl) MTU() int                                   { return s.raw.MTU() }
 func (s *sessionImpl) Context() context.Context                   { return s.ctx }
 func (s *sessionImpl) Del(id session.ID, cause error) (err error) { return s.sessionMgr.Del(id, cause) }
-func (s *sessionImpl) Error(msg string, args ...any)              { s.logger.Error(msg, args...) }
+func (s *sessionImpl) Logger() *slog.Logger                       { return s.logger }
 
 type controlImpl Proxyer
 
@@ -46,10 +46,11 @@ func (c *controlImpl) AddSession(sess session.Session) (session.ID, error) {
 		proxyerImplPtr(c), sess,
 	)
 	if err != nil {
-		c.logger.Error(err.Error(), app.TraceAttr(err))
+		c.logger.Error(err.Error(), errorx.TraceAttr(err))
 		return 0, err
 	} else {
 		c.logger.LogAttrs(context.Background(), slog.LevelInfo, "add tcp session",
+			slog.Attr{Key: "localAddr", Value: slog.StringValue(s.LocalAddr().String())},
 			slog.Attr{Key: "dst", Value: slog.StringValue(sess.Dst.String())},
 			slog.Attr{Key: "id", Value: slog.IntValue(int(s.ID()))},
 		)

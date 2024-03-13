@@ -7,13 +7,13 @@ import (
 	"sync/atomic"
 
 	"github.com/lysShub/itun"
-	"github.com/lysShub/itun/app"
 	"github.com/lysShub/itun/app/client/capture"
 	cs "github.com/lysShub/itun/app/client/session"
 	"github.com/lysShub/itun/cctx"
 	"github.com/lysShub/itun/config"
 	"github.com/lysShub/itun/control"
 	"github.com/lysShub/itun/crypto"
+	"github.com/lysShub/itun/errorx"
 	"github.com/lysShub/itun/session"
 	"github.com/lysShub/itun/ustack"
 	"github.com/lysShub/itun/ustack/faketcp"
@@ -21,7 +21,7 @@ import (
 	"github.com/lysShub/relraw"
 	"github.com/lysShub/relraw/test"
 	"github.com/lysShub/relraw/test/debug"
-	pkge "github.com/pkg/errors"
+	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
@@ -162,14 +162,11 @@ func (c *Client) downlinkService() {
 			return
 		}
 
-		if faketcp.IsFakeTCP(tcp.Data()) {
-			// if !c.inited.Load() {
-			//     todo: maybe attack
-			// }
-
+		fake := faketcp.IsFakeTCP(tcp.Data())
+		if fake && c.inited.Load() {
 			err = c.crypto.Decrypt(tcp)
 			if err != nil {
-				c.logger.Warn(err.Error(), app.TraceAttr(err))
+				c.logger.Warn(err.Error(), errorx.TraceAttr(err))
 				continue
 			}
 
@@ -186,13 +183,13 @@ func (c *Client) downlinkService() {
 			} else {
 				s, err := c.sessionMgr.Get(id)
 				if err != nil {
-					c.logger.Warn(err.Error(), app.TraceAttr(err))
+					c.logger.Warn(err.Error(), errorx.TraceAttr(err))
 					continue
 				}
 
 				s.Inject(tcp)
 			}
-		} else {
+		} else if !fake && !c.inited.Load() {
 			c.ack = max(c.ack, header.TCP(tcp.Data()).SequenceNumber())
 
 			c.ipstack.AttachInbound(tcp)
@@ -201,6 +198,8 @@ func (c *Client) downlinkService() {
 			}
 
 			c.stack.Inbound(tcp)
+		} else {
+			c.logger.Warn("unexpect packet")
 		}
 	}
 }
@@ -259,7 +258,7 @@ func (c *Client) uplink(pkt *relraw.Packet, id session.ID) error {
 
 func (c *Client) AddProxy(s capture.Session) error {
 	if c.self == s.Session() {
-		return pkge.Errorf("can't proxy self %s", s)
+		return errors.Errorf("can't proxy self %s", s)
 	}
 
 	resp, err := c.ctr.AddSession(c.ctx, s.Session())
@@ -275,24 +274,26 @@ func (c *Client) AddProxy(s capture.Session) error {
 
 func (c *Client) Close(cause error) (err error) {
 	if c.closed.CompareAndSwap(false, true) {
+		c.logger.Error(cause.Error())
+
 		err = cause
 		if c.ctr != nil {
-			err = app.Join(err,
+			err = errorx.Join(err,
 				c.ctr.Close(),
 			)
 		}
 		if c.stack != nil {
-			err = app.Join(err,
+			err = errorx.Join(err,
 				c.stack.Close(),
 			)
 		}
 		if c.sessionMgr != nil {
-			err = app.Join(err,
+			err = errorx.Join(err,
 				c.sessionMgr.Close(),
 			)
 		}
 		if c.raw != nil {
-			err = app.Join(err,
+			err = errorx.Join(err,
 				c.raw.Close(),
 			)
 		}

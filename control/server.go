@@ -6,7 +6,7 @@ import (
 	"net"
 
 	"github.com/lysShub/itun/control/internal"
-	pkge "github.com/pkg/errors"
+	"github.com/pkg/errors"
 )
 
 type gobServer struct {
@@ -51,7 +51,7 @@ func (s *gobServer) Serve(ctx context.Context) error {
 			case internal.Ping:
 				err = s.handlePing()
 			default:
-				err = pkge.Errorf("not support control type %d", int(t))
+				err = errors.Errorf("not support control type %d", int(t))
 			}
 		}
 

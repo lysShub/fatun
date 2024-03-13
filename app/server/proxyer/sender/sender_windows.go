@@ -4,8 +4,9 @@
 package sender
 
 import (
-	"errors"
 	"net/netip"
+
+	"github.com/pkg/errors"
 
 	"github.com/lysShub/itun"
 )

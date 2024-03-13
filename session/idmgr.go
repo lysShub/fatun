@@ -1,11 +1,10 @@
 package session
 
 import (
-	"errors"
 	"slices"
 	"sync"
 
-	pkge "github.com/pkg/errors"
+	"github.com/pkg/errors"
 )
 
 var ErrSessionExceed = errors.New("session exceed limit")
@@ -55,7 +54,7 @@ func (m *IdMgr) getLocked() (id ID, err error) {
 		}
 	}
 
-	return 0, pkge.Errorf("unknown error")
+	return 0, errors.Errorf("unknown error")
 }
 
 func (m *IdMgr) Put(id ID) {

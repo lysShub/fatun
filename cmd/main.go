@@ -9,7 +9,7 @@ package main
 // 	}
 // 	addr, ok := netip.AddrFromSlice(a.IP)
 // 	if !ok {
-// 		return nil, pkge.Errorf("invalid proxy server address %s", pxySrvAddr)
+// 		return nil, errors.Errorf("invalid proxy server address %s", pxySrvAddr)
 // 	} else if addr.Is4In6() {
 // 		addr = netip.AddrFrom4(addr.As4())
 // 	}
@@ -29,7 +29,7 @@ package main
 // 			if len(a.IP) == 0 {
 // 				addr = relraw.LocalAddr()
 // 			} else {
-// 				return pkge.Errorf("invalid address %s", a.IP)
+// 				return errors.Errorf("invalid address %s", a.IP)
 // 			}
 // 		} else if addr.Is4In6() {
 // 			addr = netip.AddrFrom4(addr.As4())

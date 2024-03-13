@@ -5,7 +5,7 @@ import (
 	"net/netip"
 	"sync"
 
-	pkge "github.com/pkg/errors"
+	"github.com/pkg/errors"
 
 	"github.com/lysShub/relraw"
 	"github.com/lysShub/relraw/test"
@@ -44,7 +44,7 @@ var _ stack.LinkEndpoint = (*List)(nil)
 func (l *List) Outbound(ctx context.Context, tcp *relraw.Packet) error {
 	pkb := l.list.Get(ctx)
 	if pkb.IsNil() {
-		return pkge.WithStack(ctx.Err())
+		return errors.WithStack(ctx.Err())
 	}
 	defer pkb.DecRef()
 
@@ -74,7 +74,7 @@ func (l *List) Outbound(ctx context.Context, tcp *relraw.Packet) error {
 func (l *List) OutboundBy(ctx context.Context, dst netip.AddrPort, tcp *relraw.Packet) error {
 	pkb := l.list.GetBy(ctx, dst)
 	if pkb.IsNil() {
-		return pkge.WithStack(ctx.Err())
+		return errors.WithStack(ctx.Err())
 	}
 	defer pkb.DecRef()
 

@@ -2,11 +2,12 @@ package session
 
 import (
 	"context"
+	"log/slog"
 	"sync/atomic"
 
-	"github.com/lysShub/itun/app"
 	"github.com/lysShub/itun/app/client/capture"
 	"github.com/lysShub/itun/cctx"
+	"github.com/lysShub/itun/errorx"
 	"github.com/lysShub/itun/session"
 	"github.com/lysShub/relraw"
 )
@@ -14,7 +15,7 @@ import (
 type Client interface {
 	Context() context.Context
 	Del(id session.ID, cause error) error
-	Error(msg string, args ...any)
+	Logger() *slog.Logger
 	DelSession(s capture.Session)
 
 	Uplink(pkt *relraw.Packet, id session.ID) error
@@ -97,7 +98,14 @@ func (s *Session) close(cause error) error {
 
 		s.client.DelSession(s.capture)
 
-		s.client.Error(cause.Error(), app.TraceAttr(cause))
+		if errorx.Temporary(cause) {
+			s.client.Logger().LogAttrs(
+				context.Background(), slog.LevelWarn, cause.Error(),
+				slog.Attr{Key: "session", Value: slog.StringValue(s.capture.String())},
+			)
+		} else {
+			s.client.Logger().Error(cause.Error(), errorx.TraceAttr(cause))
+		}
 		return cause
 	}
 	return nil

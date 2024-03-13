@@ -2,12 +2,13 @@ package ustack_test
 
 import (
 	"context"
-	"errors"
 	"io"
 	"math/rand"
 	"net/netip"
 	"testing"
 	"time"
+
+	"github.com/pkg/errors"
 
 	"github.com/lysShub/itun"
 	"github.com/lysShub/itun/ustack"

@@ -18,12 +18,13 @@ package gonet
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/netip"
 	"time"
+
+	"github.com/pkg/errors"
 
 	"github.com/lysShub/itun/ustack"
 	"gvisor.dev/gvisor/pkg/sync"

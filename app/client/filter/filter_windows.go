@@ -9,7 +9,7 @@ import (
 	"github.com/lysShub/itun"
 	"github.com/lysShub/itun/cctx"
 	"github.com/lysShub/itun/session"
-	pkge "github.com/pkg/errors"
+	"github.com/pkg/errors"
 	"github.com/shirou/gopsutil/v3/net"
 	"github.com/shirou/gopsutil/v3/process"
 )
@@ -50,11 +50,11 @@ func (f *filter) HitOnce(s session.Session) bool {
 }
 
 func (f *filter) AddDefaultRule() error {
-	return pkge.New("not implement")
+	return errors.New("not implement")
 }
 
 func (f *filter) DelDefaultRule() error {
-	return pkge.New("not implement")
+	return errors.New("not implement")
 }
 
 func (f *filter) AddRule(process string, proto itun.Proto) error {
@@ -63,11 +63,11 @@ func (f *filter) AddRule(process string, proto itun.Proto) error {
 }
 
 func (f *filter) DelRule(process string, proto itun.Proto) error {
-	return pkge.New("not implement")
+	return errors.New("not implement")
 }
 
 func (f *filter) Close() error {
-	return pkge.New("not implement")
+	return errors.New("not implement")
 }
 
 func (f *filter) processService(name string, proto itun.Proto) {

@@ -6,8 +6,8 @@ import (
 	"sync"
 
 	"github.com/lysShub/itun"
-	"github.com/lysShub/itun/app"
-	pkge "github.com/pkg/errors"
+	"github.com/lysShub/itun/errorx"
+	"github.com/pkg/errors"
 )
 
 type Ports struct {
@@ -122,7 +122,7 @@ func (a *Ports) GetPort(proto itun.Proto, dst netip.AddrPort) (port uint16, err 
 				return 0, err
 			}
 		default:
-			return 0, pkge.Errorf("unknown transport itun code %d", proto)
+			return 0, errors.Errorf("unknown transport itun code %d", proto)
 		}
 	}
 
@@ -186,9 +186,9 @@ func (a *Ports) Close() (err error) {
 		case itun.UDP:
 			e = a.mgr.DelUDPPort(pk.loaclPort)
 		default:
-			e = app.Join(err, itun.ErrInvalidProto(pk.proto))
+			e = errorx.Join(err, itun.ErrInvalidProto(pk.proto))
 		}
-		err = app.Join(err, e)
+		err = errorx.Join(err, e)
 	}
 
 	a.ports = map[portKey]*AddrSet{}

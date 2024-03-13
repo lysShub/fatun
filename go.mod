@@ -8,7 +8,7 @@ require (
 )
 
 require (
-	github.com/lysShub/divert-go v0.0.0-20240311102940-fad389ab4dae
+	github.com/lysShub/divert-go v0.0.0-20240313084012-1361fa303219
 	github.com/stretchr/testify v1.8.4
 	golang.org/x/net v0.20.0
 	gvisor.dev/gvisor v0.0.0-20230916030846-1d82564559db

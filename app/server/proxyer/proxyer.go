@@ -9,13 +9,13 @@ import (
 	"sync/atomic"
 
 	"github.com/lysShub/itun"
-	"github.com/lysShub/itun/app"
 	"github.com/lysShub/itun/app/server/adapter"
 	ss "github.com/lysShub/itun/app/server/proxyer/session"
 	"github.com/lysShub/itun/cctx"
 	"github.com/lysShub/itun/config"
 	"github.com/lysShub/itun/control"
 	"github.com/lysShub/itun/crypto"
+	"github.com/lysShub/itun/errorx"
 	"github.com/lysShub/itun/session"
 	"github.com/lysShub/itun/ustack"
 	"github.com/lysShub/itun/ustack/faketcp"
@@ -51,7 +51,7 @@ func Proxy(c context.Context, srv Server, raw *itun.RawConn) {
 	<-p.ctx.Done()
 
 	if err := p.ctx.Err(); err != nil {
-		p.logger.Error(err.Error(), app.TraceAttr(err))
+		p.logger.Error(err.Error(), errorx.TraceAttr(err))
 	} else {
 		p.logger.Info("exit")
 	}
@@ -126,16 +126,16 @@ func (p *Proxyer) handShake() (err error) {
 	cfg := p.srv.Config()
 
 	if err = cfg.PrevPackets.Server(p.ctx, tcp); err != nil {
-		p.logger.Error(err.Error(), app.TraceAttr(err))
+		p.logger.Error(err.Error(), errorx.TraceAttr(err))
 		return err
 	}
 	if key, err := cfg.SwapKey.SecretKey(p.ctx, tcp); err != nil {
-		p.logger.Error(err.Error(), app.TraceAttr(err))
+		p.logger.Error(err.Error(), errorx.TraceAttr(err))
 		return err
 	} else {
 		p.crypto, err = crypto.NewTCP(key, p.pseudoSum1)
 		if err != nil {
-			p.logger.Error(err.Error(), app.TraceAttr(err))
+			p.logger.Error(err.Error(), errorx.TraceAttr(err))
 			return err
 		}
 	}

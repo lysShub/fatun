@@ -13,14 +13,14 @@ import (
 	"sync"
 	"sync/atomic"
 
-	pkge "github.com/pkg/errors"
+	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 
 	"github.com/lysShub/divert-go"
 	"github.com/lysShub/itun"
-	"github.com/lysShub/itun/app"
 	"github.com/lysShub/itun/app/client/filter"
 	"github.com/lysShub/itun/cctx"
+	"github.com/lysShub/itun/errorx"
 	sess "github.com/lysShub/itun/session"
 	"github.com/lysShub/relraw"
 	"github.com/lysShub/relraw/test"
@@ -82,6 +82,7 @@ func newCapture(ctx cctx.CancelCtx, hit filter.Hitter, opt *Option) *capture {
 
 func (s *capture) Close(cause error) error {
 	if s.closed.CompareAndSwap(false, true) {
+		s.logger.Error(cause.Error())
 		s.ctx.Cancel(cause)
 		close(s.ch)
 
@@ -103,7 +104,7 @@ func (s *capture) Get(ctx context.Context) (Session, error) {
 	select {
 	case sess, ok := <-s.ch:
 		if !ok {
-			return nil, pkge.WithStack(s.ctx.Err())
+			return nil, errors.WithStack(s.ctx.Err())
 		}
 		return sess, nil
 	case <-ctx.Done():
@@ -159,7 +160,7 @@ func (s *capture) tcpService() error {
 			if !ok {
 				c, err := newSession(sess, int(addr.Network().IfIdx), s.priority+1)
 				if err != nil {
-					s.logger.Warn(err.Error(), app.TraceAttr(err))
+					s.logger.Warn(err.Error(), errorx.TraceAttr(err))
 					continue
 				}
 
@@ -216,7 +217,7 @@ func (s *capture) udpService() error {
 			if !ok {
 				c, err = newSession(sess, int(addr.Network().IfIdx), s.priority+1)
 				if err != nil {
-					s.logger.Warn(err.Error(), app.TraceAttr(err))
+					s.logger.Warn(err.Error(), errorx.TraceAttr(err))
 					continue
 				}
 
