@@ -6,6 +6,14 @@ import (
 	"time"
 )
 
+var KeepaliveExceeded = keepaliveExceededError{}
+
+type keepaliveExceededError struct{}
+
+func (keepaliveExceededError) Error() string   { return "keepalive exceeded" }
+func (keepaliveExceededError) Timeout() bool   { return true }
+func (keepaliveExceededError) Temporary() bool { return true }
+
 type Keepalive struct {
 	count  uint16
 	ticker *time.Ticker

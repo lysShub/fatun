@@ -1,82 +1,50 @@
 package control
 
 import (
-	"net/netip"
-	"sync/atomic"
-	"time"
+	"context"
+	"net"
 
 	"github.com/lysShub/itun/cctx"
-	"github.com/lysShub/itun/sconn"
 	"github.com/lysShub/itun/session"
-	"github.com/lysShub/itun/ustack"
-	"github.com/lysShub/itun/ustack/link/channel"
-	"github.com/lysShub/relraw"
-	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
-type Controller struct {
-	link  *channel.Endpoint
-	stack *ustack.Ustack
-
-	handshakeTimeout time.Duration
-
-	closed atomic.Bool
+type Handler interface {
+	IPv6() bool
+	EndConfig()
+	AddSession(s session.Session) (session.ID, error)
+	DelSession(id session.ID) error
+	PackLoss() float32
+	Ping()
 }
 
-func NewController(laddr, raddr netip.AddrPort, mtu int) (*Controller, error) {
-	var c = &Controller{
-		link:             channel.New(4, uint32(mtu), ""),
-		handshakeTimeout: time.Hour, // todo: from cfg
-	}
+type Client interface {
+	Close() error
 
-	var err error
-	c.stack, err = ustack.NewUstack(c.link, laddr, raddr)
+	IPv6(ctx context.Context) (bool, error)
+	EndConfig(ctx context.Context) error
+
+	AddSession(ctx context.Context, s session.Session) (*AddSession, error)
+	DelSession(ctx context.Context, id session.ID) error
+
+	PackLoss(ctx context.Context) (float32, error)
+	Ping(ctx context.Context) error
+}
+
+func NewClient(conn net.Conn) Client {
+	return newGobClient(conn)
+}
+
+type Server interface {
+	Serve(context.Context) error
+}
+
+func NewServer(conn net.Conn, hdr Handler) Server {
+	return newGobServer(conn, hdr)
+}
+
+func Serve(ctx cctx.CancelCtx, conn net.Conn, hdr Handler) {
+	err := NewServer(conn, hdr).Serve(ctx)
 	if err != nil {
-		return nil, err
+		ctx.Cancel(err)
 	}
-
-	return c, nil
-}
-
-func (c *Controller) OutboundService(ctx cctx.CancelCtx, conn *sconn.Conn) {
-	mtu := conn.Raw().MTU()
-	head := 64
-
-	p := relraw.NewPacket(head, mtu)
-	for {
-		p.Sets(head, mtu)
-		err := c.stack.Outbound(ctx, p)
-		if err != nil {
-			ctx.Cancel(err)
-			return
-		}
-
-		// strip ip header
-		switch header.IPVersion(p.Data()) {
-		case 4:
-			n := int(header.IPv4(p.Data()).HeaderLength())
-			p.SetHead(p.Head() + n)
-		case 6:
-			p.SetHead(p.Head() + header.IPv6MinimumSize)
-		}
-
-		err = conn.SendSeg(ctx, p, session.CtrSessID)
-		if err != nil {
-			ctx.Cancel(err)
-			return
-		}
-	}
-}
-
-func (c *Controller) Inbound(seg *relraw.Packet) {
-	c.stack.Inbound(seg)
-}
-
-func (c *Controller) Destroy() {
-	if !c.closed.CompareAndSwap(false, true) {
-		return
-	}
-
-	c.stack.Destroy()
-	c.link.Close()
 }

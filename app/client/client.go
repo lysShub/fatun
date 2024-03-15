@@ -2,123 +2,306 @@ package client
 
 import (
 	"context"
-	"errors"
-	"net/netip"
+	"log/slog"
+	"os"
+	"sync/atomic"
 
 	"github.com/lysShub/itun"
+	"github.com/lysShub/itun/app/client/capture"
+	cs "github.com/lysShub/itun/app/client/session"
 	"github.com/lysShub/itun/cctx"
+	"github.com/lysShub/itun/config"
 	"github.com/lysShub/itun/control"
-	"github.com/lysShub/itun/sconn"
+	"github.com/lysShub/itun/crypto"
+	"github.com/lysShub/itun/errorx"
 	"github.com/lysShub/itun/session"
+	"github.com/lysShub/itun/ustack"
+	"github.com/lysShub/itun/ustack/faketcp"
+	"github.com/lysShub/itun/ustack/gonet"
 	"github.com/lysShub/relraw"
-	pkge "github.com/pkg/errors"
+	"github.com/lysShub/relraw/test"
+	"github.com/lysShub/relraw/test/debug"
+	"github.com/pkg/errors"
+	"github.com/stretchr/testify/require"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
 type Config struct {
-	Sconn sconn.Config
-	MTU   uint16
-	IPv6  bool
+	config.Config
+
+	MTU  uint16
+	IPv6 bool
 }
 
 type Client struct {
-	ctx  cctx.CancelCtx
-	cfg  *Config
-	addr netip.AddrPort
+	ctx     cctx.CancelCtx
+	cfg     *Config
+	raw     *itun.RawConn
+	logger  *slog.Logger
+	capture capture.Capture
 
-	sessionMgr *SessionMgr
+	self   session.Session
+	closed atomic.Bool
 
-	conn *sconn.Conn
+	sessionMgr *cs.SessionMgr
+	stack      ustack.Ustack
 
-	ctr control.Client
+	pseudoSum1 uint16
+	seq, ack   uint32
+	ipstack    *relraw.IPStack
+
+	inited atomic.Bool
+
+	fake   *faketcp.FakeTCP
+	crypto *crypto.TCP
+	ctr    control.Client
 }
 
-func NewClient(parentCtx context.Context, raw relraw.RawConn, cfg *Config) (*Client, error) {
+func NewClient(parentCtx context.Context, raw relraw.RawConn, capture capture.Capture, cfg *Config) (*Client, error) {
+	log := cfg.Log
+	if log == nil {
+		log = slog.NewJSONHandler(os.Stdout, nil)
+	}
+
 	var c = &Client{
-		ctx:  cctx.WithContext(parentCtx),
-		cfg:  cfg,
-		addr: raw.LocalAddrPort(),
+		ctx: cctx.WithContext(parentCtx),
+		cfg: cfg,
+		raw: itun.WrapRawConn(raw, cfg.MTU),
+		logger: slog.New(log.WithGroup("proxy").WithAttrs([]slog.Attr{
+			{Key: "src", Value: slog.StringValue(raw.LocalAddrPort().String())},
+		})),
+		capture: capture,
+
+		self: session.Session{
+			Src:   raw.LocalAddrPort(),
+			Proto: itun.TCP,
+			Dst:   raw.RemoteAddrPort(),
+		},
+
+		sessionMgr: cs.NewSessionMgr(),
+	}
+	c.pseudoSum1 = header.PseudoHeaderChecksum(
+		header.TCPProtocolNumber,
+		c.raw.LocalAddr().Addr, c.raw.RemoteAddr().Addr,
+		0,
+	)
+
+	var err error
+	if c.stack, err = ustack.NewUstack(
+		c.raw.LocalAddrPort(),
+		c.raw.MTU(),
+	); err != nil {
+		return nil, c.Close(err)
 	}
 
-	conn := itun.WrapRawConn(raw, c.cfg.MTU)
-	c.conn = sconn.Connect(c.ctx, conn, &c.cfg.Sconn)
-	if err := c.ctx.Err(); err != nil {
-		return nil, err
+	if c.ipstack, err = relraw.NewIPStack(
+		c.raw.LocalAddrPort().Addr(), c.raw.RemoteAddrPort().Addr(),
+		header.TCPProtocolNumber,
+	); err != nil {
+		return nil, c.Close(err)
 	}
 
-	ctr, err := control.NewController(conn.LocalAddrPort(), conn.RemoteAddrPort(), conn.MTU())
+	return c, c.handshake()
+}
+
+func (c *Client) handshake() error {
+	go c.downlinkService()
+	go c.uplinkService()
+
+	tcp, err := gonet.DialTCPWithBind(
+		c.ctx, c.stack,
+		c.raw.LocalAddrPort(), c.raw.RemoteAddrPort(),
+		header.IPv4ProtocolNumber,
+	)
 	if err != nil {
-		return nil, err
+		return c.Close(err)
 	}
 
-	go ctr.OutboundService(c.ctx, c.conn)
-	go c.downlink(ctr)
-
-	c.ctr = control.Dial(c.ctx, ctr)
-	if err := c.ctx.Err(); err != nil {
-		return nil, err
+	err = c.cfg.PrevPackets.Client(c.ctx, tcp)
+	if err != nil {
+		return c.Close(err)
 	}
 
-	if cfg.IPv6, err = c.ctr.IPv6(); err != nil {
-		return nil, errors.Join(err, c.Close())
+	key, err := c.cfg.Config.SwapKey.SecretKey(c.ctx, tcp)
+	if err != nil {
+		return c.Close(err)
+	}
+	c.crypto, err = crypto.NewTCP(key, c.pseudoSum1)
+	if err != nil {
+		return c.Close(err)
+	}
+	c.fake = faketcp.NewFakeTCP(
+		c.raw.LocalAddrPort().Port(), c.raw.RemoteAddrPort().Port(),
+		faketcp.InitSeqAck(c.seq, c.ack), faketcp.PseudoSum1(c.pseudoSum1), faketcp.SeqOverhead(crypto.Bytes),
+	)
+
+	c.inited.CompareAndSwap(false, true)
+
+	c.ctr = control.NewClient(tcp)
+
+	if _, err = c.ctr.IPv6(c.ctx); err != nil {
+		return c.Close(err)
+	}
+	if err = c.ctr.EndConfig(c.ctx); err != nil {
+		return c.Close(err)
 	}
 
-	return c, c.ctr.EndConfig()
+	return nil
 }
 
-func (c *Client) AddProxy(s itun.Session) error {
-	if !s.IsValid() {
-		return itun.ErrInvalidSession(s)
-	} else if s.SrcAddr.Addr() != c.addr.Addr() {
-		return pkge.Errorf("client %s can't proxy ip %s", c.addr.Addr(), s.SrcAddr.Addr())
-	} else if s.SrcAddr.Port() == c.addr.Port() {
-		return pkge.Errorf("can't proxy self")
-	}
+func (c *Client) downlinkService() {
+	mtu := c.raw.MTU()
+	var tcp = relraw.NewPacket(0, mtu)
 
-	switch s.Proto {
-	case itun.TCP:
-		resp, err := c.ctr.AddTCP(s.DstAddr)
-		if err != nil {
-			return err
-		} else if resp.Err != nil {
-			panic(resp.Err)
-		}
-		return c.sessionMgr.Add(s, resp.ID)
-	default:
-		panic("impossible")
-	}
-}
-
-func (c *Client) downlink(ctrSessionInbound *control.Controller) {
-	n := c.conn.Raw().MTU()
-
-	var seg = relraw.NewPacket(0, n)
 	for {
-		seg.Sets(0, n)
+		tcp.Sets(0, mtu)
 
-		id, err := c.conn.RecvSeg(c.ctx, seg)
+		err := c.raw.ReadCtx(c.ctx, tcp)
 		if err != nil {
-			c.ctx.Cancel(err)
+			c.Close(err)
 			return
 		}
 
-		if id == session.CtrSessID {
-			ctrSessionInbound.Inbound(seg)
-		} else {
-			s := c.sessionMgr.Get(uint16(id))
-			if s != nil {
-				s.Inject(seg)
-			} else {
-				// todo: log reply without registed
+		fake := faketcp.IsFakeTCP(tcp.Data())
+		if fake && c.inited.Load() {
+			err = c.crypto.Decrypt(tcp)
+			if err != nil {
+				c.logger.Warn(err.Error(), errorx.TraceAttr(err))
+				continue
 			}
+
+			c.fake.RecvStrip(tcp)
+
+			id := session.GetID(tcp)
+			if id == session.CtrSessID {
+				c.ipstack.AttachInbound(tcp)
+				if debug.Debug() {
+					test.ValidIP(test.T(), tcp.Data())
+				}
+
+				c.stack.Inbound(tcp)
+			} else {
+				s, err := c.sessionMgr.Get(id)
+				if err != nil {
+					c.logger.Warn(err.Error(), errorx.TraceAttr(err))
+					continue
+				}
+
+				s.Inject(tcp)
+			}
+		} else if !fake && !c.inited.Load() {
+			c.ack = max(c.ack, header.TCP(tcp.Data()).SequenceNumber())
+
+			c.ipstack.AttachInbound(tcp)
+			if debug.Debug() {
+				test.ValidIP(test.T(), tcp.Data())
+			}
+
+			c.stack.Inbound(tcp)
+		} else {
+			c.logger.Warn("unexpect packet")
 		}
 	}
 }
 
-func (c *Client) Close() error {
-	err := errors.Join(
-		c.ctr.Close(),
-		c.conn.Close(),
-	)
+func (c *Client) uplinkService() {
+	mtu := c.raw.MTU()
+	var pkt = relraw.NewPacket(0, mtu)
 
+	var err error
+	for {
+		pkt.Sets(0, mtu)
+		err = c.stack.Outbound(c.ctx, pkt)
+		if err != nil {
+			break
+		}
+
+		if c.inited.Load() {
+			err = c.uplink(pkt, session.CtrSessID)
+			if err != nil {
+				break
+			}
+		} else {
+			tcphdr := header.TCP(pkt.Data())
+			c.seq = max(c.seq, tcphdr.SequenceNumber()+uint32(len(tcphdr.Payload())))
+			// c.ack = max(c.ack, tcphdr.AckNumber())
+
+			// recover to ip packet
+			pkt.SetHead(0)
+			if debug.Debug() {
+				test.ValidIP(test.T(), pkt.Data())
+			}
+
+			_, err = c.raw.Write(pkt.Data())
+			if err != nil {
+				break
+			}
+		}
+	}
+	c.Close(err)
+}
+
+func (c *Client) uplink(pkt *relraw.Packet, id session.ID) error {
+	if debug.Debug() {
+		require.True(test.T(), c.inited.Load())
+	}
+
+	session.SetID(pkt, id)
+
+	c.fake.SendAttach(pkt)
+
+	c.crypto.Encrypt(pkt)
+
+	err := c.raw.WriteCtx(context.Background(), pkt)
 	return err
+}
+
+func (c *Client) AddProxy(s capture.Session) error {
+	if c.self == s.Session() {
+		return errors.Errorf("can't proxy self %s", s)
+	}
+
+	resp, err := c.ctr.AddSession(c.ctx, s.Session())
+	if err != nil {
+		return err
+	} else if resp.Err != nil {
+		c.logger.Warn(resp.Err.Error(), "add session", s.String())
+		return resp.Err
+	} else {
+		return c.sessionMgr.Add(sessionIpmlPtr(c), s, resp.ID)
+	}
+}
+
+func (c *Client) Close(cause error) (err error) {
+	if c.closed.CompareAndSwap(false, true) {
+		c.logger.Error(cause.Error())
+
+		err = cause
+		if c.ctr != nil {
+			err = errorx.Join(err,
+				c.ctr.Close(),
+			)
+		}
+		if c.stack != nil {
+			err = errorx.Join(err,
+				c.stack.Close(),
+			)
+		}
+		if c.sessionMgr != nil {
+			err = errorx.Join(err,
+				c.sessionMgr.Close(),
+			)
+		}
+		if c.raw != nil {
+			err = errorx.Join(err,
+				c.raw.Close(),
+			)
+		}
+
+		c.ctx.Cancel(err)
+		return err
+	} else {
+		<-c.ctx.Done()
+		return c.ctx.Err()
+	}
 }

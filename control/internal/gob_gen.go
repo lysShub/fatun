@@ -11,18 +11,16 @@ func _() {
 	_ = x[start-0]
 	_ = x[IPv6-1]
 	_ = x[EndConfig-2]
-	_ = x[AddTCP-3]
-	_ = x[DelTCP-4]
-	_ = x[AddUDP-5]
-	_ = x[DelUDP-6]
-	_ = x[PackLoss-7]
-	_ = x[Ping-8]
-	_ = x[end-9]
+	_ = x[AddSession-3]
+	_ = x[DelSession-4]
+	_ = x[PackLoss-5]
+	_ = x[Ping-6]
+	_ = x[end-7]
 }
 
-const _CtrType_name = "startIPv6EndConfigAddTCPDelTCPAddUDPDelUDPPackLossPingend"
+const _CtrType_name = "startIPv6EndConfigAddSessionDelSessionPackLossPingend"
 
-var _CtrType_index = [...]uint8{0, 5, 9, 18, 24, 30, 36, 42, 50, 54, 57}
+var _CtrType_index = [...]uint8{0, 5, 9, 18, 28, 38, 46, 50, 53}
 
 func (i CtrType) String() string {
 	if i >= CtrType(len(_CtrType_index)-1) {

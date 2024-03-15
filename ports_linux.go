@@ -1,7 +1,6 @@
 package itun
 
 import (
-	"errors"
 	"syscall"
 	"unsafe"
 
@@ -33,8 +32,10 @@ func setFilterAll(conn interface {
 				unix.SO_ATTACH_FILTER, prog,
 			)
 		})
-		if errors.Join(err, e) != nil {
-			return errors.Join(err, e)
+		if err != nil {
+			return err
+		} else if e != nil {
+			return e
 		}
 	}
 	return nil

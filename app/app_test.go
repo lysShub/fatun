@@ -1,23 +1,26 @@
-package app
+package app_test
 
 import (
 	"net/netip"
 	"sync/atomic"
 	"time"
 
-	"github.com/lysShub/itun/sconn"
+	"github.com/lysShub/itun/config"
+	"github.com/lysShub/itun/crypto"
 	"github.com/lysShub/relraw"
-	pkge "github.com/pkg/errors"
+	"github.com/pkg/errors"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
 var (
 	caddr = netip.AddrPortFrom(netip.AddrFrom4([4]byte{
-		192, 168, 16, 1,
+		// 172, 25, 32, 1,
+		172, 24, 128, 1,
 	}), 19986)
 
 	saddr = netip.AddrPortFrom(netip.AddrFrom4([4]byte{
-		192, 168, 21, 146,
+		// 172, 25, 38, 4,
+		172, 24, 131, 26,
 	}), 8080)
 
 	ht = time.Hour
@@ -48,20 +51,20 @@ func (l *listenerWrap) Close() error {
 
 type tkClient struct{}
 
-func (c *tkClient) Token() (tk []byte, key sconn.Key, err error) {
-	return []byte("hello"), sconn.Key{1: 1}, nil
+func (c *tkClient) Token() (tk []byte, key crypto.Key, err error) {
+	return []byte("hello"), crypto.Key{1: 1}, nil
 }
 
 type tkServer struct{}
 
-func (c *tkServer) Valid(tk []byte) (key sconn.Key, err error) {
+func (c *tkServer) Valid(tk []byte) (key crypto.Key, err error) {
 	if string(tk) == "hello" {
-		return sconn.Key{1: 1}, nil
+		return crypto.Key{1: 1}, nil
 	}
-	return sconn.Key{}, pkge.Errorf("invalid token")
+	return crypto.Key{}, errors.Errorf("invalid token")
 }
 
-var pps = sconn.PrevPackets{
+var pps = config.PrevPackets{
 	header.TCP("hello"),
 	header.TCP("world"),
 }

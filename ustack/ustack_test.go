@@ -1,4 +1,4 @@
-package ustack
+package ustack_test
 
 import (
 	"context"
@@ -8,21 +8,24 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lysShub/itun/cctx"
-	"github.com/lysShub/itun/ustack/link/channel"
+	"github.com/pkg/errors"
+
+	"github.com/lysShub/itun"
+	"github.com/lysShub/itun/ustack"
+	"github.com/lysShub/itun/ustack/gonet"
 	"github.com/lysShub/relraw"
 	"github.com/lysShub/relraw/test"
 	"github.com/stretchr/testify/require"
+	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
-func Test_Ustack(t *testing.T) {
+func Test_Conn(t *testing.T) {
 	var (
 		caddr = netip.AddrPortFrom(test.LocIP(), test.RandPort())
 		saddr = netip.AddrPortFrom(test.LocIP(), test.RandPort())
-
-		seed = time.Now().UnixNano()
-		r    = rand.New(rand.NewSource(seed))
+		seed  = time.Now().UnixNano()
+		r     = rand.New(rand.NewSource(seed))
 	)
 	t.Log("seed", seed)
 	c, s := test.NewMockRaw(
@@ -31,101 +34,283 @@ func Test_Ustack(t *testing.T) {
 		test.ValidAddr, test.ValidChecksum,
 	)
 
-	// server
-	srvRet := make(chan struct{})
+	var rets = make(chan string, 1)
+
 	go func() {
-		ctx := cctx.WithContext(context.Background())
-		link := channel.New(4, 1536, "")
-		ss, err := NewUstack(link, saddr, caddr)
+		st, err := ustack.NewUstack(saddr, 1536)
 		require.NoError(t, err)
+		UnicomStackAndRaw(t, st, itun.WrapRawConn(s, 1536))
 
-		go func() {
-			p := relraw.NewPacket(0, 1536)
-			for {
-				p.Sets(0, 1536)
+		l, err := gonet.ListenTCP(st, saddr, header.IPv4ProtocolNumber)
+		require.NoError(t, err)
+		defer l.Close()
 
-				err := s.ReadCtx(ctx, p)
-				require.NoError(t, err)
-
-				err = ss.Inbound(p)
-				require.NoError(t, err)
-			}
-		}()
-		go func() {
-			p := relraw.NewPacket(0, 1536)
-			for {
-				p.Sets(0, 1536)
-				err := ss.Outbound(ctx, p)
-				require.NoError(t, err)
-
-				_, err = s.Write(p.Data())
-				require.NoError(t, err)
-			}
-		}()
-
-		conn := ss.Accept(ctx, time.Second)
-		require.NoError(t, ctx.Err())
+		conn, err := l.Accept(context.Background())
+		require.NoError(t, err)
+		defer conn.Close()
 
 		_, err = io.Copy(conn, conn)
-		require.NoError(t, err)
-		close(srvRet)
+		if !IsGvisorClose(err) {
+			require.NoError(t, err)
+		}
+		rets <- "server"
 	}()
 
-	{ // client
-
-		ctx := cctx.WithContext(context.Background())
-		link := channel.New(4, 1536, "")
-		cs, err := NewUstack(link, caddr, saddr)
+	go func() { // client
+		st, err := ustack.NewUstack(caddr, 1536)
 		require.NoError(t, err)
+		UnicomStackAndRaw(t, st, itun.WrapRawConn(c, 1536))
 
-		go func() {
-			p := relraw.NewPacket(0, 1536)
-			for {
-				p.Sets(0, 1536)
-				err := c.ReadCtx(ctx, p)
-				require.NoError(t, err)
+		conn, err := gonet.DialTCPWithBind(
+			context.Background(), st,
+			caddr, saddr,
+			header.IPv4ProtocolNumber,
+		)
+		require.NoError(t, err)
+		defer conn.Close()
 
-				err = cs.Inbound(p)
-				require.NoError(t, err)
-			}
-		}()
-		go func() {
-			p := relraw.NewPacket(0, 1536)
-			for {
-				p.Sets(0, 1536)
-				err := cs.Outbound(ctx, p)
-				require.NoError(t, err)
+		test.ValidPingPongConn(t, r, conn, 0xffff)
+	}()
 
-				_, err = c.Write(p.Data())
-				require.NoError(t, err)
-			}
-		}()
+	<-rets
+}
 
-		conn := cs.Connect(ctx, time.Second)
-		require.NoError(t, ctx.Err())
+func Test_Conn_Client(t *testing.T) {
+	var (
+		caddr = netip.AddrPortFrom(test.LocIP(), test.RandPort())
+		saddr = netip.AddrPortFrom(test.LocIP(), test.RandPort())
+		seed  = int64(1709547794731834700) // time.Now().UnixNano()
+		r     = rand.New(rand.NewSource(seed))
+	)
+	t.Log("seed", seed)
+	c, s := test.NewMockRaw(
+		t, header.TCPProtocolNumber,
+		caddr, saddr,
+		test.ValidAddr, test.ValidChecksum,
+	)
 
-		for i := 0; i < 64; i++ {
-			var msg = make([]byte, r.Int31()%1024+1)
-			r.Read(msg)
+	var rets = make(chan string, 1)
 
-			_, err = conn.Write(msg)
+	go func() { // server
+		st, err := ustack.NewUstack(saddr, 1536)
+		require.NoError(t, err)
+		UnicomStackAndRawBy(t, st, itun.WrapRawConn(s, 1536), caddr)
+
+		l, err := gonet.ListenTCP(st, saddr, header.IPv4ProtocolNumber)
+		require.NoError(t, err)
+		defer l.Close()
+
+		conn, err := l.Accept(context.Background())
+		require.NoError(t, err)
+		defer conn.Close()
+
+		_, err = io.Copy(conn, conn)
+		if !IsGvisorClose(err) {
+			require.NoError(t, err)
+		}
+		rets <- "server"
+	}()
+
+	go func() {
+		st, err := ustack.NewUstack(caddr, 1536)
+		require.NoError(t, err)
+		UnicomStackAndRaw(t, st, itun.WrapRawConn(c, 1536))
+
+		conn, err := gonet.DialTCPWithBind(
+			context.Background(), st,
+			caddr, saddr,
+			header.IPv4ProtocolNumber,
+		)
+		require.NoError(t, err)
+		defer conn.Close()
+
+		test.ValidPingPongConn(t, r, conn, 0xffff)
+	}()
+
+	<-rets
+}
+
+func Test_Conn_Clients(t *testing.T) {
+	var (
+		caddr1 = netip.AddrPortFrom(test.LocIP(), test.RandPort())
+		caddr2 = netip.AddrPortFrom(test.LocIP(), test.RandPort())
+		saddr  = netip.AddrPortFrom(test.LocIP(), test.RandPort())
+		seed   = time.Now().UnixNano()
+		r1     = rand.New(rand.NewSource(seed))
+		r2     = rand.New(rand.NewSource(seed))
+	)
+	t.Log("seed", seed)
+	c1, s1 := test.NewMockRaw(
+		t, header.TCPProtocolNumber,
+		caddr1, saddr,
+		test.ValidAddr, test.ValidChecksum,
+	)
+	c2, s2 := test.NewMockRaw(
+		t, header.TCPProtocolNumber,
+		caddr2, saddr,
+		test.ValidAddr, test.ValidChecksum,
+	)
+
+	// server
+	go func() {
+		st, err := ustack.NewUstack(saddr, 1536)
+		require.NoError(t, err)
+		UnicomStackAndRawBy(t, st, itun.WrapRawConn(s1, 1536), caddr1)
+		UnicomStackAndRawBy(t, st, itun.WrapRawConn(s2, 1536), caddr2)
+
+		l, err := gonet.ListenTCP(st, saddr, header.IPv4ProtocolNumber)
+		require.NoError(t, err)
+		defer l.Close()
+
+		for {
+			conn, err := l.Accept(context.Background())
 			require.NoError(t, err)
 
-			var b = make([]byte, len(msg))
-			_, err = io.ReadFull(conn, b)
+			go func() {
+				_, err = io.Copy(conn, conn)
+				if !IsGvisorClose(err) {
+					require.NoError(t, err)
+				}
+			}()
+		}
+	}()
+
+	var rets = make(chan string, 2)
+
+	// client 1
+	go func() {
+		st, err := ustack.NewUstack(caddr1, 1536)
+		require.NoError(t, err)
+		UnicomStackAndRaw(t, st, itun.WrapRawConn(c1, 1536))
+
+		conn, err := gonet.DialTCPWithBind(
+			context.Background(), st,
+			caddr1, saddr,
+			header.IPv4ProtocolNumber,
+		)
+		require.NoError(t, err)
+		defer conn.Close()
+
+		test.ValidPingPongConn(t, r1, conn, 0xffff)
+		rets <- "client1"
+	}()
+
+	// client 2
+	go func() {
+		st, err := ustack.NewUstack(caddr2, 1536)
+		require.NoError(t, err)
+		UnicomStackAndRaw(t, st, itun.WrapRawConn(c2, 1536))
+
+		conn, err := gonet.DialTCPWithBind(
+			context.Background(), st,
+			caddr2, saddr,
+			header.IPv4ProtocolNumber,
+		)
+		require.NoError(t, err)
+		defer conn.Close()
+
+		test.ValidPingPongConn(t, r2, conn, 4086)
+		rets <- "client2"
+	}()
+
+	t.Log(<-rets, "retrun")
+	t.Log(<-rets, "retrun")
+}
+
+func UnicomStackAndRaw(t *testing.T, s ustack.Ustack, raw *itun.RawConn) {
+	go func() {
+		mtu := raw.MTU()
+		var p = relraw.NewPacket(0, mtu)
+
+		for {
+			p.Sets(0, mtu)
+			s.Outbound(context.Background(), p)
+			if p.Len() == 0 {
+				return
+			}
+
+			// fmt.Println("inbound")
+
+			p.SetHead(0)
+			test.ValidIP(t, p.Data())
+
+			_, err := raw.Write(p.Data())
+			require.NoError(t, err)
+		}
+	}()
+	go func() {
+		mtu := raw.MTU()
+		var p = relraw.NewPacket(0, mtu)
+
+		for {
+			p.Sets(0, mtu)
+			err := raw.ReadCtx(context.Background(), p)
+			if errors.Is(err, io.EOF) {
+				return
+			}
 			require.NoError(t, err)
 
-			require.Equal(t, string(msg), string(b), i)
-		}
+			// fmt.Println("outbound")
 
-		err = conn.Close()
-		require.NoError(t, err)
+			p.SetHead(0)
+			test.ValidIP(t, p.Data())
 
-		select {
-		case <-srvRet:
-		case <-time.After(time.Second * 3):
-			t.Log("server return timeout")
-			t.FailNow()
+			s.Inbound(p)
 		}
+	}()
+}
+
+func UnicomStackAndRawBy(t *testing.T, s ustack.Ustack, raw *itun.RawConn, dst netip.AddrPort) {
+	go func() {
+		mtu := raw.MTU()
+		var p = relraw.NewPacket(0, mtu)
+
+		for {
+			p.Sets(0, mtu)
+			s.OutboundBy(context.Background(), dst, p)
+			if p.Len() == 0 {
+				return
+			}
+			p.SetHead(0)
+			test.ValidIP(t, p.Data())
+
+			_, err := raw.Write(p.Data())
+			require.NoError(t, err)
+		}
+	}()
+	go func() {
+		mtu := raw.MTU()
+		var p = relraw.NewPacket(0, mtu)
+
+		for {
+			p.Sets(0, mtu)
+			err := raw.ReadCtx(context.Background(), p)
+			if errors.Is(err, io.EOF) {
+				return
+			}
+			require.NoError(t, err)
+
+			p.SetHead(0)
+			test.ValidIP(t, p.Data())
+
+			s.Inbound(p)
+		}
+	}()
+}
+
+func Base(err error) error {
+	e := errors.Unwrap(err)
+	if e == nil {
+		return err
 	}
+	return Base(e)
+}
+
+func IsGvisorClose(err error) bool {
+	if err == nil {
+		return false
+	}
+	err = Base(err)
+
+	return err.Error() == (&tcpip.ErrConnectionReset{}).String()
 }

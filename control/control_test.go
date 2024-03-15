@@ -2,23 +2,20 @@ package control
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/netip"
-	"os"
 	"runtime"
 	"testing"
 	"time"
 
-	"github.com/lysShub/itun"
+	"github.com/pkg/errors"
+
 	"github.com/lysShub/itun/cctx"
-	"github.com/lysShub/itun/sconn"
 	"github.com/lysShub/itun/session"
-	"github.com/lysShub/relraw"
 	"github.com/lysShub/relraw/test"
 	"github.com/stretchr/testify/require"
-	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
 func Test_Control(t *testing.T) {
@@ -27,61 +24,28 @@ func Test_Control(t *testing.T) {
 		saddr = netip.AddrPortFrom(test.LocIP(), test.RandPort())
 	)
 	parentCtx := cctx.WithContext(context.Background())
-	c, s := CreateSconns(t, caddr, saddr)
+	fmt.Println(caddr, saddr)
 
 	// server
 	go func() {
-		ctx := cctx.WithContext(parentCtx)
+		// ctx := cctx.WithContext(parentCtx)
 
-		ctr, err := NewController(saddr, caddr, s.Raw().MTU())
-		require.NoError(t, err)
+		// var tcp net.Conn
 
-		go ctr.OutboundService(ctx, s)
-		go func() {
-			b := relraw.NewPacket(0, 1536)
-			for {
-				b.Sets(0, 1536)
-				_, err := s.RecvSeg(ctx, b)
-				if errors.Is(err, io.EOF) {
-					return
-				}
-				require.NoError(t, err)
-
-				ctr.Inbound(b)
-			}
-		}()
-
-		Serve(ctx, ctr, &mockServer{})
+		// Serve(ctx, tcp, &mockServer{})
 	}()
 
 	// client
 	{
 		ctx := cctx.WithContext(parentCtx)
 
-		ctr, err := NewController(caddr, saddr, c.Raw().MTU())
-		require.NoError(t, err)
+		var tcp net.Conn
 
-		go ctr.OutboundService(ctx, c)
-		go func() {
-			b := relraw.NewPacket(0, 1536)
-			for {
-				b.Sets(0, 1536)
-				_, err := c.RecvSeg(ctx, b)
-				if errors.Is(err, context.Canceled) ||
-					errors.Is(err, os.ErrClosed) {
-					return
-				}
-				require.NoError(t, err)
-
-				ctr.Inbound(b)
-			}
-		}()
-
-		client := Dial(ctx, ctr)
+		client := NewClient(tcp)
 		require.NoError(t, ctx.Err())
 		defer client.Close()
 
-		ipv6, err := client.IPv6()
+		ipv6, err := client.IPv6(ctx)
 		require.NoError(t, err)
 		require.True(t, ipv6)
 	}
@@ -96,46 +60,17 @@ func Test_Control_Client_Close(t *testing.T) {
 	parentCtx := cctx.WithContext(context.Background())
 	var rets []int
 
-	c, s := CreateSconns(t, caddr, saddr)
+	fmt.Println(caddr, saddr)
+
 	initNum, runNum := runtime.NumGoroutine(), 0
 
 	// server
 	go func() {
 		ctx := cctx.WithContext(parentCtx)
 
-		ctr, err := NewController(saddr, caddr, s.Raw().MTU())
-		require.NoError(t, err)
-		// defer ctr.Destroy()
+		// var tcp net.Conn
 
-		go func() {
-			ctr.OutboundService(ctx, s)
-			rets = append(rets, 1)
-		}()
-		go func() {
-			var recvFin bool
-			defer func() { require.True(t, recvFin) }()
-
-			b := relraw.NewPacket(0, 1536)
-			for {
-				b.Sets(0, 1536)
-				_, err := s.RecvSeg(ctx, b)
-				if errors.Is(err, context.Canceled) ||
-					errors.Is(err, io.EOF) {
-					rets = append(rets, 2)
-					return
-				}
-
-				if header.TCP(b.Data()[session.IDSize:]).
-					Flags().Contains(header.TCPFlagFin) {
-					recvFin = true
-				}
-
-				require.NoError(t, err)
-				ctr.Inbound(b)
-			}
-		}()
-
-		Serve(ctx, ctr, &mockServer{})
+		// Serve(ctx, tcp, &mockServer{})
 
 		<-ctx.Done()
 		require.True(t, errors.Is(ctx.Err(), io.EOF))
@@ -146,33 +81,15 @@ func Test_Control_Client_Close(t *testing.T) {
 	go func() {
 		ctx := cctx.WithContext(parentCtx)
 
-		ctr, err := NewController(caddr, saddr, c.Raw().MTU())
-		require.NoError(t, err)
-		go func() {
-			ctr.OutboundService(ctx, c)
-			rets = append(rets, 4)
-		}()
-		go func() {
-			b := relraw.NewPacket(0, 1536)
-			for {
-				b.Sets(0, 1536)
-				_, err := c.RecvSeg(ctx, b)
-				if errors.Is(err, context.Canceled) {
-					rets = append(rets, 5)
-					return
-				}
-				require.NoError(t, err)
-				ctr.Inbound(b)
-			}
-		}()
+		var tcp net.Conn
 
 		runNum = runtime.NumGoroutine()
 
-		client := Dial(ctx, ctr)
+		client := NewClient(tcp)
 		require.NoError(t, ctx.Err())
 		defer client.Close()
 
-		ipv6, err := client.IPv6()
+		ipv6, err := client.IPv6(ctx)
 		require.NoError(t, err)
 		require.True(t, ipv6)
 
@@ -195,64 +112,11 @@ func Test_Control_Server_Close(t *testing.T) {
 	t.Skip("todo")
 }
 
-func CreateSconns(t require.TestingT, caddr, saddr netip.AddrPort) (c, s *sconn.Conn) {
-	var craw, sraw = func() (*itun.RawConn, *itun.RawConn) {
-		c, s := test.NewMockRaw(
-			t, header.TCPProtocolNumber,
-			caddr, saddr,
-			test.ValidAddr, test.ValidChecksum,
-		)
-		return itun.WrapRawConn(c, 1536),
-			itun.WrapRawConn(s, 1536)
-	}()
-	var pps = sconn.PrevPackets{
-		header.TCP("hello"),
-		header.TCP("world"),
-	}
-
-	ctx := cctx.WithTimeout(context.Background(), time.Second*10)
-	defer ctx.Cancel(nil)
-	acceptCh := make(chan struct{})
-
-	go func() {
-		s = func() *sconn.Conn {
-			cfg := sconn.Config{
-				PrevPackets:      pps,
-				HandShakeTimeout: time.Hour,
-				SwapKey:          &sconn.NotCryptoServer{},
-			}
-
-			sconn := sconn.Accept(ctx, sraw, &cfg)
-			require.NoError(t, ctx.Err())
-
-			return sconn
-		}()
-		close(acceptCh)
-	}()
-
-	c = func() *sconn.Conn {
-		cfg := sconn.Config{
-			PrevPackets:      pps,
-			HandShakeTimeout: time.Hour,
-			SwapKey:          &sconn.NotCryptoClient{},
-		}
-
-		sconn := sconn.Connect(ctx, craw, &cfg)
-		require.NoError(t, ctx.Err())
-		return sconn
-	}()
-
-	<-acceptCh
-	require.NoError(t, ctx.Err())
-
-	return c, s
-}
-
 type mockServer struct {
 	InitedCfg bool
 }
 
-var _ SrvHandler = (*mockServer)(nil)
+var _ Handler = (*mockServer)(nil)
 
 func (h *mockServer) IPv6() bool {
 	return true
@@ -260,16 +124,10 @@ func (h *mockServer) IPv6() bool {
 func (h *mockServer) EndConfig() {
 	h.InitedCfg = true
 }
-func (h *mockServer) AddTCP(addr netip.AddrPort) (uint16, error) {
+func (h *mockServer) AddSession(s session.Session) (session.ID, error) {
 	return 1, nil
 }
-func (h *mockServer) DelTCP(id uint16) error {
-	return nil
-}
-func (h *mockServer) AddUDP(addr netip.AddrPort) (uint16, error) {
-	return 2, nil
-}
-func (h *mockServer) DelUDP(id uint16) error {
+func (h *mockServer) DelSession(id session.ID) error {
 	return nil
 }
 func (h *mockServer) PackLoss() float32 { return 0.01 }

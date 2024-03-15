@@ -1,4 +1,4 @@
-package app
+package app_test
 
 import (
 	"context"
@@ -7,21 +7,22 @@ import (
 	"testing"
 
 	"github.com/lysShub/itun/app/server"
-	"github.com/lysShub/itun/sconn"
+	"github.com/lysShub/itun/config"
+	"github.com/lysShub/itun/crypto"
 	"github.com/lysShub/relraw/tcp/bpf"
 	"github.com/stretchr/testify/require"
 )
 
 func TestXxxx(t *testing.T) {
 	cfg := &server.Config{
-		Sconn: sconn.Config{
+		Config: config.Config{
 			PrevPackets:      pps,
 			HandShakeTimeout: ht,
-			SwapKey:          &sconn.TokenServer{Valider: &tkServer{}},
+			SwapKey:          &crypto.TokenServer{Valider: &tkServer{}},
 		},
-		MTU:                 1536,
-		TCPHandshakeTimeout: ht,
-		InitCfgTimeout:      ht,
+
+		MTU: 1536,
+
 		ProxyerIdeleTimeout: ht,
 	}
 
