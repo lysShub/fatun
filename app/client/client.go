@@ -18,6 +18,7 @@ import (
 	"github.com/lysShub/itun/ustack"
 	"github.com/lysShub/itun/ustack/faketcp"
 	"github.com/lysShub/itun/ustack/gonet"
+	"github.com/lysShub/itun/ustack/link"
 	"github.com/lysShub/relraw"
 	"github.com/lysShub/relraw/test"
 	"github.com/lysShub/relraw/test/debug"
@@ -88,8 +89,8 @@ func NewClient(parentCtx context.Context, raw relraw.RawConn, capture capture.Ca
 
 	var err error
 	if c.stack, err = ustack.NewUstack(
+		link.NewList(16, c.raw.MTU()),
 		c.raw.LocalAddrPort(),
-		c.raw.MTU(),
 	); err != nil {
 		return nil, c.Close(err)
 	}

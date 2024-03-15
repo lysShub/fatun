@@ -13,6 +13,7 @@ import (
 	"github.com/lysShub/itun"
 	"github.com/lysShub/itun/ustack"
 	"github.com/lysShub/itun/ustack/gonet"
+	"github.com/lysShub/itun/ustack/link"
 	"github.com/lysShub/relraw"
 	"github.com/lysShub/relraw/test"
 	"github.com/stretchr/testify/require"
@@ -37,7 +38,7 @@ func Test_Conn(t *testing.T) {
 	var rets = make(chan string, 1)
 
 	go func() {
-		st, err := ustack.NewUstack(saddr, 1536)
+		st, err := ustack.NewUstack(link.NewList(16, 1536), saddr)
 		require.NoError(t, err)
 		UnicomStackAndRaw(t, st, itun.WrapRawConn(s, 1536))
 
@@ -57,7 +58,7 @@ func Test_Conn(t *testing.T) {
 	}()
 
 	go func() { // client
-		st, err := ustack.NewUstack(caddr, 1536)
+		st, err := ustack.NewUstack(link.NewList(16, 1536), caddr)
 		require.NoError(t, err)
 		UnicomStackAndRaw(t, st, itun.WrapRawConn(c, 1536))
 
@@ -92,7 +93,7 @@ func Test_Conn_Client(t *testing.T) {
 	var rets = make(chan string, 1)
 
 	go func() { // server
-		st, err := ustack.NewUstack(saddr, 1536)
+		st, err := ustack.NewUstack(link.NewList(16, 1536), saddr)
 		require.NoError(t, err)
 		UnicomStackAndRawBy(t, st, itun.WrapRawConn(s, 1536), caddr)
 
@@ -112,7 +113,7 @@ func Test_Conn_Client(t *testing.T) {
 	}()
 
 	go func() {
-		st, err := ustack.NewUstack(caddr, 1536)
+		st, err := ustack.NewUstack(link.NewList(16, 1536), caddr)
 		require.NoError(t, err)
 		UnicomStackAndRaw(t, st, itun.WrapRawConn(c, 1536))
 
@@ -153,7 +154,7 @@ func Test_Conn_Clients(t *testing.T) {
 
 	// server
 	go func() {
-		st, err := ustack.NewUstack(saddr, 1536)
+		st, err := ustack.NewUstack(link.NewList(16, 1536), saddr)
 		require.NoError(t, err)
 		UnicomStackAndRawBy(t, st, itun.WrapRawConn(s1, 1536), caddr1)
 		UnicomStackAndRawBy(t, st, itun.WrapRawConn(s2, 1536), caddr2)
@@ -179,7 +180,7 @@ func Test_Conn_Clients(t *testing.T) {
 
 	// client 1
 	go func() {
-		st, err := ustack.NewUstack(caddr1, 1536)
+		st, err := ustack.NewUstack(link.NewList(16, 1536), caddr1)
 		require.NoError(t, err)
 		UnicomStackAndRaw(t, st, itun.WrapRawConn(c1, 1536))
 
@@ -197,7 +198,7 @@ func Test_Conn_Clients(t *testing.T) {
 
 	// client 2
 	go func() {
-		st, err := ustack.NewUstack(caddr2, 1536)
+		st, err := ustack.NewUstack(link.NewList(16, 1536), caddr2)
 		require.NoError(t, err)
 		UnicomStackAndRaw(t, st, itun.WrapRawConn(c2, 1536))
 

@@ -86,10 +86,10 @@ func TestXxx(t *testing.T) {
 		MTU:         1536,
 	}
 
-	// wc, err := test.WrapPcap(c, "./test.pcap")
-	// require.NoError(t, err)
+	wc, err := test.WrapPcap(c, "./test.pcap")
+	require.NoError(t, err)
 
-	conn, err := conn.Dial(c, &cfg)
+	conn, err := conn.Dial(wc, &cfg)
 	require.NoError(t, err)
 
 	var b = relraw.NewPacket(0, 1536)

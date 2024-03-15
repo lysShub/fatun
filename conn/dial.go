@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/lysShub/itun/ustack"
+	"github.com/lysShub/itun/ustack/link"
 	"github.com/lysShub/relraw"
 )
 
@@ -12,7 +13,8 @@ func Dial(raw relraw.RawConn, cfg *Config) (*conn, error) {
 }
 
 func DialCtx(ctx context.Context, raw relraw.RawConn, cfg *Config) (*conn, error) {
-	stack, err := ustack.NewUstack(raw.LocalAddrPort(), 1536)
+	link := link.WrapNofin(link.NewList(8, int(cfg.MTU)))
+	stack, err := ustack.NewUstack(link, raw.LocalAddrPort())
 	if err != nil {
 		return nil, err
 	}

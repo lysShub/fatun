@@ -15,11 +15,9 @@ type Link interface {
 	Inbound(ip *relraw.Packet)
 
 	// OutboundBy
-	OutboundBy(ctx context.Context, dst netip.AddrPort, ip *relraw.Packet) error
-	Outbound(ctx context.Context, ip *relraw.Packet) error
+	OutboundBy(ctx context.Context, dst netip.AddrPort, tcp *relraw.Packet) error
+	Outbound(ctx context.Context, tcp *relraw.Packet) error
 }
-
-var invalidAddr = netip.AddrPort{}
 
 func match(pkb *stack.PacketBuffer, dst netip.AddrPort) (match bool) {
 	if pkb.IsNil() {

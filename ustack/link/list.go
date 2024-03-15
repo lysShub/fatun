@@ -31,7 +31,7 @@ type List struct {
 
 var _ Link = (*List)(nil)
 
-func NewList(size int, mtu int) *List {
+func NewList(size int, mtu int) Link {
 	size = max(size, 4)
 	return &List{
 		// list:         newHeap(size), // todo: heap can't pass ut, fix bug

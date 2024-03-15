@@ -17,6 +17,7 @@ import (
 	"github.com/lysShub/itun/ustack"
 	"github.com/lysShub/itun/ustack/faketcp"
 	"github.com/lysShub/itun/ustack/gonet"
+	"github.com/lysShub/itun/ustack/link"
 	"github.com/lysShub/relraw"
 	"github.com/lysShub/relraw/test"
 	"github.com/lysShub/relraw/test/debug"
@@ -205,7 +206,7 @@ func (c *conn) inboundService(ctx cctx.CancelCtx, stack ustack.Ustack) {
 		c.ack = max(c.ack, tcphdr.SequenceNumber())
 
 		// avoid read segment packet
-		ret = tcphdr.Flags().Contains(header.TCPFlagFin)
+		ret = link.IsFakeFIN(tcphdr)
 
 		// recover to ip packet
 		ip.SetHead(0)

@@ -12,6 +12,7 @@ import (
 	"github.com/lysShub/itun/crypto"
 	"github.com/lysShub/itun/ustack"
 	"github.com/lysShub/itun/ustack/gonet"
+	"github.com/lysShub/itun/ustack/link"
 	"github.com/lysShub/relraw"
 	"github.com/lysShub/relraw/test"
 	"github.com/lysShub/relraw/test/debug"
@@ -107,7 +108,7 @@ func Test_Conn(t *testing.T) {
 	)
 
 	go func() {
-		st, err := ustack.NewUstack(saddr, 1536)
+		st, err := ustack.NewUstack(link.NewList(16, 1536), saddr)
 		require.NoError(t, err)
 		UnicomStackAndRaw(t, st, itun.WrapRawConn(s, 1536), pseudoSum1)
 
@@ -124,7 +125,7 @@ func Test_Conn(t *testing.T) {
 	}()
 
 	{ // client
-		st, err := ustack.NewUstack(saddr, 1536)
+		st, err := ustack.NewUstack(link.NewList(16, 1536), saddr)
 		require.NoError(t, err)
 		UnicomStackAndRaw(t, st, itun.WrapRawConn(c, 1536), pseudoSum1)
 

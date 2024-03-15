@@ -40,12 +40,13 @@ var _ Ustack = (*ustack)(nil)
 
 const nicid tcpip.NICID = 1234
 
-// todo: set no delay
-func NewUstack(addr netip.AddrPort, mtu int) (Ustack, error) {
+// todo: set no tcp delay
+func NewUstack(link link.Link, addr netip.AddrPort) (Ustack, error) {
 	// todo: only netip.Addr
 
 	var u = &ustack{
 		addr: tcpip.FullAddress{Addr: tcpip.AddrFrom4(addr.Addr().As4()), Port: addr.Port()},
+		link: link,
 	}
 
 	var npf stack.NetworkProtocolFactory
@@ -62,8 +63,6 @@ func NewUstack(addr netip.AddrPort, mtu int) (Ustack, error) {
 		HandleLocal:        false,
 	})
 
-	// u.link = link.NewChan(16, mtu)
-	u.link = link.NewList(16, mtu)
 	if err := u.stack.CreateNIC(nicid, u.link); err != nil {
 		return nil, errors.New(err.String())
 	}

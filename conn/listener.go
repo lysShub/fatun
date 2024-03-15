@@ -5,6 +5,7 @@ import (
 
 	"github.com/lysShub/itun/ustack"
 	"github.com/lysShub/itun/ustack/gonet"
+	"github.com/lysShub/itun/ustack/link"
 	"github.com/lysShub/relraw"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
@@ -28,7 +29,8 @@ func NewListenr(l relraw.Listener, cfg *Config) (*Listener, error) {
 		raw: l,
 	}
 
-	listener.stack, err = ustack.NewUstack(l.Addr(), int(cfg.MTU))
+	link := link.WrapNofin(link.NewList(64, int(cfg.MTU)))
+	listener.stack, err = ustack.NewUstack(link, l.Addr())
 	if err != nil {
 		return nil, err
 	}
