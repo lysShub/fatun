@@ -1,4 +1,4 @@
-package conn_test
+package sconn_test
 
 import (
 	"context"
@@ -7,9 +7,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/lysShub/itun/config"
-	"github.com/lysShub/itun/conn"
 	"github.com/lysShub/itun/crypto"
+	"github.com/lysShub/itun/sconn"
 	"github.com/lysShub/itun/session"
 	"github.com/lysShub/relraw"
 	"github.com/lysShub/relraw/test"
@@ -33,7 +32,7 @@ func (c *tkServer) Valid(tk []byte) (key crypto.Key, err error) {
 	return crypto.Key{}, errors.Errorf("invalid token")
 }
 
-var pps = config.PrevPackets{
+var pps = sconn.PrevPackets{
 	header.TCP("hello"),
 	header.TCP("world"),
 	header.TCP("abcdef"),
@@ -58,14 +57,14 @@ func TestXxx(t *testing.T) {
 	// server
 	var srvCh = make(chan struct{})
 	go func() {
-		var cfg = conn.Config{
+		var cfg = sconn.Config{
 			Warner:      slog.New(slog.NewJSONHandler(os.Stdout, nil)),
 			PrevPackets: pps,
 			SwapKey:     &crypto.TokenServer{Valider: &tkServer{}},
 			MTU:         1536,
 		}
 
-		l, err := conn.NewListenr(test.NewMockListener(t, s), &cfg)
+		l, err := sconn.NewListener(test.NewMockListener(t, s), &cfg)
 		require.NoError(t, err)
 
 		conn, err := l.Accept()
@@ -79,17 +78,17 @@ func TestXxx(t *testing.T) {
 		close(srvCh)
 	}()
 
-	var cfg = conn.Config{
+	var cfg = sconn.Config{
 		Warner:      slog.New(slog.NewJSONHandler(os.Stdout, nil)),
 		PrevPackets: pps,
 		SwapKey:     &crypto.TokenClient{Tokener: &tkClient{}},
 		MTU:         1536,
 	}
 
-	wc, err := test.WrapPcap(c, "./test.pcap")
-	require.NoError(t, err)
+	// wc, err := test.WrapPcap(c, "./test.pcap")
+	// require.NoError(t, err)
 
-	conn, err := conn.Dial(wc, &cfg)
+	conn, err := sconn.Dial(c, &cfg)
 	require.NoError(t, err)
 
 	var b = relraw.NewPacket(0, 1536)

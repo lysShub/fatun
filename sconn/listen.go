@@ -1,8 +1,10 @@
-package conn
+package sconn
 
 import (
 	"context"
+	"net/netip"
 
+	"github.com/lysShub/itun/errorx"
 	"github.com/lysShub/itun/ustack"
 	"github.com/lysShub/itun/ustack/gonet"
 	"github.com/lysShub/itun/ustack/link"
@@ -18,7 +20,7 @@ type Listener struct {
 	l     *gonet.TCPListener
 }
 
-func NewListenr(l relraw.Listener, cfg *Config) (*Listener, error) {
+func NewListener(l relraw.Listener, cfg *Config) (*Listener, error) {
 	var err error
 	if err = cfg.init(); err != nil {
 		return nil, err
@@ -43,8 +45,12 @@ func NewListenr(l relraw.Listener, cfg *Config) (*Listener, error) {
 	return listener, nil
 }
 
-func (l *Listener) Accept() (*conn, error) {
-	raw, err := l.raw.Accept()
+func (l *Listener) Accept() (*Sconn, error) {
+	return l.AcceptCtx(context.Background())
+}
+
+func (l *Listener) AcceptCtx(ctx context.Context) (*Sconn, error) {
+	raw, err := l.raw.Accept() // todo: raw support context
 	if err != nil {
 		return nil, err
 	}
@@ -60,4 +66,14 @@ func (l *Listener) Accept() (*conn, error) {
 	}
 
 	return conn, nil
+}
+
+func (l *Listener) Addr() netip.Addr { return l.raw.Addr().Addr() }
+
+func (l *Listener) Close() error {
+	err := errorx.Join(
+		l.l.Close(),
+		l.raw.Close(),
+	)
+	return err
 }

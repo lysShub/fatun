@@ -1,4 +1,4 @@
-package conn
+package sconn
 
 import (
 	"context"
@@ -25,13 +25,6 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
-type Conn interface {
-	Close() error
-
-	Send(ctx context.Context, seg *relraw.Packet) error
-	Recv(ctx context.Context, seg *relraw.Packet) error
-}
-
 type role string
 
 const (
@@ -39,7 +32,8 @@ const (
 	server role = "server"
 )
 
-type conn struct {
+// security datagram conn
+type Sconn struct {
 	cfg  *Config
 	raw  *itun.RawConn
 	role role
@@ -53,12 +47,12 @@ type conn struct {
 	closeErr atomic.Pointer[error]
 }
 
-func newConn(raw relraw.RawConn, role role, cfg *Config) (*conn, error) {
+func newConn(raw relraw.RawConn, role role, cfg *Config) (*Sconn, error) {
 	if err := cfg.init(); err != nil {
 		return nil, err
 	}
 
-	var c = &conn{
+	var c = &Sconn{
 		cfg:  cfg,
 		raw:  itun.WrapRawConn(raw, cfg.MTU),
 		role: role,
@@ -72,7 +66,7 @@ func newConn(raw relraw.RawConn, role role, cfg *Config) (*conn, error) {
 	return c, nil
 }
 
-func (c *conn) close(cause error) (err error) {
+func (c *Sconn) close(cause error) (err error) {
 	if cause == nil {
 		cause = os.ErrClosed
 	}
@@ -91,7 +85,7 @@ func (c *conn) close(cause error) (err error) {
 	}
 }
 
-func (c *conn) handshakeConnect(parentCtx context.Context, stack ustack.Ustack) error {
+func (c *Sconn) handshakeConnect(parentCtx context.Context, stack ustack.Ustack) error {
 	ctx := cctx.WithContext(parentCtx)
 	defer ctx.Cancel(nil)
 	go c.inboundService(ctx, stack)
@@ -134,7 +128,7 @@ func (c *conn) handshakeConnect(parentCtx context.Context, stack ustack.Ustack) 
 	return nil
 }
 
-func (c *conn) handshakeAccept(parentCtx context.Context, stack ustack.Ustack, l *gonet.TCPListener) error {
+func (c *Sconn) handshakeAccept(parentCtx context.Context, stack ustack.Ustack, l *gonet.TCPListener) error {
 	ctx := cctx.WithContext(parentCtx)
 	defer ctx.Cancel(nil)
 	go c.inboundService(ctx, stack)
@@ -185,7 +179,7 @@ func waitClose(conn net.Conn) error {
 	}
 }
 
-func (c *conn) inboundService(ctx cctx.CancelCtx, stack ustack.Ustack) {
+func (c *Sconn) inboundService(ctx cctx.CancelCtx, stack ustack.Ustack) {
 	var (
 		mtu = c.raw.MTU()
 		ip  = relraw.NewPacket(0, mtu)
@@ -221,7 +215,7 @@ func (c *conn) inboundService(ctx cctx.CancelCtx, stack ustack.Ustack) {
 	}
 }
 
-func (c *conn) outboundService(ctx cctx.CancelCtx, stack ustack.Ustack) {
+func (c *Sconn) outboundService(ctx cctx.CancelCtx, stack ustack.Ustack) {
 	var (
 		mtu = c.raw.MTU()
 		ip  = relraw.NewPacket(0, mtu)
@@ -253,7 +247,7 @@ func (c *conn) outboundService(ctx cctx.CancelCtx, stack ustack.Ustack) {
 	}
 }
 
-func (c *conn) Send(ctx context.Context, pkt *relraw.Packet, id session.ID) (err error) {
+func (c *Sconn) Send(ctx context.Context, pkt *relraw.Packet, id session.ID) (err error) {
 	session.SetID(pkt, id)
 	c.fake.SendAttach(pkt)
 
@@ -267,7 +261,7 @@ func (c *conn) Send(ctx context.Context, pkt *relraw.Packet, id session.ID) (err
 	return err
 }
 
-func (c *conn) Recv(ctx context.Context, pkt *relraw.Packet) (id session.ID, err error) {
+func (c *Sconn) Recv(ctx context.Context, pkt *relraw.Packet) (id session.ID, err error) {
 	err = c.raw.ReadCtx(ctx, pkt)
 	if err != nil {
 		return 0, err
@@ -281,4 +275,8 @@ func (c *conn) Recv(ctx context.Context, pkt *relraw.Packet) (id session.ID, err
 	c.fake.RecvStrip(pkt)
 
 	return session.GetID(pkt), nil
+}
+
+func (c *Sconn) Close() error {
+	return c.close(os.ErrClosed)
 }

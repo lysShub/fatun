@@ -1,10 +1,10 @@
-package app_test
+package app2_test
 
 import (
 	"net/netip"
 	"time"
 
-	"github.com/lysShub/itun/config"
+	"github.com/lysShub/itun/conn"
 	"github.com/lysShub/itun/crypto"
 	"github.com/pkg/errors"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -39,7 +39,7 @@ func (c *tkServer) Valid(tk []byte) (key crypto.Key, err error) {
 	return crypto.Key{}, errors.Errorf("invalid token")
 }
 
-var pps = config.PrevPackets{
+var pps = conn.PrevPackets{
 	header.TCP("hello"),
 	header.TCP("world"),
 }

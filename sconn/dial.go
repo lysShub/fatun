@@ -1,4 +1,4 @@
-package conn
+package sconn
 
 import (
 	"context"
@@ -8,11 +8,11 @@ import (
 	"github.com/lysShub/relraw"
 )
 
-func Dial(raw relraw.RawConn, cfg *Config) (*conn, error) {
+func Dial(raw relraw.RawConn, cfg *Config) (*Sconn, error) {
 	return DialCtx(context.Background(), raw, cfg)
 }
 
-func DialCtx(ctx context.Context, raw relraw.RawConn, cfg *Config) (*conn, error) {
+func DialCtx(ctx context.Context, raw relraw.RawConn, cfg *Config) (*Sconn, error) {
 	link := link.WrapNofin(link.NewList(8, int(cfg.MTU)))
 	stack, err := ustack.NewUstack(link, raw.LocalAddrPort().Addr())
 	if err != nil {
