@@ -30,7 +30,7 @@ type Ustack interface {
 type ustack struct {
 	stack *stack.Stack
 
-	addr  tcpip.FullAddress
+	addr  netip.Addr
 	proto tcpip.NetworkProtocolNumber
 
 	link link.Link
@@ -41,16 +41,14 @@ var _ Ustack = (*ustack)(nil)
 const nicid tcpip.NICID = 1234
 
 // todo: set no tcp delay
-func NewUstack(link link.Link, addr netip.AddrPort) (Ustack, error) {
-	// todo: only netip.Addr
-
+func NewUstack(link link.Link, addr netip.Addr) (Ustack, error) {
 	var u = &ustack{
-		addr: tcpip.FullAddress{Addr: tcpip.AddrFrom4(addr.Addr().As4()), Port: addr.Port()},
+		addr: addr,
 		link: link,
 	}
 
 	var npf stack.NetworkProtocolFactory
-	if addr.Addr().Is4() {
+	if addr.Is4() {
 		u.proto = header.IPv4ProtocolNumber
 		npf = ipv4.NewProtocol
 	} else {
@@ -68,7 +66,7 @@ func NewUstack(link link.Link, addr netip.AddrPort) (Ustack, error) {
 	}
 	u.stack.AddProtocolAddress(nicid, tcpip.ProtocolAddress{
 		Protocol:          u.proto,
-		AddressWithPrefix: u.addr.Addr.WithPrefix(),
+		AddressWithPrefix: tcpip.AddrFromSlice(u.addr.AsSlice()).WithPrefix(),
 	}, stack.AddressProperties{})
 	u.stack.SetRouteTable([]tcpip.Route{
 		{Destination: header.IPv4EmptySubnet, NIC: nicid},
@@ -86,7 +84,7 @@ func (u *ustack) Close() error {
 }
 
 func (u *ustack) Stack() *stack.Stack { return u.stack }
-func (u *ustack) Addr() netip.Addr    { return netip.Addr{} }
+func (u *ustack) Addr() netip.Addr    { return u.addr }
 func (u *ustack) Inbound(ip *relraw.Packet) {
 	u.link.Inbound(ip)
 }

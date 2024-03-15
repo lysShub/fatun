@@ -17,6 +17,7 @@ import (
 	"github.com/lysShub/itun/config"
 	"github.com/lysShub/itun/ustack"
 	"github.com/lysShub/itun/ustack/gonet"
+	"github.com/lysShub/itun/ustack/link"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 
 	"github.com/lysShub/relraw"
@@ -69,7 +70,10 @@ func NewServer(l relraw.Listener, cfg *Config) (*Server, error) {
 	}
 
 	var err error
-	s.stack, err = ustack.NewUstack(l.Addr(), int(cfg.MTU))
+	s.stack, err = ustack.NewUstack(
+		link.NewList(16, int(cfg.MTU)),
+		l.Addr().Addr(),
+	)
 	if err != nil {
 		return nil, err
 	}

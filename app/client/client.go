@@ -90,7 +90,7 @@ func NewClient(parentCtx context.Context, raw relraw.RawConn, capture capture.Ca
 	var err error
 	if c.stack, err = ustack.NewUstack(
 		link.NewList(16, c.raw.MTU()),
-		c.raw.LocalAddrPort(),
+		c.raw.LocalAddrPort().Addr(),
 	); err != nil {
 		return nil, c.Close(err)
 	}

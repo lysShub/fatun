@@ -30,7 +30,7 @@ func NewListenr(l relraw.Listener, cfg *Config) (*Listener, error) {
 	}
 
 	link := link.WrapNofin(link.NewList(64, int(cfg.MTU)))
-	listener.stack, err = ustack.NewUstack(link, l.Addr())
+	listener.stack, err = ustack.NewUstack(link, l.Addr().Addr())
 	if err != nil {
 		return nil, err
 	}

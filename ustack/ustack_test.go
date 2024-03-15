@@ -38,7 +38,7 @@ func Test_Conn(t *testing.T) {
 	var rets = make(chan string, 1)
 
 	go func() {
-		st, err := ustack.NewUstack(link.NewList(16, 1536), saddr)
+		st, err := ustack.NewUstack(link.NewList(16, 1536), saddr.Addr())
 		require.NoError(t, err)
 		UnicomStackAndRaw(t, st, itun.WrapRawConn(s, 1536))
 
@@ -58,7 +58,7 @@ func Test_Conn(t *testing.T) {
 	}()
 
 	go func() { // client
-		st, err := ustack.NewUstack(link.NewList(16, 1536), caddr)
+		st, err := ustack.NewUstack(link.NewList(16, 1536), caddr.Addr())
 		require.NoError(t, err)
 		UnicomStackAndRaw(t, st, itun.WrapRawConn(c, 1536))
 
@@ -93,7 +93,7 @@ func Test_Conn_Client(t *testing.T) {
 	var rets = make(chan string, 1)
 
 	go func() { // server
-		st, err := ustack.NewUstack(link.NewList(16, 1536), saddr)
+		st, err := ustack.NewUstack(link.NewList(16, 1536), saddr.Addr())
 		require.NoError(t, err)
 		UnicomStackAndRawBy(t, st, itun.WrapRawConn(s, 1536), caddr)
 
@@ -113,7 +113,7 @@ func Test_Conn_Client(t *testing.T) {
 	}()
 
 	go func() {
-		st, err := ustack.NewUstack(link.NewList(16, 1536), caddr)
+		st, err := ustack.NewUstack(link.NewList(16, 1536), caddr.Addr())
 		require.NoError(t, err)
 		UnicomStackAndRaw(t, st, itun.WrapRawConn(c, 1536))
 
@@ -154,7 +154,7 @@ func Test_Conn_Clients(t *testing.T) {
 
 	// server
 	go func() {
-		st, err := ustack.NewUstack(link.NewList(16, 1536), saddr)
+		st, err := ustack.NewUstack(link.NewList(16, 1536), saddr.Addr())
 		require.NoError(t, err)
 		UnicomStackAndRawBy(t, st, itun.WrapRawConn(s1, 1536), caddr1)
 		UnicomStackAndRawBy(t, st, itun.WrapRawConn(s2, 1536), caddr2)
@@ -180,7 +180,7 @@ func Test_Conn_Clients(t *testing.T) {
 
 	// client 1
 	go func() {
-		st, err := ustack.NewUstack(link.NewList(16, 1536), caddr1)
+		st, err := ustack.NewUstack(link.NewList(16, 1536), caddr1.Addr())
 		require.NoError(t, err)
 		UnicomStackAndRaw(t, st, itun.WrapRawConn(c1, 1536))
 
@@ -198,7 +198,7 @@ func Test_Conn_Clients(t *testing.T) {
 
 	// client 2
 	go func() {
-		st, err := ustack.NewUstack(link.NewList(16, 1536), caddr2)
+		st, err := ustack.NewUstack(link.NewList(16, 1536), caddr2.Addr())
 		require.NoError(t, err)
 		UnicomStackAndRaw(t, st, itun.WrapRawConn(c2, 1536))
 

@@ -14,7 +14,7 @@ func Dial(raw relraw.RawConn, cfg *Config) (*conn, error) {
 
 func DialCtx(ctx context.Context, raw relraw.RawConn, cfg *Config) (*conn, error) {
 	link := link.WrapNofin(link.NewList(8, int(cfg.MTU)))
-	stack, err := ustack.NewUstack(link, raw.LocalAddrPort())
+	stack, err := ustack.NewUstack(link, raw.LocalAddrPort().Addr())
 	if err != nil {
 		return nil, err
 	}
