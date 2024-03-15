@@ -19,8 +19,8 @@ github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 h1:6E+4a0GO5zZEnZ
 github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0/go.mod h1:zJYVVT2jmtg6P3p1VtQj7WsuWi/y4VnjVBn7F8KPB3I=
 github.com/lysShub/divert-go v0.0.0-20240313084012-1361fa303219 h1:yNHzs1Ohqkpovt2FEuyTDxwNWIdEmtbN8ogRCjnPHVw=
 github.com/lysShub/divert-go v0.0.0-20240313084012-1361fa303219/go.mod h1:iWqZEwCkgY3PZpUFbyvOvErYC9DZv3Tv/SS1glsiIl0=
-github.com/lysShub/relraw v0.0.0-20240312112817-6064764a6566 h1:mseTotYL9rSCQlOUiurEoizCHtDq29/An5HRiLuSyG8=
-github.com/lysShub/relraw v0.0.0-20240312112817-6064764a6566/go.mod h1:qjYOV69+2f4QJhj0xTkD+Om4MCMCmBtbY8l8TvDebj8=
+github.com/lysShub/relraw v0.0.0-20240315135353-3e1fd95d1fbf h1:0T8EhSuOTy4QiGdji+ikm/2xxXR1Co1262R7UoSQIVI=
+github.com/lysShub/relraw v0.0.0-20240315135353-3e1fd95d1fbf/go.mod h1:ZxFVVTw1IDSbW1DAG8HSREZJ/GVrdMJCjKtjxbMSTBE=
 github.com/lysShub/wintun-go v0.0.0-20240311102803-07195f507e37 h1:2vG2+P6wNh+ItpQzRyHgb4+b8u/ReYfNh4GJHl2ZSx0=
 github.com/lysShub/wintun-go v0.0.0-20240311102803-07195f507e37/go.mod h1:BCj6kcW5G30wkjtKulTQ83QKZutWuctHTroy+ciTWpI=
 github.com/pkg/errors v0.9.1 h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=

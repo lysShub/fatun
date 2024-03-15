@@ -18,11 +18,12 @@ import (
 
 type Ustack interface {
 	Close() error
+	Stack() *stack.Stack
+	Addr() netip.Addr
+
 	Inbound(ip *relraw.Packet)
 	OutboundBy(ctx context.Context, dst netip.AddrPort, tcp *relraw.Packet) error
 	Outbound(ctx context.Context, tcp *relraw.Packet) error
-
-	Stack() *stack.Stack
 }
 
 // user mode tcp stack
@@ -41,6 +42,8 @@ const nicid tcpip.NICID = 1234
 
 // todo: set no delay
 func NewUstack(addr netip.AddrPort, mtu int) (Ustack, error) {
+	// todo: only netip.Addr
+
 	var u = &ustack{
 		addr: tcpip.FullAddress{Addr: tcpip.AddrFrom4(addr.Addr().As4()), Port: addr.Port()},
 	}
@@ -84,7 +87,7 @@ func (u *ustack) Close() error {
 }
 
 func (u *ustack) Stack() *stack.Stack { return u.stack }
-
+func (u *ustack) Addr() netip.Addr    { return netip.Addr{} }
 func (u *ustack) Inbound(ip *relraw.Packet) {
 	u.link.Inbound(ip)
 }

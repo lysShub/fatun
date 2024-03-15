@@ -2,6 +2,7 @@ package link
 
 import (
 	"context"
+	"io"
 	"net/netip"
 	"sync"
 
@@ -48,6 +49,9 @@ func (l *List) Outbound(ctx context.Context, tcp *relraw.Packet) error {
 	}
 	defer pkb.DecRef()
 
+	if pkb.Size() > tcp.Cap() {
+		return errors.WithStack(io.ErrShortBuffer)
+	}
 	tcp.SetLen(pkb.Size())
 	data := tcp.Data()
 
@@ -78,6 +82,9 @@ func (l *List) OutboundBy(ctx context.Context, dst netip.AddrPort, tcp *relraw.P
 	}
 	defer pkb.DecRef()
 
+	if pkb.Size() > tcp.Cap() {
+		return errors.WithStack(io.ErrShortBuffer)
+	}
 	tcp.SetLen(pkb.Size())
 	data := tcp.Data()
 

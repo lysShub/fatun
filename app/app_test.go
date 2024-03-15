@@ -2,12 +2,10 @@ package app_test
 
 import (
 	"net/netip"
-	"sync/atomic"
 	"time"
 
 	"github.com/lysShub/itun/config"
 	"github.com/lysShub/itun/crypto"
-	"github.com/lysShub/relraw"
 	"github.com/pkg/errors"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
@@ -25,29 +23,6 @@ var (
 
 	ht = time.Hour
 )
-
-type listenerWrap struct {
-	conn     relraw.RawConn
-	accepted atomic.Bool
-}
-
-var _ relraw.Listener = (*listenerWrap)(nil)
-
-func (l *listenerWrap) Accept() (relraw.RawConn, error) {
-	if l.accepted.CompareAndSwap(false, true) {
-		return l.conn, nil
-	} else {
-		time.Sleep(time.Hour * 20)
-		panic("")
-	}
-}
-
-func (l *listenerWrap) Addr() netip.AddrPort {
-	return l.conn.LocalAddrPort()
-}
-func (l *listenerWrap) Close() error {
-	return nil
-}
 
 type tkClient struct{}
 
@@ -83,7 +58,7 @@ var pps = config.PrevPackets{
 
 		// server
 		go func() {
-			l := &listenerWrap{conn: raws}
+			l := test.NewMockListener(t, raws)
 			cfg := &server.Config{
 				Sconn: sconn.Server{
 					BaseConfig: sconn.BaseConfig{

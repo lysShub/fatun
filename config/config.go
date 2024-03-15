@@ -34,7 +34,24 @@ func (e ErrPrevPacketInvalid) Error() string {
 	return fmt.Sprintf("previous pakcet %d is invalid", e)
 }
 
-func (pps PrevPackets) Client(ctx context.Context, conn net.Conn) error {
+func (pps PrevPackets) Client(ctx context.Context, conn net.Conn) (err error) {
+	var retCh = make(chan struct{})
+	var canceled bool
+	defer func() {
+		if canceled {
+			err = ctx.Err()
+		}
+		close(retCh)
+	}()
+	go func() {
+		select {
+		case <-ctx.Done():
+			canceled = true
+			conn.SetDeadline(time.Now())
+		case <-retCh:
+		}
+	}()
+
 	for i := 0; i < len(pps); i++ {
 		if i%2 == 0 {
 			_, err := conn.Write(pps[i])
@@ -55,7 +72,24 @@ func (pps PrevPackets) Client(ctx context.Context, conn net.Conn) error {
 	return nil
 }
 
-func (pps PrevPackets) Server(ctx context.Context, conn net.Conn) error {
+func (pps PrevPackets) Server(ctx context.Context, conn net.Conn) (err error) {
+	var retCh = make(chan struct{})
+	var canceled bool
+	defer func() {
+		if canceled {
+			err = ctx.Err()
+		}
+		close(retCh)
+	}()
+	go func() {
+		select {
+		case <-ctx.Done():
+			canceled = true
+			conn.SetDeadline(time.Now())
+		case <-retCh:
+		}
+	}()
+
 	for i := 0; i < len(pps); i++ {
 		if i%2 == 0 {
 			var b = make([]byte, len(pps[i]))
