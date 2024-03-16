@@ -4,8 +4,8 @@ import (
 	"net/netip"
 	"time"
 
-	"github.com/lysShub/itun/conn"
 	"github.com/lysShub/itun/crypto"
+	"github.com/lysShub/itun/sconn"
 	"github.com/pkg/errors"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
@@ -39,7 +39,7 @@ func (c *tkServer) Valid(tk []byte) (key crypto.Key, err error) {
 	return crypto.Key{}, errors.Errorf("invalid token")
 }
 
-var pps = conn.PrevPackets{
+var pps = sconn.PrevPackets{
 	header.TCP("hello"),
 	header.TCP("world"),
 }

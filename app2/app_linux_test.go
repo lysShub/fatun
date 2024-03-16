@@ -6,7 +6,7 @@ import (
 	"net"
 	"testing"
 
-	"github.com/lysShub/itun/app/server"
+	"github.com/lysShub/itun/app2/server"
 	"github.com/lysShub/itun/config"
 	"github.com/lysShub/itun/crypto"
 	"github.com/lysShub/relraw/tcp/bpf"

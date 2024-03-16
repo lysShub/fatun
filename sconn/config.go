@@ -6,9 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net"
-	"os"
 	"time"
 
 	"github.com/lysShub/itun/crypto"
@@ -16,30 +14,21 @@ import (
 )
 
 type Config struct {
-	Warner *slog.Logger
-
 	// client set first tcp packet, server recv and check it, then replay
 	// second tcp packet, etc.
 	PrevPackets PrevPackets //todo: support mutiple data set
 
-	HandShakeTimeout time.Duration
-
 	// swap secret key
 	SwapKey crypto.SecretKey
 
-	MTU  uint16
-	IPv6 bool
+	MTU uint16
+
+	// todo: timeout
 }
 
 func (c *Config) init() error {
 	if c == nil {
 		return errors.New("xx")
-	}
-
-	if c.Warner == nil {
-		c.Warner = slog.New(slog.NewJSONHandler(os.Stdout, nil).WithGroup("proxy").WithAttrs([]slog.Attr{
-			// {Key: "src", Value: slog.StringValue(raw.LocalAddrPort().String())},
-		}))
 	}
 
 	return nil

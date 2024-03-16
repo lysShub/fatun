@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/lysShub/itun"
-	"github.com/lysShub/itun/app/client/capture"
+	"github.com/lysShub/itun/app2/client/capture"
 	"github.com/lysShub/itun/session"
 )
 
@@ -29,85 +29,85 @@ func NewSessionMgr() *SessionMgr {
 	return sm
 }
 
-func (sm *SessionMgr) Add(client Client, s capture.Session, id session.ID) error {
-	if _, err := sm.Get(id); err == nil {
+func (m *SessionMgr) Add(client Client, s capture.Session, id session.ID) error {
+	if _, err := m.Get(id); err == nil {
 		return session.ErrExistID(id)
 	}
 
-	session, err := newSession(client, id, s)
+	session, err := newSession(m, client, id, s)
 	if err != nil {
 		return err
 	}
 
-	sm.mu.Lock()
-	defer sm.mu.Unlock()
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
-	sm.sessions[id] = session
+	m.sessions[id] = session
 	return nil
 }
 
-func (sm *SessionMgr) Get(id session.ID) (s *Session, err error) {
-	sm.mu.RLock()
-	defer sm.mu.RUnlock()
+func (m *SessionMgr) Get(id session.ID) (s *Session, err error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 
-	s = sm.sessions[id]
+	s = m.sessions[id]
 	if s == nil {
 		err = session.ErrInvalidID(id)
 	}
 	return s, err
 }
 
-func (sm *SessionMgr) Del(id session.ID, cause error) error {
-	if s, err := sm.Get(id); err != nil {
+func (m *SessionMgr) Del(id session.ID, cause error) error {
+	if s, err := m.Get(id); err != nil {
 		return err
 	} else {
-		return sm.del(s, cause)
+		return m.del(s, cause)
 	}
 }
 
-func (sm *SessionMgr) del(s *Session, cause error) error {
-	sm.mu.Lock()
-	delete(sm.sessions, s.id)
-	sm.mu.Unlock()
+func (m *SessionMgr) del(s *Session, cause error) error {
+	m.mu.Lock()
+	delete(m.sessions, s.id)
+	m.mu.Unlock()
 
 	return s.close(cause)
 }
 
-func (sm *SessionMgr) keepalive() {
+func (m *SessionMgr) keepalive() {
 	var ss = make([]*Session, 0, 8)
 
 	for {
 		ss = ss[:0]
 
 		select {
-		case <-sm.ticker.C:
-			sm.mu.RLock()
-			for _, e := range sm.sessions {
+		case <-m.ticker.C:
+			m.mu.RLock()
+			for _, e := range m.sessions {
 				if e.tick() {
 					ss = append(ss, e)
 				}
 			}
-			sm.mu.RUnlock()
-		case <-sm.closeCh:
+			m.mu.RUnlock()
+		case <-m.closeCh:
 			return
 		}
 
 		for _, e := range ss {
-			sm.Del(e.id, itun.KeepaliveExceeded)
+			m.Del(e.id, itun.KeepaliveExceeded)
 		}
 	}
 }
 
-func (sm *SessionMgr) Close() error {
-	sm.mu.Lock()
-	defer sm.mu.Unlock()
+func (m *SessionMgr) Close() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
-	sm.ticker.Stop()
-	close(sm.closeCh)
+	m.ticker.Stop()
+	close(m.closeCh)
 
-	for _, e := range sm.sessions {
+	for _, e := range m.sessions {
 		e.close(context.Canceled)
 	}
-	clear(sm.sessions)
+	clear(m.sessions)
 	return nil
 }

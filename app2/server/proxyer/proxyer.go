@@ -9,8 +9,8 @@ import (
 	"sync/atomic"
 
 	"github.com/lysShub/itun"
-	"github.com/lysShub/itun/app/server/adapter"
-	ss "github.com/lysShub/itun/app/server/proxyer/session"
+	"github.com/lysShub/itun/app2/server/adapter"
+	ss "github.com/lysShub/itun/app2/server/proxyer/session"
 	"github.com/lysShub/itun/cctx"
 	"github.com/lysShub/itun/config"
 	"github.com/lysShub/itun/control"

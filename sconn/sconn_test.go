@@ -2,9 +2,7 @@ package sconn_test
 
 import (
 	"context"
-	"log/slog"
 	"net/netip"
-	"os"
 	"testing"
 
 	"github.com/lysShub/itun/crypto"
@@ -58,7 +56,6 @@ func TestXxx(t *testing.T) {
 	var srvCh = make(chan struct{})
 	go func() {
 		var cfg = sconn.Config{
-			Warner:      slog.New(slog.NewJSONHandler(os.Stdout, nil)),
 			PrevPackets: pps,
 			SwapKey:     &crypto.TokenServer{Valider: &tkServer{}},
 			MTU:         1536,
@@ -79,7 +76,6 @@ func TestXxx(t *testing.T) {
 	}()
 
 	var cfg = sconn.Config{
-		Warner:      slog.New(slog.NewJSONHandler(os.Stdout, nil)),
 		PrevPackets: pps,
 		SwapKey:     &crypto.TokenClient{Tokener: &tkClient{}},
 		MTU:         1536,

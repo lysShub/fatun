@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"sync/atomic"
 
-	"github.com/lysShub/itun/app/client/capture"
+	"github.com/lysShub/itun/app2/client/capture"
 	"github.com/lysShub/itun/cctx"
 	"github.com/lysShub/itun/errorx"
 	"github.com/lysShub/itun/session"
@@ -16,7 +16,6 @@ type Client interface {
 	Context() context.Context
 	Del(id session.ID, cause error) error
 	Logger() *slog.Logger
-	DelSession(s capture.Session)
 
 	Uplink(pkt *relraw.Packet, id session.ID) error
 	MTU() int
@@ -24,6 +23,7 @@ type Client interface {
 
 type Session struct {
 	ctx    cctx.CancelCtx
+	mgr    *SessionMgr
 	client Client
 	id     session.ID
 	closed atomic.Bool
@@ -34,11 +34,12 @@ type Session struct {
 }
 
 func newSession(
-	client Client, id session.ID,
-	session capture.Session,
+	mgr *SessionMgr, client Client,
+	id session.ID, session capture.Session,
 ) (s *Session, err error) {
 	s = &Session{
 		ctx:    cctx.WithContext(client.Context()),
+		mgr:    mgr,
 		client: client,
 
 		capture: session,
@@ -96,7 +97,7 @@ func (s *Session) close(cause error) error {
 	if s.closed.CompareAndSwap(false, true) {
 		s.ctx.Cancel(cause)
 
-		s.client.DelSession(s.capture)
+		s.mgr.del(s, cause)
 
 		if errorx.Temporary(cause) {
 			s.client.Logger().LogAttrs(

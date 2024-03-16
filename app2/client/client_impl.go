@@ -4,8 +4,7 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/lysShub/itun/app/client/capture"
-	cs "github.com/lysShub/itun/app/client/session"
+	cs "github.com/lysShub/itun/app2/client/session"
 	"github.com/lysShub/itun/session"
 	"github.com/lysShub/relraw"
 )
@@ -25,7 +24,3 @@ func (s *sessionIpml) Del(id session.ID, cause error) error {
 	return s.sessionMgr.Del(id, cause)
 }
 func (s *sessionIpml) Logger() *slog.Logger { return s.logger }
-
-func (s *sessionIpml) DelSession(sess capture.Session) {
-	s.capture.Del(sess.Session())
-}

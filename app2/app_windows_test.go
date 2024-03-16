@@ -9,9 +9,9 @@ import (
 	"time"
 
 	gdivert "github.com/lysShub/divert-go"
-	"github.com/lysShub/itun/app/client"
-	"github.com/lysShub/itun/app/client/capture"
-	"github.com/lysShub/itun/app/client/filter"
+	"github.com/lysShub/itun/app2/client"
+	"github.com/lysShub/itun/app2/client/capture"
+	"github.com/lysShub/itun/app2/client/filter"
 	"github.com/lysShub/itun/cctx"
 	"github.com/lysShub/itun/config"
 	"github.com/lysShub/itun/crypto"

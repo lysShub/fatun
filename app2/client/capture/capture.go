@@ -3,7 +3,7 @@ package capture
 import (
 	"context"
 
-	"github.com/lysShub/itun/app/client/filter"
+	"github.com/lysShub/itun/app2/client/filter"
 	"github.com/lysShub/itun/cctx"
 	sess "github.com/lysShub/itun/session"
 	"github.com/lysShub/relraw"

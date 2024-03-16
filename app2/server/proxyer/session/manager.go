@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/lysShub/itun"
-	"github.com/lysShub/itun/app/server/adapter"
+	"github.com/lysShub/itun/app2/server/adapter"
 	"github.com/lysShub/itun/errorx"
 	"github.com/lysShub/itun/session"
 )

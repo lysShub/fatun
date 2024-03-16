@@ -18,7 +18,7 @@ import (
 
 	"github.com/lysShub/divert-go"
 	"github.com/lysShub/itun"
-	"github.com/lysShub/itun/app/client/filter"
+	"github.com/lysShub/itun/app2/client/filter"
 	"github.com/lysShub/itun/cctx"
 	"github.com/lysShub/itun/errorx"
 	sess "github.com/lysShub/itun/session"

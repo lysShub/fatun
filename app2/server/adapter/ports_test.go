@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/lysShub/itun"
-	"github.com/lysShub/itun/app/server/adapter"
+	"github.com/lysShub/itun/app2/server/adapter"
 	"github.com/lysShub/relraw"
 	"github.com/stretchr/testify/require"
 )

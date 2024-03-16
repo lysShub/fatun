@@ -7,7 +7,7 @@ import (
 	"sync/atomic"
 
 	"github.com/lysShub/itun"
-	"github.com/lysShub/itun/app/server/proxyer/sender"
+	"github.com/lysShub/itun/app2/server/proxyer/sender"
 	"github.com/lysShub/itun/cctx"
 	"github.com/lysShub/itun/errorx"
 	"github.com/lysShub/itun/session"

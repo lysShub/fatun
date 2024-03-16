@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/lysShub/itun"
-	"github.com/lysShub/itun/app/server/adapter"
-	"github.com/lysShub/itun/app/server/proxyer"
+	"github.com/lysShub/itun/app2/server/adapter"
+	"github.com/lysShub/itun/app2/server/proxyer"
 	"github.com/lysShub/itun/config"
 	"github.com/lysShub/itun/ustack"
 	"github.com/lysShub/itun/ustack/gonet"

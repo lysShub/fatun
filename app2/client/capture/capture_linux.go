@@ -7,7 +7,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/lysShub/itun/app/client/filter"
+	"github.com/lysShub/itun/app2/client/filter"
 	"github.com/lysShub/itun/cctx"
 	"github.com/lysShub/relraw"
 	"github.com/pkg/errors"

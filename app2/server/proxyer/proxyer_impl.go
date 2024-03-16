@@ -4,7 +4,7 @@ import (
 	"context"
 	"log/slog"
 
-	ss "github.com/lysShub/itun/app/server/proxyer/session"
+	ss "github.com/lysShub/itun/app2/server/proxyer/session"
 	"github.com/lysShub/itun/control"
 	"github.com/lysShub/itun/errorx"
 	"github.com/lysShub/itun/session"
