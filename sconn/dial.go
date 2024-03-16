@@ -8,12 +8,12 @@ import (
 	"github.com/lysShub/relraw"
 )
 
-func Dial(raw relraw.RawConn, cfg *Config) (*Sconn, error) {
+func Dial(raw relraw.RawConn, cfg *Config) (*Conn, error) {
 	return DialCtx(context.Background(), raw, cfg)
 }
 
-func DialCtx(ctx context.Context, raw relraw.RawConn, cfg *Config) (*Sconn, error) {
-	link := link.WrapNofin(link.NewList(8, int(cfg.MTU)))
+func DialCtx(ctx context.Context, raw relraw.RawConn, cfg *Config) (*Conn, error) {
+	link := link.WrapNofin(link.NewList(8, cfg.MTU))
 	stack, err := ustack.NewUstack(link, raw.LocalAddrPort().Addr())
 	if err != nil {
 		return nil, err

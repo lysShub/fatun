@@ -4,12 +4,12 @@ import (
 	"context"
 	"io"
 	"net"
+	"net/netip"
 	"os"
 	"sync/atomic"
 
 	"github.com/pkg/errors"
 
-	"github.com/lysShub/itun"
 	"github.com/lysShub/itun/cctx"
 	"github.com/lysShub/itun/crypto"
 	"github.com/lysShub/itun/errorx"
@@ -22,6 +22,7 @@ import (
 	"github.com/lysShub/relraw/test"
 	"github.com/lysShub/relraw/test/debug"
 	"github.com/stretchr/testify/require"
+	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
@@ -33,9 +34,9 @@ const (
 )
 
 // security datagram conn
-type Sconn struct {
+type Conn struct {
 	cfg  *Config
-	raw  *itun.RawConn
+	raw  relraw.RawConn
 	role role
 
 	pseudoSum1 uint16
@@ -47,26 +48,27 @@ type Sconn struct {
 	closeErr atomic.Pointer[error]
 }
 
-func newConn(raw relraw.RawConn, role role, cfg *Config) (*Sconn, error) {
+func newConn(raw relraw.RawConn, role role, cfg *Config) (*Conn, error) {
 	if err := cfg.init(); err != nil {
 		return nil, err
 	}
 
-	var c = &Sconn{
+	var c = &Conn{
 		cfg:  cfg,
-		raw:  itun.WrapRawConn(raw, cfg.MTU),
+		raw:  raw,
 		role: role,
 	}
 	c.pseudoSum1 = header.PseudoHeaderChecksum(
 		header.TCPProtocolNumber,
-		c.raw.LocalAddr().Addr, c.raw.RemoteAddr().Addr,
+		tcpip.AddrFromSlice(c.raw.LocalAddrPort().Addr().AsSlice()),
+		tcpip.AddrFromSlice(c.raw.RemoteAddrPort().Addr().AsSlice()),
 		0,
 	)
 
 	return c, nil
 }
 
-func (c *Sconn) close(cause error) (err error) {
+func (c *Conn) close(cause error) (err error) {
 	if cause == nil {
 		cause = os.ErrClosed
 	}
@@ -85,7 +87,7 @@ func (c *Sconn) close(cause error) (err error) {
 	}
 }
 
-func (c *Sconn) handshakeConnect(parentCtx context.Context, stack ustack.Ustack) error {
+func (c *Conn) handshakeConnect(parentCtx context.Context, stack ustack.Ustack) error {
 	ctx := cctx.WithContext(parentCtx)
 	defer ctx.Cancel(nil)
 	go c.inboundService(ctx, stack)
@@ -128,7 +130,7 @@ func (c *Sconn) handshakeConnect(parentCtx context.Context, stack ustack.Ustack)
 	return nil
 }
 
-func (c *Sconn) handshakeAccept(parentCtx context.Context, stack ustack.Ustack, l *gonet.TCPListener) error {
+func (c *Conn) handshakeAccept(parentCtx context.Context, stack ustack.Ustack, l *gonet.TCPListener) error {
 	ctx := cctx.WithContext(parentCtx)
 	defer ctx.Cancel(nil)
 	go c.inboundService(ctx, stack)
@@ -159,7 +161,8 @@ func (c *Sconn) handshakeAccept(parentCtx context.Context, stack ustack.Ustack, 
 
 	// todo: NewFakeTCP not need calc csum
 	c.fake = faketcp.NewFakeTCP(
-		c.raw.LocalAddr().Port, c.raw.RemoteAddr().Port,
+		c.raw.LocalAddrPort().Port(),
+		c.raw.RemoteAddrPort().Port(),
 		faketcp.InitSeqAck(c.seq, c.ack), faketcp.PseudoSum1(c.pseudoSum1), faketcp.SeqOverhead(crypto.Bytes),
 	)
 
@@ -179,15 +182,14 @@ func waitClose(conn net.Conn) error {
 	}
 }
 
-func (c *Sconn) inboundService(ctx cctx.CancelCtx, stack ustack.Ustack) {
+func (c *Conn) inboundService(ctx cctx.CancelCtx, stack ustack.Ustack) {
 	var (
-		mtu = c.raw.MTU()
-		ip  = relraw.NewPacket(0, mtu)
+		ip  = relraw.NewPacket(0, c.cfg.MTU)
 		ret = false
 	)
 
 	for !ret {
-		ip.Sets(0, mtu)
+		ip.Sets(0, c.cfg.MTU)
 
 		err := c.raw.ReadCtx(ctx, ip)
 		if err != nil {
@@ -215,10 +217,9 @@ func (c *Sconn) inboundService(ctx cctx.CancelCtx, stack ustack.Ustack) {
 	}
 }
 
-func (c *Sconn) outboundService(ctx cctx.CancelCtx, stack ustack.Ustack) {
+func (c *Conn) outboundService(ctx cctx.CancelCtx, stack ustack.Ustack) {
 	var (
-		mtu = c.raw.MTU()
-		ip  = relraw.NewPacket(0, mtu)
+		ip  = relraw.NewPacket(0, c.cfg.MTU)
 		dst = c.raw.RemoteAddrPort()
 	)
 
@@ -247,7 +248,7 @@ func (c *Sconn) outboundService(ctx cctx.CancelCtx, stack ustack.Ustack) {
 	}
 }
 
-func (c *Sconn) Send(ctx context.Context, pkt *relraw.Packet, id session.ID) (err error) {
+func (c *Conn) Send(ctx context.Context, pkt *relraw.Packet, id session.ID) (err error) {
 	session.SetID(pkt, id)
 	c.fake.SendAttach(pkt)
 
@@ -261,7 +262,7 @@ func (c *Sconn) Send(ctx context.Context, pkt *relraw.Packet, id session.ID) (er
 	return err
 }
 
-func (c *Sconn) Recv(ctx context.Context, pkt *relraw.Packet) (id session.ID, err error) {
+func (c *Conn) Recv(ctx context.Context, pkt *relraw.Packet) (id session.ID, err error) {
 	err = c.raw.ReadCtx(ctx, pkt)
 	if err != nil {
 		return 0, err
@@ -277,6 +278,14 @@ func (c *Sconn) Recv(ctx context.Context, pkt *relraw.Packet) (id session.ID, er
 	return session.GetID(pkt), nil
 }
 
-func (c *Sconn) Close() error {
+func (c *Conn) LocalAddr() netip.AddrPort {
+	return c.raw.LocalAddrPort()
+}
+
+func (c *Conn) RemoteAddr() netip.AddrPort {
+	return c.raw.RemoteAddrPort()
+}
+
+func (c *Conn) Close() error {
 	return c.close(os.ErrClosed)
 }

@@ -43,7 +43,7 @@ func TestXxxx(t *testing.T) {
 		raw, err := divert.Connect(caddr, saddr)
 		require.NoError(t, err)
 
-		c, err = client.NewClient(ctx, raw, capture, cfg)
+		c, err = client.NewClient(ctx, raw, cfg)
 		require.NoError(t, err)
 		defer c.Close(nil)
 

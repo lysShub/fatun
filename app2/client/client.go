@@ -35,11 +35,10 @@ type Config struct {
 }
 
 type Client struct {
-	ctx     cctx.CancelCtx
-	cfg     *Config
-	raw     *itun.RawConn
-	logger  *slog.Logger
-	capture capture.Capture
+	ctx    cctx.CancelCtx
+	cfg    *Config
+	raw    *itun.RawConn
+	logger *slog.Logger
 
 	self   session.Session
 	closed atomic.Bool
@@ -58,7 +57,7 @@ type Client struct {
 	ctr    control.Client
 }
 
-func NewClient(parentCtx context.Context, raw relraw.RawConn, capture capture.Capture, cfg *Config) (*Client, error) {
+func NewClient(parentCtx context.Context, raw relraw.RawConn, cfg *Config) (*Client, error) {
 	log := cfg.Log
 	if log == nil {
 		log = slog.NewJSONHandler(os.Stdout, nil)
@@ -71,7 +70,6 @@ func NewClient(parentCtx context.Context, raw relraw.RawConn, capture capture.Ca
 		logger: slog.New(log.WithGroup("proxy").WithAttrs([]slog.Attr{
 			{Key: "src", Value: slog.StringValue(raw.LocalAddrPort().String())},
 		})),
-		capture: capture,
 
 		self: session.Session{
 			Src:   raw.LocalAddrPort(),

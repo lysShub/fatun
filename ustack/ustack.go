@@ -98,3 +98,55 @@ func (u *ustack) OutboundBy(ctx context.Context, dst netip.AddrPort, tcp *relraw
 func (u *ustack) Outbound(ctx context.Context, tcp *relraw.Packet) error {
 	return u.link.Outbound(ctx, tcp)
 }
+
+type Endpoint interface {
+	Close() error
+	Stack() Ustack
+	LocalAddr() netip.AddrPort
+	RemoteAddr() netip.AddrPort
+
+	Inbound(tcp *relraw.Packet)
+	Outbound(ctx context.Context, tcp *relraw.Packet) error
+}
+
+type endpoint struct {
+	stack      Ustack
+	localPort  uint16
+	remoteAddr netip.AddrPort
+	ipstack    *relraw.IPStack
+}
+
+func NewEndpoint(stack Ustack, localPort uint16, remoteAddr netip.AddrPort) (Endpoint, error) {
+	var ep = &endpoint{
+		stack:      stack,
+		localPort:  localPort,
+		remoteAddr: remoteAddr,
+	}
+	var err error
+	ep.ipstack, err = relraw.NewIPStack(
+		ep.LocalAddr().Addr(),
+		ep.RemoteAddr().Addr(),
+		header.TCPProtocolNumber,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return ep, nil
+}
+
+func (e *endpoint) Close() error  { return e.stack.Close() }
+func (e *endpoint) Stack() Ustack { return e.stack }
+func (e *endpoint) LocalAddr() netip.AddrPort {
+	return netip.AddrPortFrom(e.stack.Addr(), e.localPort)
+}
+func (e *endpoint) RemoteAddr() netip.AddrPort {
+	return e.remoteAddr
+}
+func (e *endpoint) Inbound(tcp *relraw.Packet) {
+	e.ipstack.AttachInbound(tcp)
+	e.stack.Inbound(tcp)
+}
+func (e *endpoint) Outbound(ctx context.Context, tcp *relraw.Packet) error {
+	return e.stack.OutboundBy(ctx, e.remoteAddr, tcp)
+}

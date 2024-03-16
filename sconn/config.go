@@ -21,7 +21,7 @@ type Config struct {
 	// swap secret key
 	SwapKey crypto.SecretKey
 
-	MTU uint16
+	MTU int
 
 	// todo: timeout
 }

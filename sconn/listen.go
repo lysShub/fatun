@@ -31,7 +31,7 @@ func NewListener(l relraw.Listener, cfg *Config) (*Listener, error) {
 		raw: l,
 	}
 
-	link := link.WrapNofin(link.NewList(64, int(cfg.MTU)))
+	link := link.WrapNofin(link.NewList(64, cfg.MTU))
 	listener.stack, err = ustack.NewUstack(link, l.Addr().Addr())
 	if err != nil {
 		return nil, err
@@ -45,11 +45,11 @@ func NewListener(l relraw.Listener, cfg *Config) (*Listener, error) {
 	return listener, nil
 }
 
-func (l *Listener) Accept() (*Sconn, error) {
+func (l *Listener) Accept() (*Conn, error) {
 	return l.AcceptCtx(context.Background())
 }
 
-func (l *Listener) AcceptCtx(ctx context.Context) (*Sconn, error) {
+func (l *Listener) AcceptCtx(ctx context.Context) (*Conn, error) {
 	raw, err := l.raw.Accept() // todo: raw support context
 	if err != nil {
 		return nil, err
