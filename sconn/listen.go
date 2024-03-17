@@ -68,7 +68,7 @@ func (l *Listener) AcceptCtx(ctx context.Context) (*Conn, error) {
 	return conn, nil
 }
 
-func (l *Listener) Addr() netip.Addr { return l.raw.Addr().Addr() }
+func (l *Listener) Addr() netip.AddrPort { return l.raw.Addr() }
 
 func (l *Listener) Close() error {
 	err := errorx.Join(

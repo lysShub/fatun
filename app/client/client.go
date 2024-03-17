@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 
 	"github.com/lysShub/itun"
+	"github.com/lysShub/itun/app"
 	"github.com/lysShub/itun/app/client/capture"
 	cs "github.com/lysShub/itun/app/client/session"
 	"github.com/lysShub/itun/control"
@@ -21,13 +22,8 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
-type Config struct {
-	sconn.Config
-	Logger slog.Handler
-}
-
 type Client struct {
-	cfg    *Config
+	cfg    *app.Config
 	logger *slog.Logger
 
 	conn *sconn.Conn
@@ -42,7 +38,7 @@ type Client struct {
 	closeErr  atomic.Pointer[error]
 }
 
-func NewClient(ctx context.Context, conn *sconn.Conn, cfg *Config) (*Client, error) {
+func NewClient(ctx context.Context, conn *sconn.Conn, cfg *app.Config) (*Client, error) {
 	var c = &Client{
 		cfg: cfg,
 		logger: slog.New(cfg.Logger.WithGroup("client").WithAttrs([]slog.Attr{
@@ -136,7 +132,7 @@ func (c *Client) uplinkService() {
 func (c *Client) downService() {
 	var (
 		pkt     = relraw.NewPacket(0, c.cfg.MTU)
-		tinyCnt uint8
+		tinyCnt int
 		id      session.ID
 		err     error
 	)
@@ -167,15 +163,9 @@ func (c *Client) downService() {
 			}
 		}
 	}
-	err = errors.WithStack(ErrTooManyInvalidPacket{})
+	err = errors.WithStack(app.ErrTooManyInvalidPacket{})
 	c.logger.Error(err.Error(), errorx.TraceAttr(err))
 	c.close(err)
-}
-
-type ErrTooManyInvalidPacket struct{}
-
-func (e ErrTooManyInvalidPacket) Error() string {
-	return "recv too many invalid packet"
 }
 
 func (c *Client) uplink(ctx context.Context, pkt *relraw.Packet, id session.ID) error {

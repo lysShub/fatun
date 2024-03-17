@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/gob"
 	"net"
+	"time"
 
 	"github.com/lysShub/itun/control/internal"
 	"github.com/pkg/errors"
@@ -27,15 +28,29 @@ func newGobServer(tcp net.Conn, hdr Handler) *gobServer {
 	return s
 }
 
+func (s *gobServer) Close() error {
+	return s.conn.Close()
+}
+
 func (s *gobServer) Serve(ctx context.Context) error {
-	defer s.conn.Close()
+	var retCh = make(chan struct{})
+	defer close(retCh)
+	go func() {
+		select {
+		case <-ctx.Done():
+			s.conn.SetDeadline(time.Now())
+		case <-retCh:
+		}
+	}()
 
 	var t internal.CtrType
 	var err error
 	for {
 		t, err = s.nextType()
 		if err != nil {
+			return errors.WithStack(err)
 		} else if err = t.Valid(); err != nil {
+			return err
 		} else {
 			switch t {
 			case internal.IPv6:
@@ -53,14 +68,9 @@ func (s *gobServer) Serve(ctx context.Context) error {
 			default:
 				err = errors.Errorf("not support control type %d", int(t))
 			}
-		}
 
-		if err != nil {
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			default:
-				return err
+			if err != nil {
+				return errors.WithStack(err)
 			}
 		}
 	}

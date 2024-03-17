@@ -36,6 +36,7 @@ func NewClient(conn net.Conn) Client {
 
 type Server interface {
 	Serve(context.Context) error
+	Close() error
 }
 
 func NewServer(conn net.Conn, hdr Handler) Server {
