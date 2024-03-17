@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"log/slog"
+	"os"
 	"sync/atomic"
 	"time"
 
@@ -29,8 +30,7 @@ type Session struct {
 	srvCancel context.CancelFunc
 	capture   capture.Session
 
-	closed   atomic.Bool
-	closeErr error
+	closeErr atomic.Pointer[error]
 	cnt      atomic.Uint32
 }
 
@@ -41,26 +41,36 @@ func newSession(
 	s = &Session{
 		mgr:    mgr,
 		client: client,
+		id:     id,
 
 		capture: session,
-		id:      id,
 	}
+	s.srvCtx, s.srvCancel = context.WithCancel(context.Background())
 
 	go s.uplinkService()
 	s.keepalive()
 	return s, nil
 }
 
-func (s *Session) close(cause error) {
-	if s.closed.CompareAndSwap(false, true) {
+func (s *Session) close(cause error) error {
+	if cause == nil {
+		cause = os.ErrClosed
+	}
+
+	if s.closeErr.CompareAndSwap(nil, &cause) {
 		s.mgr.del(s.id)
 
 		s.srvCancel()
 
-		s.closeErr = errorx.Join(
+		err := errorx.Join(
 			cause,
 			s.capture.Close(),
 		)
+
+		s.closeErr.Store(&err)
+		return err
+	} else {
+		return *s.closeErr.Load()
 	}
 }
 
@@ -91,11 +101,11 @@ func (s *Session) uplinkService() {
 func (s *Session) Inject(pkt *relraw.Packet) error {
 	err := s.capture.Inject(pkt)
 	if err != nil {
-		s.close(err)
+		return s.close(err)
 	}
 
 	s.cnt.Add(1)
-	return err
+	return nil
 }
 
 func (s *Session) keepalive() {

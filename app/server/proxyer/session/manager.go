@@ -41,11 +41,11 @@ type Proxyer interface {
 	MTU() int
 }
 
-func NewSessionMgr(ap *adapter.Ports, pxy Proxyer) *SessionMgr {
+func NewSessionMgr(ap *adapter.Ports, proxyer Proxyer) *SessionMgr {
 	mgr := &SessionMgr{
-		idmgr: session.NewIDMgr(),
-		ap:    ap,
-
+		idmgr:   session.NewIDMgr(),
+		ap:      ap,
+		proxyer: proxyer,
 		closeCh: make(chan struct{}),
 
 		sessionMap: make(map[session.ID]*Session, 16),

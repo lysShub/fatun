@@ -5,7 +5,6 @@ package sender
 
 import (
 	"context"
-	"fmt"
 	"net/netip"
 
 	"github.com/pkg/errors"
@@ -31,8 +30,6 @@ func newSender(loc netip.AddrPort, proto itun.Proto, dst netip.AddrPort) (*sende
 	if err != nil {
 		return nil, err
 	}
-
-	fmt.Println("newSender", loc.String(), dst.String())
 
 	switch proto {
 	case itun.TCP:
