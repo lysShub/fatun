@@ -79,9 +79,9 @@ func NewClient(ctx context.Context, conn *sconn.Conn, cfg *app.Config) (*Client,
 	}
 
 	// todo: init config
-	// if err := c.ctr.EndConfig(ctx); err != nil {
-	// 	return nil, c.close(err)
-	// }
+	if err := c.ctr.EndConfig(ctx); err != nil {
+		return nil, c.close(err)
+	}
 
 	return c, nil
 }
@@ -190,4 +190,8 @@ func (c *Client) AddSession(ctx context.Context, s capture.Session) error {
 	} else {
 		return c.sessMgr.Add(sessionImplPtr(c), s, resp.ID)
 	}
+}
+
+func (c *Client) Close() error {
+	return c.close(os.ErrClosed)
 }

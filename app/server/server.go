@@ -14,11 +14,20 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
+func ListenAndServe(ctx context.Context, l *sconn.Listener, cfg *app.Config) error {
+	s, err := NewServer(l, cfg)
+	if err != nil {
+		return err
+	}
+
+	return s.Serve(ctx)
+}
+
 type Server struct {
 	cfg    *app.Config
 	logger *slog.Logger
 
-	raw sconn.Listener
+	raw *sconn.Listener
 
 	ap *adapter.Ports
 
@@ -26,7 +35,7 @@ type Server struct {
 	l     *gonet.TCPListener
 }
 
-func NewServer(l sconn.Listener, cfg *app.Config) (*Server, error) {
+func NewServer(l *sconn.Listener, cfg *app.Config) (*Server, error) {
 	var s = &Server{
 		cfg: cfg,
 		logger: slog.New(cfg.Logger.WithGroup("server").WithAttrs([]slog.Attr{

@@ -22,10 +22,8 @@ type Client interface {
 
 	IPv6(ctx context.Context) (bool, error)
 	EndConfig(ctx context.Context) error
-
 	AddSession(ctx context.Context, s session.Session) (*AddSession, error)
 	DelSession(ctx context.Context, id session.ID) error
-
 	PackLoss(ctx context.Context) (float32, error)
 	Ping(ctx context.Context) error
 }
