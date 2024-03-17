@@ -22,7 +22,7 @@ const nonces = 12
 
 // NewTCP a tcp crypter, use AES-GCM
 func NewTCP(key [Bytes]byte, pseudoSum1 uint16) (*TCP, error) {
-	// todo: encrypt will add Bytes data, but not update seq, only move Overhead to Option
+	// todo: ciphertext will add Bytes data, but not update seq, need move Overhead to Option
 	//
 	//	https://www.iana.org/assignments/tcp-parameters/tcp-parameters.xhtml
 	//	https://www.geeksforgeeks.org/options-field-in-tcp-header/

@@ -9,19 +9,20 @@ import (
 )
 
 type Handler interface {
-	IPv6() bool
-	EndConfig()
+	InitConfig(cfg *Config) error
 	AddSession(s session.Session) (session.ID, error)
 	DelSession(id session.ID) error
 	PackLoss() float32
 	Ping()
 }
 
+type Config struct {
+}
+
 type Client interface {
 	Close() error
 
-	IPv6(ctx context.Context) (bool, error)
-	EndConfig(ctx context.Context) error
+	InitConfig(ctx context.Context, cfg *Config) error
 	AddSession(ctx context.Context, s session.Session) (*AddSession, error)
 	DelSession(ctx context.Context, id session.ID) error
 	PackLoss(ctx context.Context) (float32, error)

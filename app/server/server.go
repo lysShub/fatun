@@ -59,7 +59,7 @@ func NewServer(l *sconn.Listener, cfg *app.Config) (*Server, error) {
 }
 
 func (s *Server) Serve(ctx context.Context) error {
-	s.logger.Info("starting")
+	s.logger.Info("start")
 
 	for {
 		conn, err := s.raw.AcceptCtx(ctx)

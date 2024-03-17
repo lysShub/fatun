@@ -56,7 +56,7 @@ func NewClient(ctx context.Context, conn *sconn.Conn, cfg *app.Config) (*Client,
 	); err != nil {
 		return nil, c.close(err)
 	} else {
-		c.ep, err = ustack.NewEndpoint(
+		c.ep, err = ustack.ToEndpoint(
 			stack, conn.LocalAddr().Port(),
 			conn.RemoteAddr(),
 		)
@@ -79,10 +79,9 @@ func NewClient(ctx context.Context, conn *sconn.Conn, cfg *app.Config) (*Client,
 	}
 
 	// todo: init config
-	if err := c.ctr.EndConfig(ctx); err != nil {
+	if err := c.ctr.InitConfig(ctx, &control.Config{}); err != nil {
 		return nil, c.close(err)
 	}
-
 	return c, nil
 }
 
@@ -131,15 +130,15 @@ func (c *Client) uplinkService() {
 
 func (c *Client) downService() {
 	var (
-		pkt     = relraw.NewPacket(0, c.cfg.MTU)
+		tcp     = relraw.NewPacket(0, c.cfg.MTU)
 		tinyCnt int
 		id      session.ID
 		err     error
 	)
 
 	for tinyCnt < 8 { // todo: from config
-		pkt.Sets(0, c.cfg.MTU)
-		id, err = c.conn.Recv(c.srvCtx, pkt)
+		tcp.Sets(0, c.cfg.MTU)
+		id, err = c.conn.Recv(c.srvCtx, tcp)
 		if err != nil {
 			tinyCnt++
 			c.logger.Warn(err.Error())
@@ -147,7 +146,7 @@ func (c *Client) downService() {
 		}
 
 		if id == session.CtrSessID {
-			c.ep.Inbound(pkt)
+			c.ep.Inbound(tcp)
 		} else {
 			s, err := c.sessMgr.Get(id)
 			if err != nil {
@@ -156,7 +155,7 @@ func (c *Client) downService() {
 				continue
 			}
 
-			err = s.Inject(pkt)
+			err = s.Inject(tcp)
 			if err != nil {
 				c.close(err)
 				return

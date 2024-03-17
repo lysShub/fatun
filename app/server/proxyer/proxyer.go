@@ -75,7 +75,7 @@ func NewProxyer(srv Server, conn *sconn.Conn) (*Proxyer, error) {
 		return nil, err
 	}
 
-	p.logger.Info("accepted")
+	p.logger.Info("accept")
 	go p.uplinkService()
 	go p.downlinkService()
 

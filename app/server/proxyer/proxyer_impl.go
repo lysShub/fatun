@@ -36,7 +36,10 @@ var _ control.Handler = (controlImplPtr)(nil)
 func (c *controlImpl) IPv6() bool {
 	return true
 }
-func (c *controlImpl) EndConfig() {}
+func (c *controlImpl) InitConfig(cfg *control.Config) error {
+	c.logger.Info("start")
+	return nil
+}
 func (c *controlImpl) AddSession(sess session.Session) (session.ID, error) {
 	s, err := c.sessionMgr.Add(sess)
 	if err != nil {

@@ -8,6 +8,8 @@ import (
 
 	"github.com/lysShub/itun/ustack/link"
 	"github.com/lysShub/relraw"
+	"github.com/lysShub/relraw/test"
+	"github.com/lysShub/relraw/test/debug"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
@@ -135,7 +137,7 @@ func NewEndpoint(stack Ustack, localPort uint16, remoteAddr netip.AddrPort) (End
 	return ep, nil
 }
 
-func (e *endpoint) Close() error  { return e.stack.Close() }
+func (e *endpoint) Close() error  { return nil }
 func (e *endpoint) Stack() Ustack { return e.stack }
 func (e *endpoint) LocalAddr() netip.AddrPort {
 	return netip.AddrPortFrom(e.stack.Addr(), e.localPort)
@@ -145,8 +147,31 @@ func (e *endpoint) RemoteAddr() netip.AddrPort {
 }
 func (e *endpoint) Inbound(tcp *relraw.Packet) {
 	e.ipstack.AttachInbound(tcp)
+	if debug.Debug() {
+		test.ValidIP(test.T(), tcp.Data())
+	}
+
 	e.stack.Inbound(tcp)
 }
 func (e *endpoint) Outbound(ctx context.Context, tcp *relraw.Packet) error {
 	return e.stack.OutboundBy(ctx, e.remoteAddr, tcp)
 }
+
+type oneEndpoint struct {
+	Endpoint
+	stack Ustack
+}
+
+func ToEndpoint(stack Ustack, localPort uint16, remoteAddr netip.AddrPort) (Endpoint, error) {
+	ep, err := NewEndpoint(stack, localPort, remoteAddr)
+	if err != nil {
+		return nil, err
+	}
+
+	return &oneEndpoint{
+		Endpoint: ep,
+		stack:    stack,
+	}, nil
+}
+
+func (e *oneEndpoint) Close() error { return e.stack.Close() }
