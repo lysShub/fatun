@@ -3,10 +3,10 @@ package client
 import (
 	"net/netip"
 
-	"github.com/lysShub/relraw"
-	"github.com/lysShub/relraw/tcp/bpf"
+	"github.com/lysShub/rsocket"
+	"github.com/lysShub/rsocket/tcp/bpf"
 )
 
-func connectRaw(addr netip.AddrPort) (relraw.RawConn, error) {
-	return bpf.Connect(netip.AddrPortFrom(relraw.LocalAddr(), 0), addr)
+func connectRaw(addr netip.AddrPort) (rsocket.RawConn, error) {
+	return bpf.Connect(netip.AddrPortFrom(rsocket.LocalAddr(), 0), addr)
 }

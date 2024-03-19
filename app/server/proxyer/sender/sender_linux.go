@@ -6,24 +6,26 @@ package sender
 import (
 	"context"
 	"net/netip"
+	"time"
 
 	"github.com/pkg/errors"
 
 	"github.com/lysShub/itun"
-	"github.com/lysShub/relraw"
-	"github.com/lysShub/relraw/tcp/bpf"
-	"github.com/lysShub/relraw/test"
-	"github.com/lysShub/relraw/test/debug"
+	"github.com/lysShub/rsocket"
+	"github.com/lysShub/rsocket/tcp"
+	"github.com/lysShub/rsocket/test"
+	"github.com/lysShub/rsocket/test/debug"
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
 type sender struct {
-	raw     relraw.RawConn
-	ipstack *relraw.IPStack
+	raw     rsocket.RawConn
+	ipstack *rsocket.IPStack
+	start   time.Time
 }
 
 func newSender(loc netip.AddrPort, proto itun.Proto, dst netip.AddrPort) (*sender, error) {
-	ipstack, err := relraw.NewIPStack(
+	ipstack, err := rsocket.NewIPStack(
 		loc.Addr(), dst.Addr(),
 		tcpip.TransportProtocolNumber(proto),
 	)
@@ -33,21 +35,25 @@ func newSender(loc netip.AddrPort, proto itun.Proto, dst netip.AddrPort) (*sende
 
 	switch proto {
 	case itun.TCP:
-		tcp, err := bpf.Connect(
+		tcp, err := tcp.Connect(
 			loc, dst,
-			relraw.UsedPort(), // PortAdapter bind the port
+			rsocket.UsedPort(), // PortAdapter bind the port
 		)
 		if err != nil {
 			return nil, err
 		}
 
-		return &sender{raw: tcp, ipstack: ipstack}, nil
+		return &sender{
+			raw:     tcp,
+			ipstack: ipstack,
+			start:   time.Now(),
+		}, nil
 	default:
 		return nil, errors.New("not support")
 	}
 }
 
-func (s *sender) Send(pkt *relraw.Packet) error {
+func (s *sender) Send(pkt *rsocket.Packet) error {
 	s.ipstack.AttachOutbound(pkt)
 	if debug.Debug() {
 		test.ValidIP(test.T(), pkt.Data())
@@ -57,7 +63,7 @@ func (s *sender) Send(pkt *relraw.Packet) error {
 	return err
 }
 
-func (s *sender) Recv(ctx context.Context, pkt *relraw.Packet) error {
+func (s *sender) Recv(ctx context.Context, pkt *rsocket.Packet) error {
 	err := s.raw.ReadCtx(ctx, pkt)
 	return err
 }

@@ -17,7 +17,7 @@ import (
 	"github.com/lysShub/itun/ustack"
 	"github.com/lysShub/itun/ustack/gonet"
 	"github.com/lysShub/itun/ustack/link"
-	"github.com/lysShub/relraw"
+	"github.com/lysShub/rsocket"
 	"github.com/pkg/errors"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
@@ -91,11 +91,21 @@ func (c *Client) close(cause error) (err error) {
 	}
 
 	if c.closeErr.CompareAndSwap(nil, &cause) {
-		err = errorx.Join(cause, c.ctr.Close())
+		err := cause
+
+		if c.ctr != nil {
+			err = errorx.Join(err, c.ctr.Close())
+		}
 		c.srvCancel()
-		err = errorx.Join(err, c.ep.Close())
-		err = errorx.Join(err, c.sessMgr.Close())
-		err = errorx.Join(err, c.conn.Close())
+		if c.ep != nil {
+			err = errorx.Join(err, c.ep.Close())
+		}
+		if c.sessMgr != nil {
+			err = errorx.Join(err, c.sessMgr.Close())
+		}
+		if c.conn != nil {
+			err = errorx.Join(err, c.conn.Close())
+		}
 
 		c.logger.Info("close", "cause", err.Error())
 
@@ -108,7 +118,7 @@ func (c *Client) close(cause error) (err error) {
 
 func (c *Client) uplinkService() {
 	var (
-		tcp = relraw.NewPacket(0, c.cfg.MTU)
+		tcp = rsocket.NewPacket(0, c.cfg.MTU)
 		err error
 	)
 
@@ -116,23 +126,23 @@ func (c *Client) uplinkService() {
 		tcp.Sets(0, c.cfg.MTU)
 		err = c.ep.Outbound(c.srvCtx, tcp)
 		if err != nil {
-			c.close(err)
-			return
+			break
 		}
 
 		err = c.uplink(c.srvCtx, tcp, session.CtrSessID)
 		if err != nil {
-			c.close(err)
-			return
+			break
 		}
 	}
+	c.close(err)
 }
 
 func (c *Client) downService() {
 	var (
-		tcp     = relraw.NewPacket(0, c.cfg.MTU)
 		tinyCnt int
+		tcp     = rsocket.NewPacket(0, c.cfg.MTU)
 		id      session.ID
+		s       *cs.Session
 		err     error
 	)
 
@@ -140,34 +150,33 @@ func (c *Client) downService() {
 		tcp.Sets(0, c.cfg.MTU)
 		id, err = c.conn.Recv(c.srvCtx, tcp)
 		if err != nil {
-			tinyCnt++
-			c.logger.Warn(err.Error())
-			continue
+			if errorx.IsTemporary(err) {
+				tinyCnt++
+				c.logger.Warn(err.Error())
+			} else {
+				break
+			}
 		}
 
 		if id == session.CtrSessID {
 			c.ep.Inbound(tcp)
 		} else {
-			s, err := c.sessMgr.Get(id)
+			s, err = c.sessMgr.Get(id)
 			if err != nil {
-				tinyCnt++
 				c.logger.Warn(err.Error())
 				continue
 			}
 
 			err = s.Inject(tcp)
 			if err != nil {
-				c.close(err)
-				return
+				break
 			}
 		}
 	}
-	err = errors.WithStack(app.ErrTooManyInvalidPacket{})
-	c.logger.Error(err.Error(), errorx.TraceAttr(err))
 	c.close(err)
 }
 
-func (c *Client) uplink(ctx context.Context, pkt *relraw.Packet, id session.ID) error {
+func (c *Client) uplink(ctx context.Context, pkt *rsocket.Packet, id session.ID) error {
 	return c.conn.Send(ctx, pkt, id)
 }
 

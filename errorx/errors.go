@@ -43,7 +43,18 @@ func (e *unwrapedLinkErr) Unwrap() error {
 	return e.parent
 }
 
-func Temporary(err error) bool {
+func IsTemporary(err error) bool {
 	_, ok := err.(interface{ Temporary() bool })
 	return ok
 }
+
+type temporaryErr struct {
+	err error
+}
+
+func Temporary(err error) error {
+	return &temporaryErr{err: err}
+}
+func (t *temporaryErr) Error() string   { return t.err.Error() }
+func (t *temporaryErr) Unwrap() error   { return t.err }
+func (t *temporaryErr) Temporary() bool { return true }

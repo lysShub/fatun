@@ -4,8 +4,8 @@ import (
 	"testing"
 
 	"github.com/lysShub/itun/ustack/faketcp"
-	"github.com/lysShub/relraw"
-	"github.com/lysShub/relraw/test"
+	"github.com/lysShub/rsocket"
+	"github.com/lysShub/rsocket/test"
 	"github.com/stretchr/testify/require"
 )
 
@@ -19,7 +19,7 @@ func Test_FakeTCP(t *testing.T) {
 
 	var data = make([]byte, 16)
 
-	var p = relraw.ToPacket(0, data)
+	var p = rsocket.ToPacket(0, data)
 
 	f.SendAttach(p)
 	require.Equal(t, 16+20, p.Len())

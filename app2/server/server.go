@@ -20,10 +20,10 @@ import (
 	"github.com/lysShub/itun/ustack/link"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 
-	"github.com/lysShub/relraw"
+	"github.com/lysShub/rsocket"
 )
 
-func ListenAndServe(ctx context.Context, l relraw.Listener, cfg *Config) error {
+func ListenAndServe(ctx context.Context, l rsocket.Listener, cfg *Config) error {
 	s, err := NewServer(l, cfg)
 	if err != nil {
 		return err
@@ -43,7 +43,7 @@ type Server struct {
 	cfg    *Config
 	logger *slog.Logger
 
-	l    relraw.Listener
+	l    rsocket.Listener
 	Addr netip.AddrPort
 
 	ap *adapter.Ports
@@ -52,7 +52,7 @@ type Server struct {
 	ctrListener *gonet.TCPListener
 }
 
-func NewServer(l relraw.Listener, cfg *Config) (*Server, error) {
+func NewServer(l rsocket.Listener, cfg *Config) (*Server, error) {
 	log := cfg.Log
 	if log == nil {
 		log = slog.NewJSONHandler(os.Stdout, nil)

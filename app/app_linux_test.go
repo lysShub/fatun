@@ -13,7 +13,7 @@ import (
 	"github.com/lysShub/itun/app/server"
 	"github.com/lysShub/itun/crypto"
 	"github.com/lysShub/itun/sconn"
-	"github.com/lysShub/relraw/tcp/bpf"
+	"github.com/lysShub/rsocket/tcp"
 	"github.com/stretchr/testify/require"
 )
 
@@ -27,7 +27,7 @@ func TestXxxx(t *testing.T) {
 		Logger: slog.NewJSONHandler(os.Stdout, nil),
 	}
 
-	raw, err := bpf.Listen(saddr)
+	raw, err := tcp.Listen(saddr)
 	require.NoError(t, err)
 	defer raw.Close()
 	l, err := sconn.NewListener(raw, &cfg.Config)

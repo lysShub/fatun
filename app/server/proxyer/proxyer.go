@@ -16,7 +16,7 @@ import (
 	"github.com/lysShub/itun/sconn"
 	"github.com/lysShub/itun/session"
 	"github.com/lysShub/itun/ustack"
-	"github.com/lysShub/relraw"
+	"github.com/lysShub/rsocket"
 )
 
 type Server interface {
@@ -66,7 +66,7 @@ func NewProxyer(srv Server, conn *sconn.Conn) (*Proxyer, error) {
 			{Key: "src", Value: slog.StringValue(conn.RemoteAddr().String())},
 		})),
 	}
-	p.sessionMgr = ss.NewSessionMgr(srv.Adapter(), proxyerImplPtr(p))
+	p.sessionMgr = ss.NewSessionMgr(proxyerImplPtr(p))
 	p.srvCtx, p.srvCancel = context.WithCancel(context.Background())
 
 	var err error
@@ -95,15 +95,24 @@ func (p *Proxyer) close(cause error) error {
 	}
 
 	if p.closeErr.CompareAndSwap(nil, &cause) {
+		err := cause
 
-		p.ctr.Close()
-
+		if p.ctr != nil {
+			err = errorx.Join(
+				err,
+				p.ctr.Close(),
+			)
+		}
 		p.srvCancel()
+		if p.ep != nil {
+			err = errorx.Join(
+				err,
+				p.ep.Close(),
+			)
+		}
 
-		p.ep.Close()
-
-		return cause
-
+		p.logger.Error(err.Error(), errorx.TraceAttr(err))
+		return err
 	} else {
 		return *p.closeErr.Load()
 	}
@@ -116,62 +125,65 @@ func (p *Proxyer) Proxy(ctx context.Context) error {
 
 func (p *Proxyer) downlinkService() {
 	var (
-		tcp = relraw.NewPacket(0, p.cfg.MTU)
+		tcp = rsocket.NewPacket(0, p.cfg.MTU)
 		err error
 	)
 
 	for {
 		tcp.Sets(0, p.cfg.MTU)
-		p.ep.Outbound(p.srvCtx, tcp)
+		err = p.ep.Outbound(p.srvCtx, tcp)
+		if err != nil {
+			break
+		}
 
 		err = p.conn.Send(p.srvCtx, tcp, session.CtrSessID)
 		if err != nil {
-			p.close(err)
-			return
+			break
 		}
 	}
+	p.close(err)
 }
 
 func (p *Proxyer) uplinkService() {
 	var (
 		tinyCnt int
-
-		tcp = relraw.NewPacket(0, p.cfg.MTU)
-		id  session.ID
-		err error
+		tcp     = rsocket.NewPacket(0, p.cfg.MTU)
+		id      session.ID
+		s       *ss.Session
+		err     error
 	)
 
 	for tinyCnt < 8 { // todo: from config
 		tcp.Sets(0, p.cfg.MTU)
 		id, err = p.conn.Recv(p.srvCtx, tcp)
 		if err != nil {
-			tinyCnt++
-			p.logger.Warn(err.Error())
-			continue
+			if errorx.IsTemporary(err) {
+				tinyCnt++
+				p.logger.Warn(err.Error())
+			} else {
+				break
+			}
 		}
 
 		if id == session.CtrSessID {
 			p.ep.Inbound(tcp)
 		} else {
-			s, err := p.sessionMgr.Get(id)
+			s, err = p.sessionMgr.Get(id)
 			if err != nil {
-				tinyCnt++
 				p.logger.Warn(err.Error())
 				continue
 			}
 
 			err = s.Send(tcp)
 			if err != nil {
-				p.close(err)
-				return
+				break
 			}
 		}
 	}
-
-	p.close(app.ErrTooManyInvalidPacket{})
+	p.close(err)
 }
 
-func (p *Proxyer) downlink(pkt *relraw.Packet, id session.ID) error {
+func (p *Proxyer) downlink(pkt *rsocket.Packet, id session.ID) error {
 	err := p.conn.Send(p.srvCtx, pkt, id)
 	if err != nil {
 		p.close(err)

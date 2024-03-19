@@ -9,7 +9,7 @@ import (
 	"github.com/lysShub/itun/cctx"
 	"github.com/lysShub/itun/errorx"
 	"github.com/lysShub/itun/session"
-	"github.com/lysShub/relraw"
+	"github.com/lysShub/rsocket"
 )
 
 type Client interface {
@@ -17,7 +17,7 @@ type Client interface {
 	Del(id session.ID, cause error) error
 	Logger() *slog.Logger
 
-	Uplink(pkt *relraw.Packet, id session.ID) error
+	Uplink(pkt *rsocket.Packet, id session.ID) error
 	MTU() int
 }
 
@@ -52,7 +52,7 @@ func newSession(
 
 func (s *Session) uplinkService() {
 	var mtu = s.client.MTU()
-	pkt := relraw.NewPacket(0, mtu)
+	pkt := rsocket.NewPacket(0, mtu)
 
 	for {
 		pkt.Sets(0, mtu)
@@ -74,7 +74,7 @@ func (s *Session) uplinkService() {
 	}
 }
 
-func (s *Session) Inject(pkt *relraw.Packet) {
+func (s *Session) Inject(pkt *rsocket.Packet) {
 	err := s.capture.Inject(pkt)
 	if err != nil {
 		s.client.Del(s.id, err)

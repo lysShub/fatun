@@ -4,9 +4,9 @@ import (
 	"context"
 	"net/netip"
 
-	"github.com/lysShub/relraw"
-	"github.com/lysShub/relraw/test"
-	"github.com/lysShub/relraw/test/debug"
+	"github.com/lysShub/rsocket"
+	"github.com/lysShub/rsocket/test"
+	"github.com/lysShub/rsocket/test/failpoint"
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -35,7 +35,7 @@ func NewChan(size int, mtu int) *Chan {
 	return c
 }
 
-func (c *Chan) Inbound(ip *relraw.Packet) {
+func (c *Chan) Inbound(ip *rsocket.Packet) {
 	if c.recordSeqAck {
 		hdrSize := 0
 		proto := tcpip.TransportProtocolNumber(0)
@@ -62,7 +62,7 @@ func (c *Chan) Inbound(ip *relraw.Packet) {
 	c.Endpoint.InjectInbound(header.IPv4ProtocolNumber, pkb)
 }
 
-func (c *Chan) Outbound(ctx context.Context, tcp *relraw.Packet) error {
+func (c *Chan) Outbound(ctx context.Context, tcp *rsocket.Packet) error {
 	pkb := c.Endpoint.ReadContext(ctx)
 	if pkb.IsNil() {
 		return ctx.Err()
@@ -99,7 +99,7 @@ func (c *Chan) Outbound(ctx context.Context, tcp *relraw.Packet) error {
 	return nil
 }
 
-func (c *Chan) OutboundBy(ctx context.Context, dst netip.AddrPort, tcp *relraw.Packet) error {
+func (c *Chan) OutboundBy(ctx context.Context, dst netip.AddrPort, tcp *rsocket.Packet) error {
 	var pkb *stack.PacketBuffer
 	for pkb.IsNil() {
 		pkb = c.walkBy(dst)

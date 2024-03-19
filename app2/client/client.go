@@ -19,9 +19,9 @@ import (
 	"github.com/lysShub/itun/ustack/faketcp"
 	"github.com/lysShub/itun/ustack/gonet"
 	"github.com/lysShub/itun/ustack/link"
-	"github.com/lysShub/relraw"
-	"github.com/lysShub/relraw/test"
-	"github.com/lysShub/relraw/test/debug"
+	"github.com/lysShub/rsocket"
+	"github.com/lysShub/rsocket/test"
+	"github.com/lysShub/rsocket/test/debug"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -48,7 +48,7 @@ type Client struct {
 
 	pseudoSum1 uint16
 	seq, ack   uint32
-	ipstack    *relraw.IPStack
+	ipstack    *rsocket.IPStack
 
 	inited atomic.Bool
 
@@ -57,7 +57,7 @@ type Client struct {
 	ctr    control.Client
 }
 
-func NewClient(parentCtx context.Context, raw relraw.RawConn, cfg *Config) (*Client, error) {
+func NewClient(parentCtx context.Context, raw rsocket.RawConn, cfg *Config) (*Client, error) {
 	log := cfg.Log
 	if log == nil {
 		log = slog.NewJSONHandler(os.Stdout, nil)
@@ -93,7 +93,7 @@ func NewClient(parentCtx context.Context, raw relraw.RawConn, cfg *Config) (*Cli
 		return nil, c.Close(err)
 	}
 
-	if c.ipstack, err = relraw.NewIPStack(
+	if c.ipstack, err = rsocket.NewIPStack(
 		c.raw.LocalAddrPort().Addr(), c.raw.RemoteAddrPort().Addr(),
 		header.TCPProtocolNumber,
 	); err != nil {
@@ -150,7 +150,7 @@ func (c *Client) handshake() error {
 
 func (c *Client) downlinkService() {
 	mtu := c.raw.MTU()
-	var tcp = relraw.NewPacket(0, mtu)
+	var tcp = rsocket.NewPacket(0, mtu)
 
 	for {
 		tcp.Sets(0, mtu)
@@ -205,7 +205,7 @@ func (c *Client) downlinkService() {
 
 func (c *Client) uplinkService() {
 	mtu := c.raw.MTU()
-	var pkt = relraw.NewPacket(0, mtu)
+	var pkt = rsocket.NewPacket(0, mtu)
 
 	var err error
 	for {
@@ -240,7 +240,7 @@ func (c *Client) uplinkService() {
 	c.Close(err)
 }
 
-func (c *Client) uplink(pkt *relraw.Packet, id session.ID) error {
+func (c *Client) uplink(pkt *rsocket.Packet, id session.ID) error {
 	if debug.Debug() {
 		require.True(test.T(), c.inited.Load())
 	}

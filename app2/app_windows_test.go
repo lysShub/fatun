@@ -8,21 +8,21 @@ import (
 	"testing"
 	"time"
 
-	gdivert "github.com/lysShub/divert-go"
+	"github.com/lysShub/divert-go"
 	"github.com/lysShub/itun/app2/client"
 	"github.com/lysShub/itun/app2/client/capture"
 	"github.com/lysShub/itun/app2/client/filter"
 	"github.com/lysShub/itun/cctx"
 	"github.com/lysShub/itun/config"
 	"github.com/lysShub/itun/crypto"
-	"github.com/lysShub/relraw/tcp/divert"
-	"github.com/lysShub/relraw/test"
+	"github.com/lysShub/rsocket/tcp"
+	"github.com/lysShub/rsocket/test"
 	"github.com/stretchr/testify/require"
 )
 
 func TestXxxx(t *testing.T) {
-	gdivert.Load(gdivert.Mem)
-	defer gdivert.Release()
+	divert.Load(divert.Mem)
+	defer divert.Release()
 	ctx := context.Background()
 
 	f := filter.NewMock("curl.exe")
@@ -40,7 +40,7 @@ func TestXxxx(t *testing.T) {
 			MTU: 1536,
 		}
 
-		raw, err := divert.Connect(caddr, saddr)
+		raw, err := tcp.Connect(caddr, saddr)
 		require.NoError(t, err)
 
 		c, err = client.NewClient(ctx, raw, cfg)
@@ -69,8 +69,8 @@ func TestXxxx(t *testing.T) {
 }
 
 func Test_Capture(t *testing.T) {
-	gdivert.Load(gdivert.Mem)
-	defer gdivert.Release()
+	divert.Load(divert.Mem)
+	defer divert.Release()
 
 	ctx := cctx.WithContext(context.Background())
 

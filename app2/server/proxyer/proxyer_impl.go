@@ -8,7 +8,7 @@ import (
 	"github.com/lysShub/itun/control"
 	"github.com/lysShub/itun/errorx"
 	"github.com/lysShub/itun/session"
-	"github.com/lysShub/relraw"
+	"github.com/lysShub/rsocket"
 )
 
 type sessionImpl Proxyer
@@ -17,7 +17,7 @@ type proxyerImplPtr = *sessionImpl
 
 var _ ss.Proxyer = (proxyerImplPtr)(nil)
 
-func (s *sessionImpl) Downlink(pkt *relraw.Packet, id session.ID) error {
+func (s *sessionImpl) Downlink(pkt *rsocket.Packet, id session.ID) error {
 	return (*Proxyer)(s).downlink(pkt, id)
 }
 func (s *sessionImpl) MTU() int                                   { return s.raw.MTU() }

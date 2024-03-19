@@ -6,7 +6,7 @@ import (
 
 	cs "github.com/lysShub/itun/app/client/session"
 	"github.com/lysShub/itun/session"
-	"github.com/lysShub/relraw"
+	"github.com/lysShub/rsocket"
 )
 
 type sessionImpl Client
@@ -18,7 +18,7 @@ var _ cs.Client = (sessionImplPtr)(nil)
 func (s *sessionImpl) Logger() *slog.Logger {
 	return s.logger
 }
-func (s *sessionImpl) Uplink(pkt *relraw.Packet, id session.ID) error {
+func (s *sessionImpl) Uplink(pkt *rsocket.Packet, id session.ID) error {
 	return (*Client)(s).uplink(context.Background(), pkt, id)
 }
 func (s *sessionImpl) MTU() int { return s.cfg.MTU }

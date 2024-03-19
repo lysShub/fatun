@@ -4,7 +4,7 @@ import (
 	"context"
 	"net/netip"
 
-	"github.com/lysShub/relraw"
+	"github.com/lysShub/rsocket"
 	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
@@ -20,11 +20,11 @@ func WrapNofin(child Link) Link {
 	}
 }
 
-func (n *nofin) Inbound(ip *relraw.Packet) {
+func (n *nofin) Inbound(ip *rsocket.Packet) {
 	decodeFakeFIN(tcphdr(ip))
 	n.Link.Inbound(ip)
 }
-func (n *nofin) OutboundBy(ctx context.Context, dst netip.AddrPort, tcp *relraw.Packet) error {
+func (n *nofin) OutboundBy(ctx context.Context, dst netip.AddrPort, tcp *rsocket.Packet) error {
 	err := n.Link.OutboundBy(ctx, dst, tcp)
 	if err != nil {
 		return err
@@ -32,7 +32,7 @@ func (n *nofin) OutboundBy(ctx context.Context, dst netip.AddrPort, tcp *relraw.
 	encodeFakeFIN(tcp.Data())
 	return nil
 }
-func (n *nofin) Outbound(ctx context.Context, tcp *relraw.Packet) error {
+func (n *nofin) Outbound(ctx context.Context, tcp *rsocket.Packet) error {
 	err := n.Link.Outbound(ctx, tcp)
 	if err != nil {
 		return err
@@ -41,7 +41,7 @@ func (n *nofin) Outbound(ctx context.Context, tcp *relraw.Packet) error {
 	return err
 }
 
-func tcphdr(ip *relraw.Packet) header.TCP {
+func tcphdr(ip *rsocket.Packet) header.TCP {
 	iph := ip.Data()
 	switch header.IPVersion(iph) {
 	case 4:

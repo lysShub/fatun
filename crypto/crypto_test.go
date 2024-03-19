@@ -10,8 +10,8 @@ import (
 	"github.com/lysShub/itun"
 	"github.com/lysShub/itun/crypto"
 	"github.com/lysShub/itun/ustack"
-	"github.com/lysShub/relraw"
-	"github.com/lysShub/relraw/test"
+	"github.com/lysShub/rsocket"
+	"github.com/lysShub/rsocket/test"
 	"github.com/stretchr/testify/require"
 )
 
@@ -21,7 +21,7 @@ func UnicomStackAndRaw(t *testing.T, s ustack.Ustack, raw *itun.RawConn, pseudoS
 
 	go func() {
 		mtu := raw.MTU()
-		var ip = relraw.NewPacket(0, mtu)
+		var ip = rsocket.NewPacket(0, mtu)
 
 		for {
 			ip.Sets(0, mtu)
@@ -43,7 +43,7 @@ func UnicomStackAndRaw(t *testing.T, s ustack.Ustack, raw *itun.RawConn, pseudoS
 	}()
 	go func() {
 		mtu := raw.MTU()
-		var tcp = relraw.NewPacket(0, mtu)
+		var tcp = rsocket.NewPacket(0, mtu)
 
 		for {
 			tcp.Sets(0, mtu)

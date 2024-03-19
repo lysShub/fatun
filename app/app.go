@@ -11,8 +11,8 @@ type Config struct {
 	Logger slog.Handler
 }
 
-type ErrTooManyInvalidPacket struct{}
+type ErrRecvTooManyError struct{}
 
-func (e ErrTooManyInvalidPacket) Error() string {
+func (e ErrRecvTooManyError) Error() string {
 	return "recv too many invalid packet"
 }

@@ -8,19 +8,19 @@ import (
 	"github.com/lysShub/itun/ustack"
 	"github.com/lysShub/itun/ustack/gonet"
 	"github.com/lysShub/itun/ustack/link"
-	"github.com/lysShub/relraw"
+	"github.com/lysShub/rsocket"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
 type Listener struct {
 	cfg *Config
-	raw relraw.Listener
+	raw rsocket.Listener
 
 	stack ustack.Ustack
 	l     *gonet.TCPListener
 }
 
-func NewListener(l relraw.Listener, cfg *Config) (*Listener, error) {
+func NewListener(l rsocket.Listener, cfg *Config) (*Listener, error) {
 	var err error
 	if err = cfg.init(); err != nil {
 		return nil, err

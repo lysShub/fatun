@@ -6,7 +6,7 @@ import (
 	"net/netip"
 
 	"github.com/lysShub/itun"
-	"github.com/lysShub/relraw"
+	"github.com/lysShub/rsocket"
 	"github.com/pkg/errors"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
@@ -18,7 +18,7 @@ import (
 
 type ID uint16
 
-func SetID(pkt *relraw.Packet, id ID) {
+func SetID(pkt *rsocket.Packet, id ID) {
 	pkt.AllocHead(Size)
 	pkt.SetHead(pkt.Head() - Size)
 
@@ -26,7 +26,7 @@ func SetID(pkt *relraw.Packet, id ID) {
 	binary.BigEndian.PutUint16(b[idOffset1:idOffset2], uint16(id))
 }
 
-func GetID(seg *relraw.Packet) ID {
+func GetID(seg *rsocket.Packet) ID {
 	b := seg.Data()
 	id := binary.BigEndian.Uint16(b[idOffset1:idOffset2])
 	seg.SetHead(seg.Head() + Size)

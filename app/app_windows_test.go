@@ -10,23 +10,23 @@ import (
 	"os"
 	"testing"
 
-	gdivert "github.com/lysShub/divert-go"
+	"github.com/lysShub/divert-go"
 	"github.com/lysShub/itun/app"
 	"github.com/lysShub/itun/app/client"
 	"github.com/lysShub/itun/app/client/capture"
 	"github.com/lysShub/itun/app/client/filter"
 	"github.com/lysShub/itun/crypto"
 	"github.com/lysShub/itun/sconn"
-	"github.com/lysShub/relraw/tcp/divert"
+	"github.com/lysShub/rsocket/tcp"
 	"github.com/stretchr/testify/require"
 )
 
 func TestXxxx(t *testing.T) {
-	gdivert.Load(gdivert.Mem)
-	defer gdivert.Release()
+	divert.Load(divert.Mem)
+	defer divert.Release()
 	ctx := context.Background()
 
-	f := filter.NewMock("curl.exe")
+	f := filter.NewMock("chrome.exe")
 	capture, err := capture.NewCapture(f)
 	require.NoError(t, err)
 	defer capture.Close()
@@ -42,7 +42,7 @@ func TestXxxx(t *testing.T) {
 			Logger: slog.NewJSONHandler(os.Stdout, nil),
 		}
 
-		raw, err := divert.Connect(caddr, saddr)
+		raw, err := tcp.Connect(caddr, saddr)
 		require.NoError(t, err)
 		conn, err := sconn.Dial(raw, &cfg.Config)
 		require.NoError(t, err)

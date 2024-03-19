@@ -1,12 +1,12 @@
 package client
 
 import (
-	"github.com/lysShub/relraw"
-	"github.com/lysShub/relraw/tcp/divert"
+	"github.com/lysShub/rsocket"
+	"github.com/lysShub/rsocket/tcp/divert"
 
 	"net/netip"
 )
 
-func connectRaw(addr netip.AddrPort) (relraw.RawConn, error) {
-	return divert.Connect(netip.AddrPortFrom(relraw.LocalAddr(), 0), addr)
+func connectRaw(addr netip.AddrPort) (rsocket.RawConn, error) {
+	return divert.Connect(netip.AddrPortFrom(rsocket.LocalAddr(), 0), addr)
 }

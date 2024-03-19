@@ -11,9 +11,8 @@ import (
 	"github.com/lysShub/itun/cctx"
 	"github.com/lysShub/itun/errorx"
 	"github.com/lysShub/itun/session"
+	"github.com/lysShub/rsocket"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
-
-	"github.com/lysShub/relraw"
 )
 
 type Proxyer interface {
@@ -27,7 +26,7 @@ type Proxyer interface {
 	Logger() *slog.Logger
 
 	// proxyer downlink
-	Downlink(pkt *relraw.Packet, id session.ID) error
+	Downlink(pkt *rsocket.Packet, id session.ID) error
 	MTU() int
 }
 
@@ -76,7 +75,7 @@ func (s *Session) ID() session.ID {
 func (s *Session) downlinkService() {
 	var (
 		mtu = s.proxyer.MTU()
-		seg = relraw.NewPacket(0, mtu)
+		seg = rsocket.NewPacket(0, mtu)
 	)
 
 	for {
@@ -105,7 +104,7 @@ func (s *Session) downlinkService() {
 	}
 }
 
-func (s *Session) Send(pkt *relraw.Packet) {
+func (s *Session) Send(pkt *rsocket.Packet) {
 	switch s.session.Proto {
 	case itun.TCP:
 		header.TCP(pkt.Data()).SetSourcePortWithChecksumUpdate(s.locAddr.Port())

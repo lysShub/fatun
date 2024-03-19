@@ -22,9 +22,9 @@ import (
 	"github.com/lysShub/itun/cctx"
 	"github.com/lysShub/itun/errorx"
 	sess "github.com/lysShub/itun/session"
-	"github.com/lysShub/relraw"
-	"github.com/lysShub/relraw/test"
-	"github.com/lysShub/relraw/test/debug"
+	"github.com/lysShub/rsocket"
+	"github.com/lysShub/rsocket/test"
+	"github.com/lysShub/rsocket/test/debug"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
@@ -265,7 +265,7 @@ type session struct {
 	d    *divert.Handle
 
 	inboundAddr *divert.Address
-	ipstack     *relraw.IPStack
+	ipstack     *rsocket.IPStack
 
 	closed atomic.Bool
 }
@@ -289,7 +289,7 @@ func newSession(
 	if err != nil {
 		return nil, err
 	}
-	c.ipstack, err = relraw.NewIPStack(s.Src.Addr(), s.Dst.Addr(), tcpip.TransportProtocolNumber(s.Proto))
+	c.ipstack, err = rsocket.NewIPStack(s.Src.Addr(), s.Dst.Addr(), tcpip.TransportProtocolNumber(s.Proto))
 	if err != nil {
 		return nil, err
 	}
@@ -306,7 +306,7 @@ func (c *session) push(b []byte) {
 
 var _ Session = (*session)(nil)
 
-func (c *session) Capture(ctx context.Context, pkt *relraw.Packet) (err error) {
+func (c *session) Capture(ctx context.Context, pkt *rsocket.Packet) (err error) {
 	b := pkt.Data()
 	b = b[:cap(b)]
 
@@ -334,7 +334,7 @@ func (c *session) Capture(ctx context.Context, pkt *relraw.Packet) (err error) {
 	return nil
 }
 
-func (c *session) Inject(pkt *relraw.Packet) error {
+func (c *session) Inject(pkt *rsocket.Packet) error {
 	c.ipstack.AttachInbound(pkt)
 	if debug.Debug() {
 		test.ValidIP(test.T(), pkt.Data())

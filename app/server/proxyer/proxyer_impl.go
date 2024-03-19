@@ -6,11 +6,12 @@ import (
 	"net/netip"
 	"time"
 
+	"github.com/lysShub/itun/app/server/adapter"
 	ss "github.com/lysShub/itun/app/server/proxyer/session"
 	"github.com/lysShub/itun/control"
 	"github.com/lysShub/itun/errorx"
 	"github.com/lysShub/itun/session"
-	"github.com/lysShub/relraw"
+	"github.com/lysShub/rsocket"
 )
 
 type sessionImpl Proxyer
@@ -19,13 +20,14 @@ type proxyerImplPtr = *sessionImpl
 
 var _ ss.Proxyer = (proxyerImplPtr)(nil)
 
-func (s *sessionImpl) Downlink(pkt *relraw.Packet, id session.ID) error {
-	return (*Proxyer)(s).downlink(pkt, id)
-}
 func (s *sessionImpl) MTU() int                 { return s.cfg.MTU }
 func (s *sessionImpl) Logger() *slog.Logger     { return s.logger }
 func (s *sessionImpl) Addr() netip.AddrPort     { return s.conn.LocalAddr() }
-func (s *sessionImpl) Keepalive() time.Duration { return time.Minute } // todo: config
+func (s *sessionImpl) Adapter() *adapter.Ports  { return s.srv.Adapter() }
+func (s *sessionImpl) Keepalive() time.Duration { return time.Minute } // todo: from config
+func (s *sessionImpl) Downlink(pkt *rsocket.Packet, id session.ID) error {
+	return (*Proxyer)(s).downlink(pkt, id)
+}
 
 type controlImpl Proxyer
 

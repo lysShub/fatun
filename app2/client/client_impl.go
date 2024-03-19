@@ -6,7 +6,7 @@ import (
 
 	cs "github.com/lysShub/itun/app2/client/session"
 	"github.com/lysShub/itun/session"
-	"github.com/lysShub/relraw"
+	"github.com/lysShub/rsocket"
 )
 
 type sessionIpml Client
@@ -15,7 +15,7 @@ type sessionIpmlPtr = *sessionIpml
 
 var _ cs.Client = sessionIpmlPtr(nil)
 
-func (s *sessionIpml) Uplink(pkt *relraw.Packet, id session.ID) error {
+func (s *sessionIpml) Uplink(pkt *rsocket.Packet, id session.ID) error {
 	return (*Client)(s).uplink(pkt, id)
 }
 func (s *sessionIpml) MTU() int                 { return s.raw.MTU() }

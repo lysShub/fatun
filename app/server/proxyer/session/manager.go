@@ -8,14 +8,12 @@ import (
 	"time"
 
 	"github.com/lysShub/itun/app/server/adapter"
-	"github.com/lysShub/itun/errorx"
 	"github.com/lysShub/itun/session"
-	"github.com/lysShub/relraw"
+	"github.com/lysShub/rsocket"
 )
 
 type SessionMgr struct {
 	idmgr   *session.IdMgr
-	ap      *adapter.Ports
 	proxyer Proxyer
 
 	ticker  *time.Ticker
@@ -29,22 +27,22 @@ type SessionMgr struct {
 }
 
 type Proxyer interface {
-	// logger
 	Logger() *slog.Logger
 
 	Addr() netip.AddrPort
 
 	Keepalive() time.Duration
 
-	// proxyer downlink
-	Downlink(pkt *relraw.Packet, id session.ID) error
+	Adapter() *adapter.Ports
+
+	Downlink(pkt *rsocket.Packet, id session.ID) error
+
 	MTU() int
 }
 
-func NewSessionMgr(ap *adapter.Ports, proxyer Proxyer) *SessionMgr {
+func NewSessionMgr(proxyer Proxyer) *SessionMgr {
 	mgr := &SessionMgr{
 		idmgr:   session.NewIDMgr(),
-		ap:      ap,
 		proxyer: proxyer,
 		closeCh: make(chan struct{}),
 
@@ -80,7 +78,7 @@ func (mgr *SessionMgr) Add(s session.Session) (*Session, error) {
 	}
 
 	ns, err := newSession(
-		mgr,
+		mgr, mgr.proxyer,
 		id, s,
 	)
 	if err != nil {
@@ -99,22 +97,16 @@ func (mgr *SessionMgr) Del(id session.ID, cause error) (err error) {
 	if err != nil {
 		return err
 	} else {
-		return mgr.del(s)
+		mgr.del(s)
+		return nil
 	}
 }
 
-func (mgr *SessionMgr) del(s *Session) error {
+func (mgr *SessionMgr) del(s *Session) {
 	mgr.mu.Lock()
 	delete(mgr.sessionMap, s.ID())
 	delete(mgr.idMap, s.session)
 	mgr.mu.Unlock()
-
-	err := mgr.ap.DelPort(
-		s.session.Proto,
-		s.locAddr.Port(),
-		s.session.Dst,
-	)
-	return err
 }
 
 func (mgr *SessionMgr) Close() (err error) {
@@ -136,10 +128,7 @@ func (mgr *SessionMgr) Close() (err error) {
 	mgr.mu.Unlock()
 
 	for _, e := range ss {
-		err = errorx.Join(
-			err,
-			mgr.del(e),
-		)
+		mgr.del(e)
 		e.close(os.ErrClosed)
 	}
 	return err

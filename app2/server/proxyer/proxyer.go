@@ -19,9 +19,9 @@ import (
 	"github.com/lysShub/itun/session"
 	"github.com/lysShub/itun/ustack"
 	"github.com/lysShub/itun/ustack/faketcp"
-	"github.com/lysShub/relraw"
-	"github.com/lysShub/relraw/test"
-	"github.com/lysShub/relraw/test/debug"
+	"github.com/lysShub/rsocket"
+	"github.com/lysShub/rsocket/test"
+	"github.com/lysShub/rsocket/test/debug"
 	"github.com/stretchr/testify/require"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
@@ -66,7 +66,7 @@ type Proxyer struct {
 	sessionMgr *ss.SessionMgr
 
 	pseudoSum1 uint16
-	ipstack    *relraw.IPStack
+	ipstack    *rsocket.IPStack
 	seq, ack   uint32
 
 	prepareInit atomic.Bool
@@ -102,7 +102,7 @@ func NewProxyer(c context.Context, srv Server, raw *itun.RawConn) (*Proxyer, err
 	}
 
 	var err error
-	if p.ipstack, err = relraw.NewIPStack(
+	if p.ipstack, err = rsocket.NewIPStack(
 		raw.LocalAddrPort().Addr(),
 		raw.RemoteAddrPort().Addr(),
 		header.TCPProtocolNumber,
@@ -167,7 +167,7 @@ func (p *Proxyer) downlinkService() {
 	dst := p.raw.RemoteAddrPort()
 	mtu := p.raw.MTU()
 
-	var tcp = relraw.NewPacket(0, mtu)
+	var tcp = rsocket.NewPacket(0, mtu)
 	for {
 		tcp.SetHead(0)
 		st.OutboundBy(p.ctx, dst, tcp)
@@ -199,7 +199,7 @@ func (p *Proxyer) uplinkService() {
 		mtu     = p.raw.MTU()
 		minSize = header.TCPMinimumSize + session.Size
 
-		seg = relraw.NewPacket(0, mtu)
+		seg = rsocket.NewPacket(0, mtu)
 	)
 
 	for {
@@ -263,7 +263,7 @@ func (p *Proxyer) controlService() {
 	}
 }
 
-func (p *Proxyer) downlink(pkt *relraw.Packet, id session.ID) error {
+func (p *Proxyer) downlink(pkt *rsocket.Packet, id session.ID) error {
 	if debug.Debug() {
 		require.True(test.T(), p.inited.Load())
 	}

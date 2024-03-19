@@ -19,8 +19,12 @@ github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 h1:6E+4a0GO5zZEnZ
 github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0/go.mod h1:zJYVVT2jmtg6P3p1VtQj7WsuWi/y4VnjVBn7F8KPB3I=
 github.com/lysShub/divert-go v0.0.0-20240313084012-1361fa303219 h1:yNHzs1Ohqkpovt2FEuyTDxwNWIdEmtbN8ogRCjnPHVw=
 github.com/lysShub/divert-go v0.0.0-20240313084012-1361fa303219/go.mod h1:iWqZEwCkgY3PZpUFbyvOvErYC9DZv3Tv/SS1glsiIl0=
-github.com/lysShub/relraw v0.0.0-20240315135353-3e1fd95d1fbf h1:0T8EhSuOTy4QiGdji+ikm/2xxXR1Co1262R7UoSQIVI=
-github.com/lysShub/relraw v0.0.0-20240315135353-3e1fd95d1fbf/go.mod h1:ZxFVVTw1IDSbW1DAG8HSREZJ/GVrdMJCjKtjxbMSTBE=
+github.com/lysShub/rsocket v0.0.0-20240315135353-3e1fd95d1fbf h1:0T8EhSuOTy4QiGdji+ikm/2xxXR1Co1262R7UoSQIVI=
+github.com/lysShub/rsocket v0.0.0-20240315135353-3e1fd95d1fbf/go.mod h1:ZxFVVTw1IDSbW1DAG8HSREZJ/GVrdMJCjKtjxbMSTBE=
+github.com/lysShub/rsocket v0.0.0-20240318145508-d4c818c59988 h1:CEjYimHtZw9/dgRf2B67nmWHsuZMB1qh/KmRuhDuiak=
+github.com/lysShub/rsocket v0.0.0-20240318145508-d4c818c59988/go.mod h1:UL/ilMmsGc8P3RqFqz/BUvjqa/+dl9k0VmVFWC2xkWk=
+github.com/lysShub/rsocket v0.0.0-20240319070307-70a3a184346c h1:XYabsJexPt4xZjPAHgtZMfD5MGKRJTWd6Ds0wID73Go=
+github.com/lysShub/rsocket v0.0.0-20240319070307-70a3a184346c/go.mod h1:1YQ/2eWV/eDXJB1wHd6LrU0quN9mGf+K4fhsVu8BOaU=
 github.com/lysShub/wintun-go v0.0.0-20240311102803-07195f507e37 h1:2vG2+P6wNh+ItpQzRyHgb4+b8u/ReYfNh4GJHl2ZSx0=
 github.com/lysShub/wintun-go v0.0.0-20240311102803-07195f507e37/go.mod h1:BCj6kcW5G30wkjtKulTQ83QKZutWuctHTroy+ciTWpI=
 github.com/pkg/errors v0.9.1 h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=

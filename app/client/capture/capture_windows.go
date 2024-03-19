@@ -12,17 +12,15 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/pkg/errors"
-	"github.com/stretchr/testify/require"
-
 	"github.com/lysShub/divert-go"
 	"github.com/lysShub/itun"
 	"github.com/lysShub/itun/app/client/filter"
 	"github.com/lysShub/itun/errorx"
 	sess "github.com/lysShub/itun/session"
-	"github.com/lysShub/relraw"
-	"github.com/lysShub/relraw/test"
-	"github.com/lysShub/relraw/test/debug"
+	"github.com/lysShub/rsocket"
+	"github.com/lysShub/rsocket/test"
+	"github.com/lysShub/rsocket/test/debug"
+	"github.com/pkg/errors"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
@@ -136,7 +134,7 @@ func (s *capture) tcpService() {
 			Dst:   netip.AddrPortFrom(toAddr(ip.DestinationAddress()), udp.DestinationPort()),
 		}
 
-		if !s.hitter.HitOnce(sess) { // pass
+		if !s.hitter.HitOnce(sess) {
 			if _, err = d.Send(p[:n], outbound); err != nil {
 				s.close(err)
 				return
@@ -255,11 +253,13 @@ type session struct {
 
 	closed atomic.Bool
 
-	buff chan []byte
-	d    *divert.Handle
+	// before session work, some packet maybe read by capture
+	prevIPsCh chan []byte
+
+	d *divert.Handle
 
 	inboundAddr *divert.Address
-	ipstack     *relraw.IPStack
+	ipstack     *rsocket.IPStack
 }
 
 var _ Session = (*session)(nil)
@@ -270,8 +270,11 @@ func newSession(
 ) (*session, error) {
 	var err error
 	var c = &session{
-		capture:     capture,
-		s:           s,
+		capture: capture,
+		s:       s,
+
+		prevIPsCh: make(chan []byte, 4),
+
 		inboundAddr: &divert.Address{},
 	}
 	c.inboundAddr.Network().IfIdx = uint32(injectIfIdx)
@@ -285,7 +288,7 @@ func newSession(
 	if err != nil {
 		return nil, err
 	}
-	c.ipstack, err = relraw.NewIPStack(s.Src.Addr(), s.Dst.Addr(), tcpip.TransportProtocolNumber(s.Proto))
+	c.ipstack, err = rsocket.NewIPStack(s.Src.Addr(), s.Dst.Addr(), tcpip.TransportProtocolNumber(s.Proto))
 	if err != nil {
 		return nil, err
 	}
@@ -293,20 +296,29 @@ func newSession(
 	return c, nil
 }
 
-func (c *session) push(b []byte) {
+func (c *session) push(ip []byte) {
 	select {
-	case c.buff <- b:
+	case c.prevIPsCh <- ip:
 	default:
 	}
 }
 
-func (c *session) Capture(ctx context.Context, pkt *relraw.Packet) (err error) {
+func (c *session) Capture(ctx context.Context, pkt *rsocket.Packet) (err error) {
 	b := pkt.Data()
 	b = b[:cap(b)]
 
 	select {
-	case tmp := <-c.buff:
-		n := copy(b, tmp)
+	case ip := <-c.prevIPsCh:
+		hdrn := uint8(0)
+		switch header.IPVersion(ip) {
+		case 4:
+			hdrn = header.IPv4(ip).HeaderLength()
+		case 6:
+			hdrn = header.IPv6MinimumSize
+		default:
+		}
+
+		n := copy(b, ip[hdrn:])
 		pkt.SetLen(n)
 		return nil
 	default:
@@ -319,16 +331,14 @@ func (c *session) Capture(ctx context.Context, pkt *relraw.Packet) (err error) {
 	}
 	pkt.SetLen(n)
 
-	if debug.Debug() {
-		require.Equal(test.T(), header.IPVersion(pkt.Data()), 4)
-	}
+	// todo: ipv6
 	iphdrLen := header.IPv4(pkt.Data()).HeaderLength()
 	pkt.SetHead(pkt.Head() + int(iphdrLen))
 
 	return nil
 }
 
-func (c *session) Inject(pkt *relraw.Packet) error {
+func (c *session) Inject(pkt *rsocket.Packet) error {
 	c.ipstack.AttachInbound(pkt)
 	if debug.Debug() {
 		test.ValidIP(test.T(), pkt.Data())
@@ -344,7 +354,7 @@ func (s *session) String() string        { return s.s.String() }
 func (c *session) Close() error {
 	if c.closed.CompareAndSwap(false, true) {
 		c.capture.del(c.s)
-		close(c.buff)
+		close(c.prevIPsCh)
 		return errors.WithStack(c.d.Close())
 	}
 	return nil

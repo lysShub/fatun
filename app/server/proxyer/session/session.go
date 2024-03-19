@@ -11,13 +11,17 @@ import (
 	"github.com/lysShub/itun/app/server/proxyer/sender"
 	"github.com/lysShub/itun/errorx"
 	"github.com/lysShub/itun/session"
+	"github.com/lysShub/rsocket"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
-
-	"github.com/lysShub/relraw"
 )
 
+type mgrDel interface {
+	del(*Session)
+}
+
 type Session struct {
-	mgr *SessionMgr
+	mgr     mgrDel
+	proxyer Proxyer
 
 	id      session.ID
 	session session.Session
@@ -32,27 +36,28 @@ type Session struct {
 }
 
 func newSession(
-	mgr *SessionMgr,
+	mgr mgrDel, proxyer Proxyer,
 	id session.ID, sess session.Session,
 ) (*Session, error) {
 	var s = &Session{
-		mgr: mgr,
+		mgr:     mgr,
+		proxyer: proxyer,
 
 		id:      id,
 		session: sess,
 	}
 
-	locPort, err := mgr.ap.GetPort(sess.Proto, sess.Dst)
+	locPort, err := proxyer.Adapter().GetPort(sess.Proto, sess.Dst)
 	if err != nil {
 		return nil, err
 	} else {
-		s.locAddr = netip.AddrPortFrom(mgr.proxyer.Addr().Addr(), locPort)
+		s.locAddr = netip.AddrPortFrom(proxyer.Addr().Addr(), locPort)
 	}
 
 	s.srvCtx, s.srvCancel = context.WithCancel(context.Background())
 	s.sender, err = sender.NewSender(s.locAddr, sess.Proto, sess.Dst)
 	if err != nil {
-		mgr.ap.DelPort(sess.Proto, locPort, sess.Dst)
+		proxyer.Adapter().DelPort(sess.Proto, locPort, sess.Dst)
 		return nil, err
 	}
 
@@ -67,10 +72,22 @@ func (s *Session) close(cause error) {
 	}
 
 	if s.closeErr.CompareAndSwap(nil, &cause) {
-		err := errorx.Join(cause, s.mgr.del(s))
-		s.srvCancel()
-		err = errorx.Join(err, s.sender.Close())
+		err := cause
 
+		if s.mgr != nil {
+			s.mgr.del(s)
+		}
+		s.srvCancel()
+
+		if s.sender != nil {
+			err = errorx.Join(err, s.sender.Close())
+		}
+
+		sess := s.session
+		e := s.proxyer.Adapter().DelPort(sess.Proto, s.locAddr.Port(), sess.Dst)
+		err = errorx.Join(err, e)
+
+		s.proxyer.Logger().Info("session close")
 		s.closeErr.Store(&err)
 	}
 }
@@ -81,17 +98,15 @@ func (s *Session) ID() session.ID {
 
 func (s *Session) downlinkService() {
 	var (
-		mtu = s.mgr.proxyer.MTU()
-		seg = relraw.NewPacket(0, mtu)
+		mtu = s.proxyer.MTU()
+		seg = rsocket.NewPacket(0, mtu)
 	)
 
 	for {
-		seg.Sets(0, mtu)
 		s.cnt.Add(1)
-
+		seg.Sets(0, mtu)
 		err := s.sender.Recv(s.srvCtx, seg)
 		if err != nil {
-			s.mgr.proxyer.Logger().Warn(err.Error())
 			s.close(err)
 			return
 		}
@@ -104,16 +119,15 @@ func (s *Session) downlinkService() {
 		default:
 		}
 
-		err = s.mgr.proxyer.Downlink(seg, s.id)
+		err = s.proxyer.Downlink(seg, s.id)
 		if err != nil {
-			s.mgr.proxyer.Logger().Warn(err.Error())
 			s.close(err)
 			return
 		}
 	}
 }
 
-func (s *Session) Send(pkt *relraw.Packet) error {
+func (s *Session) Send(pkt *rsocket.Packet) error {
 	if errPtr := s.closeErr.Load(); errPtr != nil {
 		return *errPtr
 	}
@@ -142,7 +156,7 @@ func (s *Session) keepalive() {
 		s.close(itun.KeepaliveExceeded)
 	default:
 		s.cnt.Store(magic)
-		time.AfterFunc(s.mgr.proxyer.Keepalive(), s.keepalive)
+		time.AfterFunc(s.proxyer.Keepalive(), s.keepalive)
 	}
 }
 

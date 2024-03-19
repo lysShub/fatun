@@ -8,8 +8,8 @@ import (
 	"github.com/lysShub/itun/crypto"
 	"github.com/lysShub/itun/sconn"
 	"github.com/lysShub/itun/session"
-	"github.com/lysShub/relraw"
-	"github.com/lysShub/relraw/test"
+	"github.com/lysShub/rsocket"
+	"github.com/lysShub/rsocket/test"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -67,7 +67,7 @@ func TestXxx(t *testing.T) {
 		conn, err := l.Accept()
 		require.NoError(t, err)
 
-		var b = relraw.NewPacket(0, 1536)
+		var b = rsocket.NewPacket(0, 1536)
 		id, err := conn.Recv(context.Background(), b)
 		require.NoError(t, err)
 		require.Equal(t, sid, id)
@@ -87,7 +87,7 @@ func TestXxx(t *testing.T) {
 	conn, err := sconn.Dial(c, &cfg)
 	require.NoError(t, err)
 
-	var b = relraw.NewPacket(0, 1536)
+	var b = rsocket.NewPacket(0, 1536)
 	copy(b.Data(), msg)
 	b.SetLen(len(msg))
 

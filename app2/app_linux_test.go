@@ -9,7 +9,7 @@ import (
 	"github.com/lysShub/itun/app2/server"
 	"github.com/lysShub/itun/config"
 	"github.com/lysShub/itun/crypto"
-	"github.com/lysShub/relraw/tcp/bpf"
+	"github.com/lysShub/rsocket/tcp"
 	"github.com/stretchr/testify/require"
 )
 
@@ -26,7 +26,7 @@ func TestXxxx(t *testing.T) {
 		ProxyerIdeleTimeout: ht,
 	}
 
-	l, err := bpf.Listen(saddr)
+	l, err := tcp.Listen(saddr)
 	require.NoError(t, err)
 	defer l.Close()
 

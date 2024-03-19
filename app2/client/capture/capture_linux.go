@@ -9,7 +9,7 @@ import (
 
 	"github.com/lysShub/itun/app2/client/filter"
 	"github.com/lysShub/itun/cctx"
-	"github.com/lysShub/relraw"
+	"github.com/lysShub/rsocket"
 	"github.com/pkg/errors"
 )
 
@@ -22,11 +22,11 @@ func newCapture(ctx cctx.CancelCtx, hit filter.Hitter, opt any) Capture {
 	return nil
 }
 
-func (c *capture) Capture(ctx context.Context, pkt *relraw.Packet) (err error) {
+func (c *capture) Capture(ctx context.Context, pkt *rsocket.Packet) (err error) {
 	time.Sleep(time.Hour)
 	return nil
 }
-func (c *capture) Inject(pkt *relraw.Packet) error {
+func (c *capture) Inject(pkt *rsocket.Packet) error {
 	return nil
 }
 func (c *capture) Close() error {
