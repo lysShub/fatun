@@ -16,7 +16,7 @@ import (
 	"github.com/lysShub/itun/sconn"
 	"github.com/lysShub/itun/session"
 	"github.com/lysShub/itun/ustack"
-	"github.com/lysShub/rsocket"
+	"github.com/lysShub/sockit/packet"
 )
 
 type Server interface {
@@ -125,7 +125,7 @@ func (p *Proxyer) Proxy(ctx context.Context) error {
 
 func (p *Proxyer) downlinkService() {
 	var (
-		tcp = rsocket.NewPacket(0, p.cfg.MTU)
+		tcp = packet.NewPacket(0, p.cfg.MTU)
 		err error
 	)
 
@@ -147,7 +147,7 @@ func (p *Proxyer) downlinkService() {
 func (p *Proxyer) uplinkService() {
 	var (
 		tinyCnt int
-		tcp     = rsocket.NewPacket(0, p.cfg.MTU)
+		tcp     = packet.NewPacket(0, p.cfg.MTU)
 		id      session.ID
 		s       *ss.Session
 		err     error
@@ -183,7 +183,7 @@ func (p *Proxyer) uplinkService() {
 	p.close(err)
 }
 
-func (p *Proxyer) downlink(pkt *rsocket.Packet, id session.ID) error {
+func (p *Proxyer) downlink(pkt *packet.Packet, id session.ID) error {
 	err := p.conn.Send(p.srvCtx, pkt, id)
 	if err != nil {
 		p.close(err)

@@ -4,9 +4,10 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 
-	"github.com/lysShub/rsocket"
-	"github.com/lysShub/rsocket/test"
-	"github.com/lysShub/rsocket/test/debug"
+	"github.com/lysShub/sockit/packet"
+
+	"github.com/lysShub/sockit/test"
+	"github.com/lysShub/sockit/test/debug"
 	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
@@ -39,7 +40,7 @@ func NewTCP(key [Bytes]byte, pseudoSum1 uint16) (*TCP, error) {
 	return g, nil
 }
 
-func (g *TCP) Encrypt(tcp *rsocket.Packet) {
+func (g *TCP) Encrypt(tcp *packet.Packet) {
 	if debug.Debug() {
 		test.ValidTCP(test.T(), tcp.Data(), g.pseudoSum1)
 	}
@@ -60,7 +61,7 @@ func (g *TCP) Encrypt(tcp *rsocket.Packet) {
 	}
 }
 
-func (g *TCP) EncryptRaw(ip *rsocket.Packet) {
+func (g *TCP) EncryptRaw(ip *packet.Packet) {
 	if debug.Debug() {
 		test.ValidIP(test.T(), ip.Data())
 	}
@@ -95,7 +96,7 @@ func (g *TCP) EncryptRaw(ip *rsocket.Packet) {
 	}
 }
 
-func (g *TCP) Decrypt(tcp *rsocket.Packet) error {
+func (g *TCP) Decrypt(tcp *packet.Packet) error {
 	if debug.Debug() {
 		test.ValidTCP(test.T(), tcp.Data(), g.pseudoSum1)
 	}
@@ -119,7 +120,7 @@ func (g *TCP) Decrypt(tcp *rsocket.Packet) error {
 	return nil
 }
 
-func (g *TCP) DecryptRaw(ip *rsocket.Packet) error {
+func (g *TCP) DecryptRaw(ip *packet.Packet) error {
 	if debug.Debug() {
 		test.ValidIP(test.T(), ip.Data())
 	}

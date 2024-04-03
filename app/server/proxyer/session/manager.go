@@ -9,7 +9,8 @@ import (
 
 	"github.com/lysShub/itun/app/server/adapter"
 	"github.com/lysShub/itun/session"
-	"github.com/lysShub/rsocket"
+	"github.com/lysShub/sockit/packet"
+
 )
 
 type SessionMgr struct {
@@ -35,7 +36,7 @@ type Proxyer interface {
 
 	Adapter() *adapter.Ports
 
-	Downlink(pkt *rsocket.Packet, id session.ID) error
+	Downlink(pkt *packet.Packet, id session.ID) error
 
 	MTU() int
 }

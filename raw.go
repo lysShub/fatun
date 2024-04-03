@@ -1,17 +1,17 @@
 package itun
 
 import (
-	"github.com/lysShub/rsocket"
+	"github.com/lysShub/sockit/conn"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
 type RawConn struct {
-	rsocket.RawConn
+	conn.RawConn
 	mtu uint16
 }
 
-func WrapRawConn(conn rsocket.RawConn, mtu uint16) *RawConn {
+func WrapRawConn(conn conn.RawConn, mtu uint16) *RawConn {
 	return &RawConn{RawConn: conn, mtu: mtu}
 }
 

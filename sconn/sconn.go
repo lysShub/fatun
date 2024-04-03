@@ -18,9 +18,11 @@ import (
 	"github.com/lysShub/itun/ustack/faketcp"
 	"github.com/lysShub/itun/ustack/gonet"
 	"github.com/lysShub/itun/ustack/link"
-	"github.com/lysShub/rsocket"
-	"github.com/lysShub/rsocket/test"
-	"github.com/lysShub/rsocket/test/debug"
+	"github.com/lysShub/sockit/conn"
+	"github.com/lysShub/sockit/packet"
+
+	"github.com/lysShub/sockit/test"
+	"github.com/lysShub/sockit/test/debug"
 	"github.com/stretchr/testify/require"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -36,7 +38,7 @@ const (
 // security datagram conn
 type Conn struct {
 	cfg  *Config
-	raw  rsocket.RawConn
+	raw  conn.RawConn
 	role role
 
 	pseudoSum1 uint16
@@ -48,7 +50,7 @@ type Conn struct {
 	closeErr atomic.Pointer[error]
 }
 
-func newConn(raw rsocket.RawConn, role role, cfg *Config) (*Conn, error) {
+func newConn(raw conn.RawConn, role role, cfg *Config) (*Conn, error) {
 	if err := cfg.init(); err != nil {
 		return nil, err
 	}
@@ -184,7 +186,7 @@ func waitClose(conn net.Conn) error {
 
 func (c *Conn) inboundService(ctx cctx.CancelCtx, stack ustack.Ustack) {
 	var (
-		ip  = rsocket.NewPacket(0, c.cfg.MTU)
+		ip  = packet.NewPacket(0, c.cfg.MTU)
 		ret = false
 	)
 
@@ -216,7 +218,7 @@ func (c *Conn) inboundService(ctx cctx.CancelCtx, stack ustack.Ustack) {
 
 func (c *Conn) outboundService(ctx cctx.CancelCtx, stack ustack.Ustack) {
 	var (
-		ip  = rsocket.NewPacket(0, c.cfg.MTU)
+		ip  = packet.NewPacket(0, c.cfg.MTU)
 		dst = c.raw.RemoteAddr()
 	)
 
@@ -244,7 +246,7 @@ func (c *Conn) outboundService(ctx cctx.CancelCtx, stack ustack.Ustack) {
 	}
 }
 
-func (c *Conn) Send(ctx context.Context, pkt *rsocket.Packet, id session.ID) (err error) {
+func (c *Conn) Send(ctx context.Context, pkt *packet.Packet, id session.ID) (err error) {
 
 	// fmt.Println("send", header.TCP(pkt.Data()).Flags())
 
@@ -261,7 +263,7 @@ func (c *Conn) Send(ctx context.Context, pkt *rsocket.Packet, id session.ID) (er
 	return err
 }
 
-func (c *Conn) Recv(ctx context.Context, pkt *rsocket.Packet) (id session.ID, err error) {
+func (c *Conn) Recv(ctx context.Context, pkt *packet.Packet) (id session.ID, err error) {
 	err = c.raw.Read(ctx, pkt)
 	if err != nil {
 		return 0, err

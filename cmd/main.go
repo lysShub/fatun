@@ -27,7 +27,7 @@ package main
 // 		addr, ok := netip.AddrFromSlice(a.IP)
 // 		if !ok {
 // 			if len(a.IP) == 0 {
-// 				addr = rsocket.LocalAddr()
+// 				addr = conn.LocalAddr()
 // 			} else {
 // 				return errors.Errorf("invalid address %s", a.IP)
 // 			}

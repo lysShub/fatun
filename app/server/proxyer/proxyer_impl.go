@@ -11,7 +11,8 @@ import (
 	"github.com/lysShub/itun/control"
 	"github.com/lysShub/itun/errorx"
 	"github.com/lysShub/itun/session"
-	"github.com/lysShub/rsocket"
+	"github.com/lysShub/sockit/packet"
+
 )
 
 type sessionImpl Proxyer
@@ -25,7 +26,7 @@ func (s *sessionImpl) Logger() *slog.Logger     { return s.logger }
 func (s *sessionImpl) Addr() netip.AddrPort     { return s.conn.LocalAddr() }
 func (s *sessionImpl) Adapter() *adapter.Ports  { return s.srv.Adapter() }
 func (s *sessionImpl) Keepalive() time.Duration { return time.Minute } // todo: from config
-func (s *sessionImpl) Downlink(pkt *rsocket.Packet, id session.ID) error {
+func (s *sessionImpl) Downlink(pkt *packet.Packet, id session.ID) error {
 	return (*Proxyer)(s).downlink(pkt, id)
 }
 

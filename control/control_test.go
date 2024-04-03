@@ -14,7 +14,7 @@ import (
 
 	"github.com/lysShub/itun/cctx"
 	"github.com/lysShub/itun/session"
-	"github.com/lysShub/rsocket/test"
+	"github.com/lysShub/sockit/test"
 	"github.com/stretchr/testify/require"
 )
 

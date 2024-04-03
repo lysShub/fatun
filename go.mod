@@ -2,13 +2,11 @@ module github.com/lysShub/itun
 
 go 1.21
 
-require (
-	github.com/lysShub/rsocket v0.0.0-20240320113923-e964527034ce
-	golang.org/x/sys v0.16.0
-)
+require golang.org/x/sys v0.16.0
 
 require (
 	github.com/lysShub/divert-go v0.0.0-20240313084012-1361fa303219
+	github.com/lysShub/sockit v0.0.0-20240403140344-5fa429cc9c32
 	github.com/stretchr/testify v1.8.4
 	golang.org/x/net v0.20.0
 	gvisor.dev/gvisor v0.0.0-20230916030846-1d82564559db
@@ -16,10 +14,16 @@ require (
 
 require (
 	github.com/go-ole/go-ole v1.2.6 // indirect
+	github.com/go-ping/ping v1.1.0 // indirect
 	github.com/google/gopacket v1.1.19 // indirect
 	github.com/google/uuid v1.4.0 // indirect
+	github.com/josharian/native v1.0.0 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 // indirect
+	github.com/mdlayher/arp v0.0.0-20220512170110-6706a2966875 // indirect
+	github.com/mdlayher/ethernet v0.0.0-20220221185849-529eae5b6118 // indirect
+	github.com/mdlayher/packet v1.0.0 // indirect
+	github.com/mdlayher/socket v0.2.1 // indirect
 	github.com/power-devops/perfstat v0.0.0-20210106213030-5aafc221ea8c // indirect
 	github.com/shoenig/go-m1cpu v0.1.6 // indirect
 	github.com/tklauser/go-sysconf v0.3.12 // indirect

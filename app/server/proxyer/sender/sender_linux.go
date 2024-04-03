@@ -11,24 +11,27 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/lysShub/itun"
-	"github.com/lysShub/rsocket"
-	"github.com/lysShub/rsocket/tcp"
-	"github.com/lysShub/rsocket/test"
-	"github.com/lysShub/rsocket/test/debug"
+	"github.com/lysShub/sockit/conn"
+	"github.com/lysShub/sockit/helper/ipstack"
+	"github.com/lysShub/sockit/packet"
+
+	"github.com/lysShub/sockit/conn/tcp"
+	"github.com/lysShub/sockit/test"
+	"github.com/lysShub/sockit/test/debug"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
 type sender struct {
-	raw        rsocket.RawConn
-	ipstack    *rsocket.IPStack
+	raw        conn.RawConn
+	ipstack    *ipstack.IPStack
 	start      time.Time
 	pseudoSum1 uint16
 }
 
 func newSender(loc netip.AddrPort, proto itun.Proto, dst netip.AddrPort) (*sender, error) {
-	ipstack, err := rsocket.NewIPStack(
+	ipstack, err := ipstack.New(
 		loc.Addr(), dst.Addr(),
 		tcpip.TransportProtocolNumber(proto),
 	)
@@ -40,7 +43,7 @@ func newSender(loc netip.AddrPort, proto itun.Proto, dst netip.AddrPort) (*sende
 	case itun.TCP:
 		tcp, err := tcp.Connect(
 			loc, dst,
-			rsocket.UsedPort(), // PortAdapter bind the port
+			conn.UsedPort(), // PortAdapter bind the port
 		)
 		if err != nil {
 			return nil, err
@@ -68,7 +71,7 @@ func newSender(loc netip.AddrPort, proto itun.Proto, dst netip.AddrPort) (*sende
 	}
 }
 
-func (s *sender) Send(pkt *rsocket.Packet) error {
+func (s *sender) Send(pkt *packet.Packet) error {
 
 	// todo: optimize
 	tcp := header.TCP(pkt.Data())
@@ -85,7 +88,7 @@ func (s *sender) Send(pkt *rsocket.Packet) error {
 	return err
 }
 
-func (s *sender) Recv(ctx context.Context, pkt *rsocket.Packet) error {
+func (s *sender) Recv(ctx context.Context, pkt *packet.Packet) error {
 	err := s.raw.Read(ctx, pkt)
 
 	return err

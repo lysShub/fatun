@@ -13,16 +13,17 @@ import (
 	"github.com/lysShub/itun/ustack"
 	"github.com/lysShub/itun/ustack/gonet"
 	"github.com/lysShub/itun/ustack/link"
-	"github.com/lysShub/rsocket"
-	"github.com/lysShub/rsocket/test"
-	"github.com/lysShub/rsocket/test/debug"
+	"github.com/lysShub/sockit/packet"
+
+	"github.com/lysShub/sockit/test"
+	"github.com/lysShub/sockit/test/debug"
 	"github.com/stretchr/testify/require"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
-func buildTCP(t require.TestingT, msgSize int, prevAlloc bool) (*rsocket.Packet, uint16) {
+func buildTCP(t require.TestingT, msgSize int, prevAlloc bool) (*packet.Packet, uint16) {
 	var (
 		src        = tcpip.AddrFrom4([4]byte{1, 2, 3, 4})
 		dst        = tcpip.AddrFrom4([4]byte{5, 6, 7, 8})
@@ -37,7 +38,7 @@ func buildTCP(t require.TestingT, msgSize int, prevAlloc bool) (*rsocket.Packet,
 	if prevAlloc {
 		tail = 64
 	}
-	p := rsocket.NewPacket(0, header.TCPMinimumSize+msgSize, tail)
+	p := packet.NewPacket(0, header.TCPMinimumSize+msgSize, tail)
 
 	tcp := header.TCP(p.Data())
 	tcp.Encode(&header.TCPFields{
@@ -161,7 +162,7 @@ func Benchmark_Encrypt_PrevAlloc(b *testing.B) {
 	var p, pseudoSum1 = buildTCP(b, packetLen, true)
 	c, _ := crypto.NewTCP([16]byte{}, pseudoSum1)
 
-	var pt = rsocket.NewPacket(p.Head(), p.Len(), p.Tail())
+	var pt = packet.NewPacket(p.Head(), p.Len(), p.Tail())
 	for i := 0; i < b.N; i++ {
 		b.SetBytes(int64(p.Len()))
 
@@ -181,11 +182,11 @@ func Benchmark_Encrypt_NotPreAlloc(b *testing.B) {
 	c, _ := crypto.NewTCP([16]byte{}, pseudoSum1)
 
 	var raw = make([]byte, p.Len())
-	var pt = rsocket.ToPacket(0, raw)
+	var pt = packet.ToPacket(0, raw)
 	for i := 0; i < b.N; i++ {
 		b.SetBytes(int64(p.Len()))
 
-		pt = rsocket.ToPacket(0, raw[:p.Len():p.Len()])
+		pt = packet.ToPacket(0, raw[:p.Len():p.Len()])
 		copy(pt.Data(), p.Data())
 
 		c.Encrypt(pt)
@@ -202,7 +203,7 @@ func Benchmark_Decrypt(b *testing.B) {
 	c, _ := crypto.NewTCP([16]byte{}, pseudoSum1)
 	c.Encrypt(p)
 
-	var ct = rsocket.NewPacket(p.Head(), p.Len(), p.Tail())
+	var ct = packet.NewPacket(p.Head(), p.Len(), p.Tail())
 	for i := 0; i < b.N; i++ {
 		b.SetBytes(int64(p.Len()))
 

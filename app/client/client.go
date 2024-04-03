@@ -17,7 +17,8 @@ import (
 	"github.com/lysShub/itun/ustack"
 	"github.com/lysShub/itun/ustack/gonet"
 	"github.com/lysShub/itun/ustack/link"
-	"github.com/lysShub/rsocket"
+	"github.com/lysShub/sockit/packet"
+
 	"github.com/pkg/errors"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
@@ -118,7 +119,7 @@ func (c *Client) close(cause error) (err error) {
 
 func (c *Client) uplinkService() {
 	var (
-		tcp = rsocket.NewPacket(0, c.cfg.MTU)
+		tcp = packet.NewPacket(0, c.cfg.MTU)
 		err error
 	)
 
@@ -140,7 +141,7 @@ func (c *Client) uplinkService() {
 func (c *Client) downService() {
 	var (
 		tinyCnt int
-		tcp     = rsocket.NewPacket(0, c.cfg.MTU)
+		tcp     = packet.NewPacket(0, c.cfg.MTU)
 		id      session.ID
 		s       *cs.Session
 		err     error
@@ -176,7 +177,7 @@ func (c *Client) downService() {
 	c.close(err)
 }
 
-func (c *Client) uplink(ctx context.Context, pkt *rsocket.Packet, id session.ID) error {
+func (c *Client) uplink(ctx context.Context, pkt *packet.Packet, id session.ID) error {
 	return c.conn.Send(ctx, pkt, id)
 }
 

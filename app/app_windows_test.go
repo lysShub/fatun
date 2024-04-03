@@ -17,7 +17,7 @@ import (
 	"github.com/lysShub/itun/app/client/filter"
 	"github.com/lysShub/itun/crypto"
 	"github.com/lysShub/itun/sconn"
-	"github.com/lysShub/rsocket/tcp"
+	"github.com/lysShub/sockit/conn/tcp"
 	"github.com/stretchr/testify/require"
 )
 

@@ -11,7 +11,8 @@ import (
 	"github.com/lysShub/itun/app/server/proxyer/sender"
 	"github.com/lysShub/itun/errorx"
 	"github.com/lysShub/itun/session"
-	"github.com/lysShub/rsocket"
+	"github.com/lysShub/sockit/packet"
+
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
@@ -99,7 +100,7 @@ func (s *Session) ID() session.ID {
 func (s *Session) downlinkService() {
 	var (
 		mtu = s.proxyer.MTU()
-		seg = rsocket.NewPacket(0, mtu)
+		seg = packet.NewPacket(0, mtu)
 	)
 
 	for {
@@ -127,7 +128,7 @@ func (s *Session) downlinkService() {
 	}
 }
 
-func (s *Session) Send(pkt *rsocket.Packet) error {
+func (s *Session) Send(pkt *packet.Packet) error {
 	if errPtr := s.closeErr.Load(); errPtr != nil {
 		return *errPtr
 	}

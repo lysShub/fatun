@@ -5,14 +5,14 @@ import (
 
 	"github.com/lysShub/itun/ustack"
 	"github.com/lysShub/itun/ustack/link"
-	"github.com/lysShub/rsocket"
+	"github.com/lysShub/sockit/conn"
 )
 
-func Dial(raw rsocket.RawConn, cfg *Config) (*Conn, error) {
+func Dial(raw conn.RawConn, cfg *Config) (*Conn, error) {
 	return DialCtx(context.Background(), raw, cfg)
 }
 
-func DialCtx(ctx context.Context, raw rsocket.RawConn, cfg *Config) (*Conn, error) {
+func DialCtx(ctx context.Context, raw conn.RawConn, cfg *Config) (*Conn, error) {
 	link := link.WrapNofin(link.NewList(8, cfg.MTU))
 	stack, err := ustack.NewUstack(link, raw.LocalAddr().Addr())
 	if err != nil {

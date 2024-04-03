@@ -8,7 +8,8 @@ import (
 	"time"
 
 	"github.com/lysShub/itun/app/client/filter"
-	"github.com/lysShub/rsocket"
+	"github.com/lysShub/sockit/packet"
+
 	"github.com/pkg/errors"
 )
 
@@ -21,11 +22,11 @@ func newCapture(hit filter.Hitter, opt *Option) Capture {
 	return nil
 }
 
-func (c *capture) Capture(ctx context.Context, pkt *rsocket.Packet) (err error) {
+func (c *capture) Capture(ctx context.Context, pkt *packet.Packet) (err error) {
 	time.Sleep(time.Hour)
 	return nil
 }
-func (c *capture) Inject(pkt *rsocket.Packet) error {
+func (c *capture) Inject(pkt *packet.Packet) error {
 	return nil
 }
 func (c *capture) Close() error {

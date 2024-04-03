@@ -7,9 +7,11 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/lysShub/itun/ustack/link"
-	"github.com/lysShub/rsocket"
-	"github.com/lysShub/rsocket/test"
-	"github.com/lysShub/rsocket/test/debug"
+	"github.com/lysShub/sockit/helper/ipstack"
+	"github.com/lysShub/sockit/packet"
+
+	"github.com/lysShub/sockit/test"
+	"github.com/lysShub/sockit/test/debug"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
@@ -23,9 +25,9 @@ type Ustack interface {
 	Stack() *stack.Stack
 	Addr() netip.Addr
 
-	Inbound(ip *rsocket.Packet)
-	OutboundBy(ctx context.Context, dst netip.AddrPort, tcp *rsocket.Packet) error
-	Outbound(ctx context.Context, tcp *rsocket.Packet) error
+	Inbound(ip *packet.Packet)
+	OutboundBy(ctx context.Context, dst netip.AddrPort, tcp *packet.Packet) error
+	Outbound(ctx context.Context, tcp *packet.Packet) error
 }
 
 // user mode tcp stack
@@ -87,17 +89,17 @@ func (u *ustack) Close() error {
 
 func (u *ustack) Stack() *stack.Stack { return u.stack }
 func (u *ustack) Addr() netip.Addr    { return u.addr }
-func (u *ustack) Inbound(ip *rsocket.Packet) {
+func (u *ustack) Inbound(ip *packet.Packet) {
 	u.link.Inbound(ip)
 }
 
 // OutboundBy only use by server, read stack outbound tcp packet
-func (u *ustack) OutboundBy(ctx context.Context, dst netip.AddrPort, tcp *rsocket.Packet) error {
+func (u *ustack) OutboundBy(ctx context.Context, dst netip.AddrPort, tcp *packet.Packet) error {
 	return u.link.OutboundBy(ctx, dst, tcp)
 }
 
 // Outbound only use by client
-func (u *ustack) Outbound(ctx context.Context, tcp *rsocket.Packet) error {
+func (u *ustack) Outbound(ctx context.Context, tcp *packet.Packet) error {
 	return u.link.Outbound(ctx, tcp)
 }
 
@@ -107,15 +109,15 @@ type Endpoint interface {
 	LocalAddr() netip.AddrPort
 	RemoteAddr() netip.AddrPort
 
-	Inbound(tcp *rsocket.Packet)
-	Outbound(ctx context.Context, tcp *rsocket.Packet) error
+	Inbound(tcp *packet.Packet)
+	Outbound(ctx context.Context, tcp *packet.Packet) error
 }
 
 type endpoint struct {
 	stack      Ustack
 	localPort  uint16
 	remoteAddr netip.AddrPort
-	ipstack    *rsocket.IPStack
+	ipstack    *ipstack.IPStack
 }
 
 func NewEndpoint(stack Ustack, localPort uint16, remoteAddr netip.AddrPort) (Endpoint, error) {
@@ -125,7 +127,7 @@ func NewEndpoint(stack Ustack, localPort uint16, remoteAddr netip.AddrPort) (End
 		remoteAddr: remoteAddr,
 	}
 	var err error
-	ep.ipstack, err = rsocket.NewIPStack(
+	ep.ipstack, err = ipstack.New(
 		ep.LocalAddr().Addr(),
 		ep.RemoteAddr().Addr(),
 		header.TCPProtocolNumber,
@@ -145,7 +147,7 @@ func (e *endpoint) LocalAddr() netip.AddrPort {
 func (e *endpoint) RemoteAddr() netip.AddrPort {
 	return e.remoteAddr
 }
-func (e *endpoint) Inbound(tcp *rsocket.Packet) {
+func (e *endpoint) Inbound(tcp *packet.Packet) {
 	e.ipstack.AttachInbound(tcp)
 	if debug.Debug() {
 		test.ValidIP(test.T(), tcp.Data())
@@ -153,7 +155,7 @@ func (e *endpoint) Inbound(tcp *rsocket.Packet) {
 
 	e.stack.Inbound(tcp)
 }
-func (e *endpoint) Outbound(ctx context.Context, tcp *rsocket.Packet) error {
+func (e *endpoint) Outbound(ctx context.Context, tcp *packet.Packet) error {
 	return e.stack.OutboundBy(ctx, e.remoteAddr, tcp)
 }
 

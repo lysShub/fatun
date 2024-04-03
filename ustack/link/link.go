@@ -4,7 +4,8 @@ import (
 	"context"
 	"net/netip"
 
-	"github.com/lysShub/rsocket"
+	"github.com/lysShub/sockit/packet"
+
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
@@ -12,11 +13,11 @@ import (
 type Link interface {
 	stack.LinkEndpoint
 
-	Inbound(ip *rsocket.Packet)
+	Inbound(ip *packet.Packet)
 
 	// OutboundBy
-	OutboundBy(ctx context.Context, dst netip.AddrPort, tcp *rsocket.Packet) error
-	Outbound(ctx context.Context, tcp *rsocket.Packet) error
+	OutboundBy(ctx context.Context, dst netip.AddrPort, tcp *packet.Packet) error
+	Outbound(ctx context.Context, tcp *packet.Packet) error
 }
 
 func match(pkb *stack.PacketBuffer, dst netip.AddrPort) (match bool) {

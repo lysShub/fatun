@@ -117,7 +117,7 @@ ctr.Xxxx()
               inject             downlink                     recv
 ```
 
-rsocket.Packet命名规则：
+packet.Packet命名规则：
 - pkt,tcp,udp 传输层数据包
 - seg         带有session id的pkt
 - ip          ip 数据包

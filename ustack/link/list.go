@@ -8,9 +8,10 @@ import (
 
 	"github.com/pkg/errors"
 
-	"github.com/lysShub/rsocket"
-	"github.com/lysShub/rsocket/test"
-	"github.com/lysShub/rsocket/test/debug"
+	"github.com/lysShub/sockit/packet"
+
+	"github.com/lysShub/sockit/test"
+	"github.com/lysShub/sockit/test/debug"
 	"github.com/stretchr/testify/require"
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -42,7 +43,7 @@ func NewList(size int, mtu int) Link {
 
 var _ stack.LinkEndpoint = (*List)(nil)
 
-func (l *List) Outbound(ctx context.Context, tcp *rsocket.Packet) error {
+func (l *List) Outbound(ctx context.Context, tcp *packet.Packet) error {
 	pkb := l.list.Get(ctx)
 	if pkb.IsNil() {
 		return errors.WithStack(ctx.Err())
@@ -75,7 +76,7 @@ func (l *List) Outbound(ctx context.Context, tcp *rsocket.Packet) error {
 	return nil
 }
 
-func (l *List) OutboundBy(ctx context.Context, dst netip.AddrPort, tcp *rsocket.Packet) error {
+func (l *List) OutboundBy(ctx context.Context, dst netip.AddrPort, tcp *packet.Packet) error {
 	pkb := l.list.GetBy(ctx, dst)
 	if pkb.IsNil() {
 		return errors.WithStack(ctx.Err())
@@ -109,7 +110,7 @@ func (l *List) OutboundBy(ctx context.Context, dst netip.AddrPort, tcp *rsocket.
 	return nil
 }
 
-func (l *List) Inbound(ip *rsocket.Packet) {
+func (l *List) Inbound(ip *packet.Packet) {
 	pkb := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Payload: buffer.MakeWithData(ip.Data()),
 	})

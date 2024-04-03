@@ -8,7 +8,8 @@ import (
 	"github.com/lysShub/itun"
 	"github.com/lysShub/itun/app/client/filter"
 	sess "github.com/lysShub/itun/session"
-	"github.com/lysShub/rsocket"
+	"github.com/lysShub/sockit/packet"
+
 )
 
 type Capture interface {
@@ -17,8 +18,8 @@ type Capture interface {
 }
 
 type Session interface {
-	Capture(ctx context.Context, pkt *rsocket.Packet) (err error)
-	Inject(pkt *rsocket.Packet) error
+	Capture(ctx context.Context, pkt *packet.Packet) (err error)
+	Inject(pkt *packet.Packet) error
 
 	Session() sess.Session
 	String() string

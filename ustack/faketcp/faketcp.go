@@ -4,9 +4,10 @@ import (
 	"math/rand"
 	"sync/atomic"
 
-	"github.com/lysShub/rsocket"
-	"github.com/lysShub/rsocket/test"
-	"github.com/lysShub/rsocket/test/debug"
+	"github.com/lysShub/sockit/packet"
+
+	"github.com/lysShub/sockit/test"
+	"github.com/lysShub/sockit/test/debug"
 	"github.com/stretchr/testify/require"
 	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -86,7 +87,7 @@ func NewFakeTCP(locPort, remPort uint16, opts ...func(opt *options)) *FakeTCP {
 
 // SendAttach input tcp payload, attach tcp header, and return
 // tcp packet.
-func (f *FakeTCP) SendAttach(seg *rsocket.Packet) {
+func (f *FakeTCP) SendAttach(seg *packet.Packet) {
 	var hdr = make(header.TCP, header.TCPMinimumSize)
 	hdr.Encode(&header.TCPFields{
 		SrcPort:    f.lport,
@@ -121,7 +122,7 @@ func (f *FakeTCP) SendAttach(seg *rsocket.Packet) {
 
 // RecvStrip input a tcp packet, update ack, and return
 // tcp payload.
-func (f *FakeTCP) RecvStrip(tcp *rsocket.Packet) {
+func (f *FakeTCP) RecvStrip(tcp *packet.Packet) {
 	hdr := header.TCP(tcp.Data())
 
 	// actually no need the header anymore

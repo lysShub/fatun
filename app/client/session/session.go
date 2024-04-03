@@ -11,13 +11,13 @@ import (
 	"github.com/lysShub/itun/app/client/capture"
 	"github.com/lysShub/itun/errorx"
 	"github.com/lysShub/itun/session"
-	"github.com/lysShub/rsocket"
+	"github.com/lysShub/sockit/packet"
 )
 
 type Client interface {
 	Logger() *slog.Logger
 
-	Uplink(pkt *rsocket.Packet, id session.ID) error
+	Uplink(pkt *packet.Packet, id session.ID) error
 	MTU() int
 }
 
@@ -77,7 +77,7 @@ func (s *Session) close(cause error) error {
 
 func (s *Session) uplinkService() {
 	var mtu = s.client.MTU()
-	pkt := rsocket.NewPacket(0, mtu)
+	pkt := packet.NewPacket(0, mtu)
 
 	for {
 		pkt.Sets(0, mtu)
@@ -99,7 +99,7 @@ func (s *Session) uplinkService() {
 	}
 }
 
-func (s *Session) Inject(pkt *rsocket.Packet) error {
+func (s *Session) Inject(pkt *packet.Packet) error {
 	err := s.capture.Inject(pkt)
 	if err != nil {
 		return s.close(err)
