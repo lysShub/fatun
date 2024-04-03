@@ -43,7 +43,7 @@ func NewClient(ctx context.Context, conn *sconn.Conn, cfg *app.Config) (*Client,
 		cfg: cfg,
 		logger: slog.New(cfg.Logger.WithGroup("client").WithAttrs([]slog.Attr{
 			{Key: "local", Value: slog.StringValue(conn.LocalAddr().String())},
-			{Key: "proxy", Value: slog.StringValue(conn.RemoteAddr().String())},
+			{Key: "proxyer", Value: slog.StringValue(conn.RemoteAddr().String())},
 		})),
 		conn:    conn,
 		sessMgr: cs.NewSessionMgr(),

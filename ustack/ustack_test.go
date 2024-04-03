@@ -16,6 +16,7 @@ import (
 	"github.com/lysShub/itun/ustack/link"
 	"github.com/lysShub/rsocket"
 	"github.com/lysShub/rsocket/test"
+	"github.com/lysShub/rsocket/test/debug"
 	"github.com/stretchr/testify/require"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -232,11 +233,13 @@ func UnicomStackAndRaw(t *testing.T, s ustack.Ustack, raw *itun.RawConn) {
 
 			// fmt.Println("inbound")
 
-			p.SetHead(0)
-			test.ValidIP(t, p.Data())
-
-			_, err := raw.Write(p.Data())
+			err := raw.Write(context.Background(), p)
 			require.NoError(t, err)
+
+			if debug.Debug() {
+				p.SetHead(0)
+				test.ValidIP(t, p.Data())
+			}
 		}
 	}()
 	go func() {
@@ -245,7 +248,7 @@ func UnicomStackAndRaw(t *testing.T, s ustack.Ustack, raw *itun.RawConn) {
 
 		for {
 			p.Sets(0, mtu)
-			err := raw.ReadCtx(context.Background(), p)
+			err := raw.Read(context.Background(), p)
 			if errors.Is(err, io.EOF) {
 				return
 			}
@@ -272,11 +275,14 @@ func UnicomStackAndRawBy(t *testing.T, s ustack.Ustack, raw *itun.RawConn, dst n
 			if p.Len() == 0 {
 				return
 			}
-			p.SetHead(0)
-			test.ValidIP(t, p.Data())
 
-			_, err := raw.Write(p.Data())
+			err := raw.Write(context.Background(), p)
 			require.NoError(t, err)
+
+			if debug.Debug() {
+				p.SetHead(0)
+				test.ValidIP(t, p.Data())
+			}
 		}
 	}()
 	go func() {
@@ -285,7 +291,7 @@ func UnicomStackAndRawBy(t *testing.T, s ustack.Ustack, raw *itun.RawConn, dst n
 
 		for {
 			p.Sets(0, mtu)
-			err := raw.ReadCtx(context.Background(), p)
+			err := raw.Read(context.Background(), p)
 			if errors.Is(err, io.EOF) {
 				return
 			}

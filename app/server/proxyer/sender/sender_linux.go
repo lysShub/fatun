@@ -16,12 +16,15 @@ import (
 	"github.com/lysShub/rsocket/test"
 	"github.com/lysShub/rsocket/test/debug"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/checksum"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
 type sender struct {
-	raw     rsocket.RawConn
-	ipstack *rsocket.IPStack
-	start   time.Time
+	raw        rsocket.RawConn
+	ipstack    *rsocket.IPStack
+	start      time.Time
+	pseudoSum1 uint16
 }
 
 func newSender(loc netip.AddrPort, proto itun.Proto, dst netip.AddrPort) (*sender, error) {
@@ -43,10 +46,22 @@ func newSender(loc netip.AddrPort, proto itun.Proto, dst netip.AddrPort) (*sende
 			return nil, err
 		}
 
+		// w, err := test.WrapPcap(tcp, dst.String()+".pcap")
+		// if err != nil {
+		// 	panic(err)
+		// }
+
+		pseudoSum1 := header.PseudoHeaderChecksum(
+			header.TCPProtocolNumber,
+			tcpip.AddrFromSlice(loc.Addr().AsSlice()),
+			tcpip.AddrFromSlice(dst.Addr().AsSlice()),
+			0,
+		)
 		return &sender{
-			raw:     tcp,
-			ipstack: ipstack,
-			start:   time.Now(),
+			raw:        tcp,
+			ipstack:    ipstack,
+			start:      time.Now(),
+			pseudoSum1: pseudoSum1,
 		}, nil
 	default:
 		return nil, errors.New("not support")
@@ -54,17 +69,25 @@ func newSender(loc netip.AddrPort, proto itun.Proto, dst netip.AddrPort) (*sende
 }
 
 func (s *sender) Send(pkt *rsocket.Packet) error {
-	s.ipstack.AttachOutbound(pkt)
+
+	// todo: optimize
+	tcp := header.TCP(pkt.Data())
+	tcp.SetChecksum(0)
+	sum := checksum.Combine(s.pseudoSum1, uint16(len(tcp)))
+	sum = checksum.Checksum(tcp, sum)
+	tcp.SetChecksum(^sum)
+
 	if debug.Debug() {
-		test.ValidIP(test.T(), pkt.Data())
+		test.ValidTCP(test.T(), pkt.Data(), s.pseudoSum1)
 	}
 
-	_, err := s.raw.Write(pkt.Data())
+	err := s.raw.Write(context.Background(), pkt)
 	return err
 }
 
 func (s *sender) Recv(ctx context.Context, pkt *rsocket.Packet) error {
-	err := s.raw.ReadCtx(ctx, pkt)
+	err := s.raw.Read(ctx, pkt)
+
 	return err
 }
 

@@ -56,7 +56,7 @@ func newCapture(hit filter.Hitter, opt *Option) *capture {
 	c.srvCtx, c.srvCancel = context.WithCancel(context.Background())
 
 	go c.tcpService()
-	go c.udpService()
+	// go c.udpService()
 	return c
 }
 
@@ -127,11 +127,11 @@ func (s *capture) tcpService() {
 		}
 
 		ip := header.IPv4(p[:n])
-		udp := header.UDP(ip.Payload())
+		tcp := header.TCP(ip.Payload())
 		sess := sess.Session{
-			Src:   netip.AddrPortFrom(toAddr(ip.SourceAddress()), udp.SourcePort()),
+			Src:   netip.AddrPortFrom(toAddr(ip.SourceAddress()), tcp.SourcePort()),
 			Proto: itun.TCP,
-			Dst:   netip.AddrPortFrom(toAddr(ip.DestinationAddress()), udp.DestinationPort()),
+			Dst:   netip.AddrPortFrom(toAddr(ip.DestinationAddress()), tcp.DestinationPort()),
 		}
 
 		if !s.hitter.HitOnce(sess) {

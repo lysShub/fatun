@@ -18,11 +18,13 @@ import (
 )
 
 func TestXxxx(t *testing.T) {
+	// monkey.Patch(debug.Debug, func() bool { return false })
+
 	cfg := &app.Config{
 		Config: sconn.Config{
 			PrevPackets: pps,
 			SwapKey:     &crypto.TokenServer{Valider: &tkServer{}},
-			MTU:         1536,
+			MTU:         1536 * 2,
 		},
 		Logger: slog.NewJSONHandler(os.Stdout, nil),
 	}

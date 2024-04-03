@@ -62,7 +62,7 @@ func NewProxyer(srv Server, conn *sconn.Conn) (*Proxyer, error) {
 		conn: conn,
 		srv:  srv,
 		cfg:  cfg,
-		logger: slog.New(cfg.Logger.WithGroup("proxy").WithAttrs([]slog.Attr{
+		logger: slog.New(cfg.Logger.WithGroup("proxyer").WithAttrs([]slog.Attr{
 			{Key: "src", Value: slog.StringValue(conn.RemoteAddr().String())},
 		})),
 	}

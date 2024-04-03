@@ -191,7 +191,7 @@ func (c *Conn) inboundService(ctx cctx.CancelCtx, stack ustack.Ustack) {
 	for !ret {
 		ip.Sets(0, c.cfg.MTU)
 
-		err := c.raw.ReadCtx(ctx, ip)
+		err := c.raw.Read(ctx, ip)
 		if err != nil {
 			ctx.Cancel(err)
 			break
@@ -231,21 +231,23 @@ func (c *Conn) outboundService(ctx cctx.CancelCtx, stack ustack.Ustack) {
 		tcphdr := header.TCP(ip.Data())
 		c.seq = max(c.seq, tcphdr.SequenceNumber()+uint32(len(tcphdr.Payload())))
 
-		// recover to ip packet
-		ip.SetHead(0)
-		if debug.Debug() {
-			test.ValidIP(test.T(), ip.Data())
-		}
-
-		_, err = c.raw.Write(ip.Data())
+		err = c.raw.Write(context.Background(), ip)
 		if err != nil {
 			ctx.Cancel(err)
 			break
+		}
+
+		if debug.Debug() {
+			ip.SetHead(0)
+			test.ValidIP(test.T(), ip.Data())
 		}
 	}
 }
 
 func (c *Conn) Send(ctx context.Context, pkt *rsocket.Packet, id session.ID) (err error) {
+
+	// fmt.Println("send", header.TCP(pkt.Data()).Flags())
+
 	session.SetID(pkt, id)
 	c.fake.SendAttach(pkt)
 
@@ -255,12 +257,12 @@ func (c *Conn) Send(ctx context.Context, pkt *rsocket.Packet, id session.ID) (er
 		require.True(test.T(), faketcp.IsFakeTCP(pkt.Data()))
 	}
 
-	err = c.raw.WriteCtx(ctx, pkt)
+	err = c.raw.Write(ctx, pkt)
 	return err
 }
 
 func (c *Conn) Recv(ctx context.Context, pkt *rsocket.Packet) (id session.ID, err error) {
-	err = c.raw.ReadCtx(ctx, pkt)
+	err = c.raw.Read(ctx, pkt)
 	if err != nil {
 		return 0, err
 	}
@@ -272,7 +274,10 @@ func (c *Conn) Recv(ctx context.Context, pkt *rsocket.Packet) (id session.ID, er
 
 	c.fake.RecvStrip(pkt)
 
-	return session.GetID(pkt), nil
+	id = session.GetID(pkt)
+
+	// fmt.Println("recv", header.TCP(pkt.Data()).Flags())
+	return id, nil
 }
 
 func (c *Conn) LocalAddr() netip.AddrPort {

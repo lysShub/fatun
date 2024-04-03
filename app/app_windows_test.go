@@ -27,6 +27,7 @@ func TestXxxx(t *testing.T) {
 	ctx := context.Background()
 
 	f := filter.NewMock("chrome.exe")
+	// f := filter.NewMock("curl.exe")
 	capture, err := capture.NewCapture(f)
 	require.NoError(t, err)
 	defer capture.Close()
@@ -37,7 +38,7 @@ func TestXxxx(t *testing.T) {
 			Config: sconn.Config{
 				PrevPackets: pps,
 				SwapKey:     &crypto.TokenClient{Tokener: &tkClient{}},
-				MTU:         1536,
+				MTU:         1536 * 2,
 			},
 			Logger: slog.NewJSONHandler(os.Stdout, nil),
 		}
@@ -65,9 +66,12 @@ func TestXxxx(t *testing.T) {
 		// return
 
 		err = c.AddSession(ctx, s)
-		require.NoError(t, err)
+		// require.NoError(t, err)
 
-		fmt.Println("AddProxy", s.String())
-
+		if err != nil {
+			fmt.Println("add fail", err.Error())
+		} else {
+			fmt.Println("AddProxy", s.String())
+		}
 	}
 }

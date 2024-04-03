@@ -37,7 +37,7 @@ func UnicomStackAndRaw(t *testing.T, s ustack.Ustack, raw *itun.RawConn, pseudoS
 
 			test.ValidIP(t, ip.Data())
 
-			_, err := raw.Write(ip.Data())
+			err := raw.Write(context.Background(), ip)
 			require.NoError(t, err)
 		}
 	}()
@@ -47,7 +47,7 @@ func UnicomStackAndRaw(t *testing.T, s ustack.Ustack, raw *itun.RawConn, pseudoS
 
 		for {
 			tcp.Sets(0, mtu)
-			err := raw.ReadCtx(context.Background(), tcp)
+			err := raw.Read(context.Background(), tcp)
 			if errors.Is(err, io.EOF) {
 				return
 			}

@@ -3,7 +3,7 @@ module github.com/lysShub/itun
 go 1.21
 
 require (
-	github.com/lysShub/rsocket v0.0.0-20240319070307-70a3a184346c
+	github.com/lysShub/rsocket v0.0.0-20240320113923-e964527034ce
 	golang.org/x/sys v0.16.0
 )
 
@@ -18,6 +18,7 @@ require (
 	github.com/go-ole/go-ole v1.2.6 // indirect
 	github.com/google/gopacket v1.1.19 // indirect
 	github.com/google/uuid v1.4.0 // indirect
+	github.com/kr/text v0.2.0 // indirect
 	github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 // indirect
 	github.com/power-devops/perfstat v0.0.0-20210106213030-5aafc221ea8c // indirect
 	github.com/shoenig/go-m1cpu v0.1.6 // indirect
