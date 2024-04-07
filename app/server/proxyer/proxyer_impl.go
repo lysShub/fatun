@@ -12,7 +12,6 @@ import (
 	"github.com/lysShub/itun/errorx"
 	"github.com/lysShub/itun/session"
 	"github.com/lysShub/sockit/packet"
-
 )
 
 type sessionImpl Proxyer
@@ -23,7 +22,7 @@ var _ ss.Proxyer = (proxyerImplPtr)(nil)
 
 func (s *sessionImpl) MTU() int                 { return s.cfg.MTU }
 func (s *sessionImpl) Logger() *slog.Logger     { return s.logger }
-func (s *sessionImpl) Addr() netip.AddrPort     { return s.conn.LocalAddr() }
+func (s *sessionImpl) Addr() netip.AddrPort     { return s.conn.LocalAddrPort() }
 func (s *sessionImpl) Adapter() *adapter.Ports  { return s.srv.Adapter() }
 func (s *sessionImpl) Keepalive() time.Duration { return time.Minute } // todo: from config
 func (s *sessionImpl) Downlink(pkt *packet.Packet, id session.ID) error {

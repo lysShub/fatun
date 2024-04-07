@@ -74,14 +74,14 @@ func newSender(loc netip.AddrPort, proto itun.Proto, dst netip.AddrPort) (*sende
 func (s *sender) Send(pkt *packet.Packet) error {
 
 	// todo: optimize
-	tcp := header.TCP(pkt.Data())
+	tcp := header.TCP(pkt.Bytes())
 	tcp.SetChecksum(0)
 	sum := checksum.Combine(s.pseudoSum1, uint16(len(tcp)))
 	sum = checksum.Checksum(tcp, sum)
 	tcp.SetChecksum(^sum)
 
 	if debug.Debug() {
-		test.ValidTCP(test.T(), pkt.Data(), s.pseudoSum1)
+		test.ValidTCP(test.T(), pkt.Bytes(), s.pseudoSum1)
 	}
 
 	err := s.raw.Write(context.Background(), pkt)

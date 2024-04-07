@@ -100,7 +100,7 @@ func (s *Session) ID() session.ID {
 func (s *Session) downlinkService() {
 	var (
 		mtu = s.proxyer.MTU()
-		seg = packet.NewPacket(0, mtu)
+		seg = packet.Make(0, mtu)
 	)
 
 	for {
@@ -114,9 +114,9 @@ func (s *Session) downlinkService() {
 
 		switch s.session.Proto {
 		case itun.TCP:
-			header.TCP(seg.Data()).SetDestinationPortWithChecksumUpdate(s.session.Src.Port())
+			header.TCP(seg.Bytes()).SetDestinationPortWithChecksumUpdate(s.session.Src.Port())
 		case itun.UDP:
-			header.UDP(seg.Data()).SetDestinationPortWithChecksumUpdate(s.session.Src.Port())
+			header.UDP(seg.Bytes()).SetDestinationPortWithChecksumUpdate(s.session.Src.Port())
 		default:
 		}
 
@@ -135,9 +135,9 @@ func (s *Session) Send(pkt *packet.Packet) error {
 
 	switch s.session.Proto {
 	case itun.TCP:
-		header.TCP(pkt.Data()).SetSourcePortWithChecksumUpdate(s.locAddr.Port())
+		header.TCP(pkt.Bytes()).SetSourcePortWithChecksumUpdate(s.locAddr.Port())
 	case itun.UDP:
-		header.UDP(pkt.Data()).SetSourcePortWithChecksumUpdate(s.locAddr.Port())
+		header.UDP(pkt.Bytes()).SetSourcePortWithChecksumUpdate(s.locAddr.Port())
 	default:
 	}
 

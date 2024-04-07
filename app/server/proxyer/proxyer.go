@@ -63,14 +63,14 @@ func NewProxyer(srv Server, conn *sconn.Conn) (*Proxyer, error) {
 		srv:  srv,
 		cfg:  cfg,
 		logger: slog.New(cfg.Logger.WithGroup("proxyer").WithAttrs([]slog.Attr{
-			{Key: "src", Value: slog.StringValue(conn.RemoteAddr().String())},
+			{Key: "src", Value: slog.StringValue(conn.RemoteAddrPort().String())},
 		})),
 	}
 	p.sessionMgr = ss.NewSessionMgr(proxyerImplPtr(p))
 	p.srvCtx, p.srvCancel = context.WithCancel(context.Background())
 
 	var err error
-	p.ep, err = p.srv.Endpoint(p.conn.RemoteAddr())
+	p.ep, err = p.srv.Endpoint(p.conn.RemoteAddrPort())
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +80,7 @@ func NewProxyer(srv Server, conn *sconn.Conn) (*Proxyer, error) {
 	go p.downlinkService()
 
 	// todo: set timeout
-	if tcp, err := srv.Accept(p.srvCtx, conn.RemoteAddr()); err != nil {
+	if tcp, err := srv.Accept(p.srvCtx, conn.RemoteAddrPort()); err != nil {
 		return nil, err
 	} else {
 		p.ctr = control.NewServer(tcp, controlImplPtr(p))
@@ -125,7 +125,7 @@ func (p *Proxyer) Proxy(ctx context.Context) error {
 
 func (p *Proxyer) downlinkService() {
 	var (
-		tcp = packet.NewPacket(0, p.cfg.MTU)
+		tcp = packet.Make(0, p.cfg.MTU)
 		err error
 	)
 
@@ -147,7 +147,7 @@ func (p *Proxyer) downlinkService() {
 func (p *Proxyer) uplinkService() {
 	var (
 		tinyCnt int
-		tcp     = packet.NewPacket(0, p.cfg.MTU)
+		tcp     = packet.Make(0, p.cfg.MTU)
 		id      session.ID
 		s       *ss.Session
 		err     error

@@ -22,21 +22,21 @@ func UnicomStackAndRaw(t *testing.T, s ustack.Ustack, raw *itun.RawConn, pseudoS
 
 	go func() {
 		mtu := raw.MTU()
-		var ip = packet.NewPacket(0, mtu)
+		var ip = packet.Make(0, mtu)
 
 		for {
 			ip.Sets(0, mtu)
 			s.Outbound(context.Background(), ip)
-			if ip.Len() == 0 {
+			if ip.Data() == 0 {
 				return
 			}
 
 			ip.SetHead(0)
-			test.ValidIP(t, ip.Data())
+			test.ValidIP(t, ip.Bytes())
 
 			c.EncryptRaw(ip)
 
-			test.ValidIP(t, ip.Data())
+			test.ValidIP(t, ip.Bytes())
 
 			err := raw.Write(context.Background(), ip)
 			require.NoError(t, err)
@@ -44,7 +44,7 @@ func UnicomStackAndRaw(t *testing.T, s ustack.Ustack, raw *itun.RawConn, pseudoS
 	}()
 	go func() {
 		mtu := raw.MTU()
-		var tcp = packet.NewPacket(0, mtu)
+		var tcp = packet.Make(0, mtu)
 
 		for {
 			tcp.Sets(0, mtu)
@@ -55,12 +55,12 @@ func UnicomStackAndRaw(t *testing.T, s ustack.Ustack, raw *itun.RawConn, pseudoS
 			require.NoError(t, err)
 
 			tcp.SetHead(0)
-			test.ValidIP(t, tcp.Data())
+			test.ValidIP(t, tcp.Bytes())
 
 			err = c.DecryptRaw(tcp)
 			require.NoError(t, err)
 
-			test.ValidIP(t, tcp.Data())
+			test.ValidIP(t, tcp.Bytes())
 
 			s.Inbound(tcp)
 		}

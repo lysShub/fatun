@@ -43,13 +43,13 @@ func Test_Link(t *testing.T) {
 		}
 	}()
 
-	var p = packet.ToPacket(0, make([]byte, 0xff+64))
+	var p = packet.Make(0, 0xff+64)
 
 	for _, e := range ss {
 		p.Sets(0, 0xff+64)
 
 		err := l.Outbound(context.Background(), p)
 		require.Nil(t, err)
-		require.Equal(t, e, p.Len())
+		require.Equal(t, e, p.Data())
 	}
 }

@@ -43,8 +43,8 @@ func NewClient(ctx context.Context, conn *sconn.Conn, cfg *app.Config) (*Client,
 	var c = &Client{
 		cfg: cfg,
 		logger: slog.New(cfg.Logger.WithGroup("client").WithAttrs([]slog.Attr{
-			{Key: "local", Value: slog.StringValue(conn.LocalAddr().String())},
-			{Key: "proxyer", Value: slog.StringValue(conn.RemoteAddr().String())},
+			{Key: "local", Value: slog.StringValue(conn.LocalAddrPort().String())},
+			{Key: "proxyer", Value: slog.StringValue(conn.RemoteAddrPort().String())},
 		})),
 		conn:    conn,
 		sessMgr: cs.NewSessionMgr(),
@@ -53,13 +53,13 @@ func NewClient(ctx context.Context, conn *sconn.Conn, cfg *app.Config) (*Client,
 
 	if stack, err := ustack.NewUstack(
 		link.NewList(8, cfg.MTU),
-		conn.LocalAddr().Addr(),
+		conn.LocalAddrPort().Addr(),
 	); err != nil {
 		return nil, c.close(err)
 	} else {
 		c.ep, err = ustack.ToEndpoint(
-			stack, conn.LocalAddr().Port(),
-			conn.RemoteAddr(),
+			stack, conn.LocalAddrPort().Port(),
+			conn.RemoteAddrPort(),
 		)
 		if err != nil {
 			return nil, c.close(err)
@@ -71,7 +71,7 @@ func NewClient(ctx context.Context, conn *sconn.Conn, cfg *app.Config) (*Client,
 
 	if tcp, err := gonet.DialTCPWithBind(
 		ctx, c.ep.Stack(),
-		conn.LocalAddr(), conn.RemoteAddr(),
+		conn.LocalAddrPort(), conn.RemoteAddrPort(),
 		header.IPv4ProtocolNumber,
 	); err != nil {
 		return nil, c.close(err)
@@ -119,7 +119,7 @@ func (c *Client) close(cause error) (err error) {
 
 func (c *Client) uplinkService() {
 	var (
-		tcp = packet.NewPacket(0, c.cfg.MTU)
+		tcp = packet.Make(0, c.cfg.MTU)
 		err error
 	)
 
@@ -141,7 +141,7 @@ func (c *Client) uplinkService() {
 func (c *Client) downService() {
 	var (
 		tinyCnt int
-		tcp     = packet.NewPacket(0, c.cfg.MTU)
+		tcp     = packet.Make(0, c.cfg.MTU)
 		id      session.ID
 		s       *cs.Session
 		err     error
@@ -183,9 +183,9 @@ func (c *Client) uplink(ctx context.Context, pkt *packet.Packet, id session.ID) 
 
 func (c *Client) AddSession(ctx context.Context, s capture.Session) error {
 	self := session.Session{
-		Src:   c.conn.LocalAddr(),
+		Src:   c.conn.LocalAddrPort(),
 		Proto: itun.TCP,
-		Dst:   c.conn.RemoteAddr(),
+		Dst:   c.conn.RemoteAddrPort(),
 	}
 	if s.Session() == self {
 		return errors.Errorf("can't proxy self %s", self.String())

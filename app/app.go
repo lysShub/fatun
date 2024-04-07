@@ -8,6 +8,7 @@ import (
 
 type Config struct {
 	sconn.Config
+	MTU    int
 	Logger slog.Handler
 }
 

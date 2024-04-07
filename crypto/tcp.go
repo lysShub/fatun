@@ -5,6 +5,7 @@ import (
 	"crypto/cipher"
 
 	"github.com/lysShub/sockit/packet"
+	"github.com/stretchr/testify/require"
 
 	"github.com/lysShub/sockit/test"
 	"github.com/lysShub/sockit/test/debug"
@@ -18,16 +19,13 @@ type TCP struct {
 	pseudoSum1 uint16
 }
 
+var _ Crypto = (*TCP)(nil)
+
 const Bytes = 16
 const nonces = 12
 
-// NewTCP a tcp crypter, use AES-GCM
+// NewTCP a tcp AES-GCM-128 crypter, not update tcp Seq/Ack
 func NewTCP(key [Bytes]byte, pseudoSum1 uint16) (*TCP, error) {
-	// todo: ciphertext will add Bytes data, but not update seq, need move Overhead to Option
-	//
-	//	https://www.iana.org/assignments/tcp-parameters/tcp-parameters.xhtml
-	//	https://www.geeksforgeeks.org/options-field-in-tcp-header/
-
 	var g = &TCP{pseudoSum1: pseudoSum1}
 
 	if block, err := aes.NewCipher(key[:]); err != nil {
@@ -37,15 +35,16 @@ func NewTCP(key [Bytes]byte, pseudoSum1 uint16) (*TCP, error) {
 			return nil, err
 		}
 	}
+	if debug.Debug() {
+		require.Equal(test.T(), Bytes, g.c.Overhead())
+	}
 	return g, nil
 }
 
+func (g *TCP) Overhead() int { return g.c.Overhead() }
+
 func (g *TCP) Encrypt(tcp *packet.Packet) {
-	if debug.Debug() {
-		test.ValidTCP(test.T(), tcp.Data(), g.pseudoSum1)
-	}
-	tcp.AllocTail(Bytes)
-	tcphdr := header.TCP(tcp.Data())
+	tcphdr := header.TCP(tcp.AppendN(Bytes).ReduceN(Bytes).Bytes())
 
 	i := tcphdr.DataOffset()
 	g.c.Seal(tcphdr[i:i], tcphdr[:nonces], tcphdr[i:], tcphdr[:header.TCPChecksumOffset])
@@ -55,26 +54,26 @@ func (g *TCP) Encrypt(tcp *packet.Packet) {
 	psosum := checksum.Combine(g.pseudoSum1, uint16(len(tcphdr)))
 	tcphdr.SetChecksum(^checksum.Checksum(tcphdr, psosum))
 
-	tcp.SetLen(len(tcphdr))
+	tcp.SetData(len(tcphdr))
 	if debug.Debug() {
-		test.ValidTCP(test.T(), tcp.Data(), g.pseudoSum1)
+		test.ValidTCP(test.T(), tcp.Bytes(), g.pseudoSum1)
 	}
 }
 
 func (g *TCP) EncryptRaw(ip *packet.Packet) {
 	if debug.Debug() {
-		test.ValidIP(test.T(), ip.Data())
+		test.ValidIP(test.T(), ip.Bytes())
 	}
 
 	var hdrLen int
-	var ver = header.IPVersion(ip.Data())
+	var ver = header.IPVersion(ip.Bytes())
 	switch ver {
 	case 4:
-		hdrLen = int(header.IPv4(ip.Data()).HeaderLength())
+		hdrLen = int(header.IPv4(ip.Bytes()).HeaderLength())
 	case 6:
 		hdrLen = header.IPv6MinimumSize
 	default:
-		panic("")
+		panic("invalid ip packet")
 	}
 
 	ip.SetHead(ip.Head() + hdrLen)
@@ -82,25 +81,25 @@ func (g *TCP) EncryptRaw(ip *packet.Packet) {
 	ip.SetHead(ip.Head() - hdrLen)
 
 	if ver == 4 {
-		iphdr := header.IPv4(ip.Data())
+		iphdr := header.IPv4(ip.Bytes())
 		iphdr.SetTotalLength(iphdr.TotalLength() + Bytes)
 		sum := ^iphdr.Checksum()
 		iphdr.SetChecksum(^checksum.Combine(sum, Bytes))
 	} else {
-		iphdr := header.IPv6(ip.Data())
+		iphdr := header.IPv6(ip.Bytes())
 		iphdr.SetPayloadLength(iphdr.PayloadLength() + Bytes)
 	}
 
 	if debug.Debug() {
-		test.ValidIP(test.T(), ip.Data())
+		test.ValidIP(test.T(), ip.Bytes())
 	}
 }
 
 func (g *TCP) Decrypt(tcp *packet.Packet) error {
 	if debug.Debug() {
-		test.ValidTCP(test.T(), tcp.Data(), g.pseudoSum1)
+		test.ValidTCP(test.T(), tcp.Bytes(), g.pseudoSum1)
 	}
-	tcphdr := header.TCP(tcp.Data())
+	tcphdr := header.TCP(tcp.Bytes())
 
 	i := tcphdr.DataOffset()
 	_, err := g.c.Open(tcphdr[i:i], tcphdr[:nonces], tcphdr[i:], tcphdr[:header.TCPChecksumOffset])
@@ -113,23 +112,23 @@ func (g *TCP) Decrypt(tcp *packet.Packet) error {
 	psosum := checksum.Combine(g.pseudoSum1, uint16(len(tcphdr)))
 	tcphdr.SetChecksum(^checksum.Checksum(tcphdr, psosum))
 
-	tcp.SetLen(len(tcphdr))
+	tcp.SetData(len(tcphdr))
 	if debug.Debug() {
-		test.ValidTCP(test.T(), tcp.Data(), g.pseudoSum1)
+		test.ValidTCP(test.T(), tcp.Bytes(), g.pseudoSum1)
 	}
 	return nil
 }
 
 func (g *TCP) DecryptRaw(ip *packet.Packet) error {
 	if debug.Debug() {
-		test.ValidIP(test.T(), ip.Data())
+		test.ValidIP(test.T(), ip.Bytes())
 	}
 
 	var hdrLen int
-	var ver = header.IPVersion(ip.Data())
+	var ver = header.IPVersion(ip.Bytes())
 	switch ver {
 	case 4:
-		hdrLen = int(header.IPv4(ip.Data()).HeaderLength())
+		hdrLen = int(header.IPv4(ip.Bytes()).HeaderLength())
 	case 6:
 		hdrLen = header.IPv6MinimumSize
 	default:
@@ -143,17 +142,17 @@ func (g *TCP) DecryptRaw(ip *packet.Packet) error {
 	ip.SetHead(ip.Head() - hdrLen)
 
 	if ver == 4 {
-		iphdr := header.IPv4(ip.Data())
+		iphdr := header.IPv4(ip.Bytes())
 		iphdr.SetTotalLength(iphdr.TotalLength() - Bytes)
 		sum := ^iphdr.Checksum()
 		iphdr.SetChecksum(^checksum.Combine(sum, ^uint16(Bytes)))
 	} else {
-		iphdr := header.IPv6(ip.Data())
+		iphdr := header.IPv6(ip.Bytes())
 		iphdr.SetPayloadLength(iphdr.PayloadLength() - Bytes)
 	}
 
 	if debug.Debug() {
-		test.ValidIP(test.T(), ip.Data())
+		test.ValidIP(test.T(), ip.Bytes())
 	}
 	return nil
 }

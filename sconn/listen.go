@@ -8,6 +8,7 @@ import (
 	"github.com/lysShub/itun/ustack"
 	"github.com/lysShub/itun/ustack/gonet"
 	"github.com/lysShub/itun/ustack/link"
+	utest "github.com/lysShub/itun/ustack/test"
 	"github.com/lysShub/sockit/conn"
 
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -22,28 +23,27 @@ type Listener struct {
 }
 
 func NewListener(l conn.Listener, cfg *Config) (*Listener, error) {
-	var err error
-	if err = cfg.init(); err != nil {
+	if err := cfg.init(); err != nil {
 		return nil, err
 	}
 
-	var listener = &Listener{
-		cfg: cfg,
-		raw: l,
+	stack, err := ustack.NewUstack(link.NewList(64, cfg.HandshakeMTU-overhead), l.Addr().Addr())
+	if err != nil {
+		return nil, err
 	}
+	stack = utest.MustWrapPcap("ustack.pcap", stack)
 
-	link := link.WrapNofin(link.NewList(64, cfg.MTU))
-	listener.stack, err = ustack.NewUstack(link, l.Addr().Addr())
+	listener, err := gonet.ListenTCP(stack, l.Addr(), header.IPv4ProtocolNumber)
 	if err != nil {
 		return nil, err
 	}
 
-	listener.l, err = gonet.ListenTCP(listener.stack, l.Addr(), header.IPv4ProtocolNumber)
-	if err != nil {
-		return nil, err
-	}
-
-	return listener, nil
+	return &Listener{
+		cfg:   cfg,
+		raw:   l,
+		stack: stack,
+		l:     listener,
+	}, nil
 }
 
 func (l *Listener) Accept() (*Conn, error) {
@@ -56,16 +56,17 @@ func (l *Listener) AcceptCtx(ctx context.Context) (*Conn, error) {
 		return nil, err
 	}
 
-	conn, err := newConn(raw, server, l.cfg)
+	ep, err := ustack.NewEndpoint(l.stack, l.Addr().Port(), raw.RemoteAddr())
 	if err != nil {
 		return nil, err
 	}
-
-	err = conn.handshakeAccept(context.Background(), l.stack, l.l)
+	conn, err := newConn(raw, ep, server, l.cfg)
 	if err != nil {
 		return nil, err
 	}
-
+	if err = conn.handshakeServer(context.Background(), l.l); err != nil {
+		return nil, err
+	}
 	return conn, nil
 }
 

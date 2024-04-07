@@ -39,24 +39,24 @@ func (c *Chan) Inbound(ip *packet.Packet) {
 	if c.recordSeqAck {
 		hdrSize := 0
 		proto := tcpip.TransportProtocolNumber(0)
-		switch header.IPVersion(ip.Data()) {
+		switch header.IPVersion(ip.Bytes()) {
 		case 4:
-			hdrSize = int(header.IPv4(ip.Data()).HeaderLength())
-			proto = header.IPv4(ip.Data()).TransportProtocol()
+			hdrSize = int(header.IPv4(ip.Bytes()).HeaderLength())
+			proto = header.IPv4(ip.Bytes()).TransportProtocol()
 		case 6:
 			hdrSize = header.IPv6MinimumSize
-			proto = header.IPv6(ip.Data()).TransportProtocol()
+			proto = header.IPv6(ip.Bytes()).TransportProtocol()
 		default:
 			panic("")
 		}
 		if proto == header.TCPProtocolNumber {
-			ack := header.TCP(ip.Data()[hdrSize:]).AckNumber()
+			ack := header.TCP(ip.Bytes()[hdrSize:]).AckNumber()
 			c.ack = max(c.ack, ack)
 		}
 	}
 
 	pkb := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Payload: buffer.MakeWithData(ip.Data()),
+		Payload: buffer.MakeWithData(ip.Bytes()),
 	})
 
 	c.Endpoint.InjectInbound(header.IPv4ProtocolNumber, pkb)
@@ -76,8 +76,8 @@ func (c *Chan) Outbound(ctx context.Context, tcp *packet.Packet) error {
 		}
 	}
 
-	tcp.SetLen(pkb.Size())
-	data := tcp.Data()
+	tcp.SetData(pkb.Size())
+	data := tcp.Bytes()
 
 	n := 0
 	for _, e := range pkb.AsSlices() {
@@ -85,11 +85,11 @@ func (c *Chan) Outbound(ctx context.Context, tcp *packet.Packet) error {
 	}
 
 	if debug.Debug() {
-		test.ValidIP(test.T(), tcp.Data())
+		test.ValidIP(test.T(), tcp.Bytes())
 	}
 	switch pkb.NetworkProtocolNumber {
 	case header.IPv4ProtocolNumber:
-		hdrLen := header.IPv4(tcp.Data()).HeaderLength()
+		hdrLen := header.IPv4(tcp.Bytes()).HeaderLength()
 		tcp.SetHead(int(hdrLen))
 	case header.IPv6ProtocolNumber:
 		tcp.SetHead(header.IPv6MinimumSize)
@@ -114,8 +114,8 @@ func (c *Chan) OutboundBy(ctx context.Context, dst netip.AddrPort, tcp *packet.P
 	}
 	defer pkb.DecRef()
 
-	tcp.SetLen(pkb.Size())
-	data := tcp.Data()
+	tcp.SetData(pkb.Size())
+	data := tcp.Bytes()
 
 	n := 0
 	for _, e := range pkb.AsSlices() {
@@ -124,7 +124,7 @@ func (c *Chan) OutboundBy(ctx context.Context, dst netip.AddrPort, tcp *packet.P
 
 	switch pkb.NetworkProtocolNumber {
 	case header.IPv4ProtocolNumber:
-		hdrLen := header.IPv4(tcp.Data()).HeaderLength()
+		hdrLen := header.IPv4(tcp.Bytes()).HeaderLength()
 		tcp.SetHead(int(hdrLen))
 	case header.IPv6ProtocolNumber:
 		tcp.SetHead(header.IPv6MinimumSize)

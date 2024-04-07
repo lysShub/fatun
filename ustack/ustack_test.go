@@ -223,12 +223,12 @@ func Test_Conn_Clients(t *testing.T) {
 func UnicomStackAndRaw(t *testing.T, s ustack.Ustack, raw *itun.RawConn) {
 	go func() {
 		mtu := raw.MTU()
-		var p = packet.NewPacket(0, mtu)
+		var p = packet.Make(0, mtu)
 
 		for {
 			p.Sets(0, mtu)
 			s.Outbound(context.Background(), p)
-			if p.Len() == 0 {
+			if p.Data() == 0 {
 				return
 			}
 
@@ -239,13 +239,13 @@ func UnicomStackAndRaw(t *testing.T, s ustack.Ustack, raw *itun.RawConn) {
 
 			if debug.Debug() {
 				p.SetHead(0)
-				test.ValidIP(t, p.Data())
+				test.ValidIP(t, p.Bytes())
 			}
 		}
 	}()
 	go func() {
 		mtu := raw.MTU()
-		var p = packet.NewPacket(0, mtu)
+		var p = packet.Make(0, mtu)
 
 		for {
 			p.Sets(0, mtu)
@@ -258,7 +258,7 @@ func UnicomStackAndRaw(t *testing.T, s ustack.Ustack, raw *itun.RawConn) {
 			// fmt.Println("outbound")
 
 			p.SetHead(0)
-			test.ValidIP(t, p.Data())
+			test.ValidIP(t, p.Bytes())
 
 			s.Inbound(p)
 		}
@@ -268,12 +268,12 @@ func UnicomStackAndRaw(t *testing.T, s ustack.Ustack, raw *itun.RawConn) {
 func UnicomStackAndRawBy(t *testing.T, s ustack.Ustack, raw *itun.RawConn, dst netip.AddrPort) {
 	go func() {
 		mtu := raw.MTU()
-		var p = packet.NewPacket(0, mtu)
+		var p = packet.Make(0, mtu)
 
 		for {
 			p.Sets(0, mtu)
 			s.OutboundBy(context.Background(), dst, p)
-			if p.Len() == 0 {
+			if p.Data() == 0 {
 				return
 			}
 
@@ -282,13 +282,13 @@ func UnicomStackAndRawBy(t *testing.T, s ustack.Ustack, raw *itun.RawConn, dst n
 
 			if debug.Debug() {
 				p.SetHead(0)
-				test.ValidIP(t, p.Data())
+				test.ValidIP(t, p.Bytes())
 			}
 		}
 	}()
 	go func() {
 		mtu := raw.MTU()
-		var p = packet.NewPacket(0, mtu)
+		var p = packet.Make(0, mtu)
 
 		for {
 			p.Sets(0, mtu)
@@ -299,7 +299,7 @@ func UnicomStackAndRawBy(t *testing.T, s ustack.Ustack, raw *itun.RawConn, dst n
 			require.NoError(t, err)
 
 			p.SetHead(0)
-			test.ValidIP(t, p.Data())
+			test.ValidIP(t, p.Bytes())
 
 			s.Inbound(p)
 		}

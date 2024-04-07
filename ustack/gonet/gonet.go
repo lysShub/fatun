@@ -22,6 +22,7 @@ import (
 	"io"
 	"net"
 	"net/netip"
+	"reflect"
 	"time"
 
 	"github.com/pkg/errors"
@@ -76,7 +77,7 @@ const maxListenBacklog = 4096
 
 // ListenTCP creates a new TCPListener.
 func ListenTCP(s ustack.Ustack, addr netip.AddrPort, network tcpip.NetworkProtocolNumber) (*TCPListener, error) {
-	faddr := toFullAddr(addr)
+	fullAddr := toFullAddr(addr)
 	// Create a TCP endpoint, bind it, then start listening.
 	var wq waiter.Queue
 	ep, err := s.Stack().NewEndpoint(tcp.ProtocolNumber, network, &wq)
@@ -84,12 +85,12 @@ func ListenTCP(s ustack.Ustack, addr netip.AddrPort, network tcpip.NetworkProtoc
 		return nil, errors.New(err.String())
 	}
 
-	if err := ep.Bind(faddr); err != nil {
+	if err := ep.Bind(fullAddr); err != nil {
 		ep.Close()
 		return nil, &net.OpError{
 			Op:   "bind",
 			Net:  "tcp",
-			Addr: fullToTCPAddr(faddr),
+			Addr: fullToTCPAddr(fullAddr),
 			Err:  errors.New(err.String()),
 		}
 	}
@@ -99,7 +100,7 @@ func ListenTCP(s ustack.Ustack, addr netip.AddrPort, network tcpip.NetworkProtoc
 		return nil, &net.OpError{
 			Op:   "listen",
 			Net:  "tcp",
-			Addr: fullToTCPAddr(faddr),
+			Addr: fullToTCPAddr(fullAddr),
 			Err:  errors.New(err.String()),
 		}
 	}
@@ -260,7 +261,7 @@ func NewTCPConn(wq *waiter.Queue, ep tcpip.Endpoint) *TCPConn {
 }
 
 // Accept implements net.Conn.Accept.
-func (l *TCPListener) Accept(ctx context.Context) (net.Conn, error) {
+func (l *TCPListener) Accept(ctx context.Context) (*TCPConn, error) {
 	n, wq, err := l.ep.Accept(nil)
 
 	if _, ok := err.(*tcpip.ErrWouldBlock); ok {
@@ -281,7 +282,7 @@ func (l *TCPListener) Accept(ctx context.Context) (net.Conn, error) {
 				return nil, errCanceled
 			case <-notifyCh:
 			case <-ctx.Done():
-				return nil, ctx.Err()
+				return nil, errors.WithStack(ctx.Err())
 			}
 		}
 	}
@@ -299,9 +300,9 @@ func (l *TCPListener) Accept(ctx context.Context) (net.Conn, error) {
 }
 
 // Accept implements net.Conn.Accept.
-func (l *TCPListener) AcceptBy(ctx context.Context, src netip.AddrPort) (net.Conn, error) {
-	fsrc := toFullAddr(src)
-	n, wq, err := l.ep.Accept(&fsrc)
+func (l *TCPListener) AcceptBy(ctx context.Context, src netip.AddrPort) (*TCPConn, error) {
+	fullSrc := toFullAddr(src)
+	n, wq, err := l.ep.Accept(&fullSrc)
 	if _, ok := err.(*tcpip.ErrWouldBlock); ok {
 		// Create wait queue entry that notifies a channel.
 		waitEntry, notifyCh := waiter.NewChannelEntry(waiter.ReadableEvents)
@@ -309,7 +310,7 @@ func (l *TCPListener) AcceptBy(ctx context.Context, src netip.AddrPort) (net.Con
 		defer l.wq.EventUnregister(&waitEntry)
 
 		for {
-			n, wq, err = l.ep.Accept(&fsrc)
+			n, wq, err = l.ep.Accept(&fullSrc)
 
 			if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
 				break
@@ -317,10 +318,10 @@ func (l *TCPListener) AcceptBy(ctx context.Context, src netip.AddrPort) (net.Con
 
 			select {
 			case <-l.cancel:
-				return nil, errCanceled
+				return nil, errors.WithStack(errCanceled)
 			case <-notifyCh:
 			case <-ctx.Done():
-				return nil, ctx.Err()
+				return nil, errors.WithStack(ctx.Err())
 			}
 		}
 	}
@@ -338,7 +339,7 @@ func (l *TCPListener) AcceptBy(ctx context.Context, src netip.AddrPort) (net.Con
 }
 
 type opErrorer interface {
-	newOpError(op string, err error) *net.OpError
+	newOpError(op string, err error) error
 }
 
 // commonRead implements the common logic between net.Conn.Read and
@@ -348,7 +349,7 @@ func commonRead(ctx context.Context, b []byte, ep tcpip.Endpoint, wq *waiter.Que
 	case <-deadline:
 		return 0, errorer.newOpError("read", &timeoutError{})
 	case <-ctx.Done():
-		return 0, ctx.Err()
+		return 0, errors.WithStack(ctx.Err())
 	default:
 	}
 
@@ -370,7 +371,7 @@ func commonRead(ctx context.Context, b []byte, ep tcpip.Endpoint, wq *waiter.Que
 			case <-deadline:
 				return 0, errorer.newOpError("read", &timeoutError{})
 			case <-ctx.Done():
-				return 0, ctx.Err()
+				return 0, errors.WithStack(ctx.Err())
 			case <-notifyCh:
 			}
 		}
@@ -506,14 +507,44 @@ func (c *TCPConn) RemoteAddr() net.Addr {
 	return fullToTCPAddr(a)
 }
 
-func (c *TCPConn) newOpError(op string, err error) *net.OpError {
-	return &net.OpError{
+func (c *TCPConn) WaitSendbuffDrained(ctx context.Context) error {
+	ep, ok := c.ep.(interface {
+		LockUser()
+		UnlockUser()
+	})
+	if !ok {
+		return errors.New("invalid endpoint")
+	}
+
+	snd := reflect.Indirect(reflect.ValueOf(c.ep)).FieldByName("sndQueueInfo")
+	v := snd.FieldByName("SndBufUsed")
+
+	for {
+		select {
+		case <-ctx.Done():
+			return errors.WithStack(ctx.Err())
+		default:
+		}
+
+		ep.LockUser()
+		used := v.Int()
+		ep.UnlockUser()
+
+		if used == 0 {
+			return nil
+		}
+		time.Sleep(time.Millisecond * 10)
+	}
+}
+
+func (c *TCPConn) newOpError(op string, err error) error {
+	return errors.WithStack(&net.OpError{
 		Op:     op,
 		Net:    "tcp",
 		Source: c.LocalAddr(),
 		Addr:   c.RemoteAddr(),
 		Err:    err,
-	}
+	})
 }
 
 func fullToTCPAddr(addr tcpip.FullAddress) *net.TCPAddr {
@@ -532,7 +563,7 @@ func DialTCP(s ustack.Ustack, addr netip.AddrPort, network tcpip.NetworkProtocol
 // DialTCPWithBind creates a new TCPConn connected to the specified
 // remoteAddress with its local address bound to localAddr.
 func DialTCPWithBind(ctx context.Context, s ustack.Ustack, localAddr, remoteAddr netip.AddrPort, network tcpip.NetworkProtocolNumber) (*TCPConn, error) {
-	flocalAddr, fremoteAddr := toFullAddr(localAddr), toFullAddr(remoteAddr)
+	localFullAddr, remoteFullAddr := toFullAddr(localAddr), toFullAddr(remoteAddr)
 	// Create TCP endpoint, then connect.
 	var wq waiter.Queue
 	ep, err := s.Stack().NewEndpoint(tcp.ProtocolNumber, network, &wq)
@@ -549,23 +580,23 @@ func DialTCPWithBind(ctx context.Context, s ustack.Ustack, localAddr, remoteAddr
 
 	select {
 	case <-ctx.Done():
-		return nil, ctx.Err()
+		return nil, errors.WithStack(ctx.Err())
 	default:
 	}
 
 	// Bind before connect if requested.
-	if flocalAddr != (tcpip.FullAddress{}) {
-		if err = ep.Bind(flocalAddr); err != nil {
-			return nil, fmt.Errorf("ep.Bind(%+v) = %s", flocalAddr, err)
+	if localFullAddr != (tcpip.FullAddress{}) {
+		if err = ep.Bind(localFullAddr); err != nil {
+			return nil, fmt.Errorf("ep.Bind(%+v) = %s", localFullAddr, err)
 		}
 	}
 
-	err = ep.Connect(fremoteAddr)
+	err = ep.Connect(remoteFullAddr)
 	if _, ok := err.(*tcpip.ErrConnectStarted); ok {
 		select {
 		case <-ctx.Done():
 			ep.Close()
-			return nil, ctx.Err()
+			return nil, errors.WithStack(ctx.Err())
 		case <-notifyCh:
 		}
 
@@ -576,7 +607,7 @@ func DialTCPWithBind(ctx context.Context, s ustack.Ustack, localAddr, remoteAddr
 		return nil, &net.OpError{
 			Op:   "connect",
 			Net:  "tcp",
-			Addr: fullToTCPAddr(fremoteAddr),
+			Addr: fullToTCPAddr(remoteFullAddr),
 			Err:  errors.New(err.String()),
 		}
 	}
@@ -650,18 +681,18 @@ func DialUDP(s ustack.Ustack, laddr, raddr *tcpip.FullAddress, network tcpip.Net
 	return c, nil
 }
 
-func (c *UDPConn) newOpError(op string, err error) *net.OpError {
+func (c *UDPConn) newOpError(op string, err error) error {
 	return c.newRemoteOpError(op, nil, err)
 }
 
-func (c *UDPConn) newRemoteOpError(op string, remote net.Addr, err error) *net.OpError {
-	return &net.OpError{
+func (c *UDPConn) newRemoteOpError(op string, remote net.Addr, err error) error {
+	return errors.WithStack(&net.OpError{
 		Op:     op,
 		Net:    "udp",
 		Source: c.LocalAddr(),
 		Addr:   remote,
 		Err:    err,
-	}
+	})
 }
 
 // RemoteAddr implements net.Conn.RemoteAddr.

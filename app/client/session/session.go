@@ -77,7 +77,7 @@ func (s *Session) close(cause error) error {
 
 func (s *Session) uplinkService() {
 	var mtu = s.client.MTU()
-	pkt := packet.NewPacket(0, mtu)
+	pkt := packet.Make(0, mtu)
 
 	for {
 		pkt.Sets(0, mtu)

@@ -306,7 +306,7 @@ func (c *session) push(ip []byte) {
 }
 
 func (c *session) Capture(ctx context.Context, pkt *packet.Packet) (err error) {
-	b := pkt.Data()
+	b := pkt.Bytes()
 	b = b[:cap(b)]
 
 	select {
@@ -321,20 +321,20 @@ func (c *session) Capture(ctx context.Context, pkt *packet.Packet) (err error) {
 		}
 
 		n := copy(b, ip[hdrn:])
-		pkt.SetLen(n)
+		pkt.SetData(n)
 		return nil
 	default:
 	}
 
 	n, err := c.d.RecvCtx(ctx, b, nil)
 	if err != nil {
-		pkt.SetLen(0)
+		pkt.SetData(0)
 		return err
 	}
-	pkt.SetLen(n)
+	pkt.SetData(n)
 
 	// todo: ipv6
-	iphdrLen := header.IPv4(pkt.Data()).HeaderLength()
+	iphdrLen := header.IPv4(pkt.Bytes()).HeaderLength()
 	pkt.SetHead(pkt.Head() + int(iphdrLen))
 
 	return nil
@@ -343,10 +343,10 @@ func (c *session) Capture(ctx context.Context, pkt *packet.Packet) (err error) {
 func (c *session) Inject(pkt *packet.Packet) error {
 	c.ipstack.AttachInbound(pkt)
 	if debug.Debug() {
-		test.ValidIP(test.T(), pkt.Data())
+		test.ValidIP(test.T(), pkt.Bytes())
 	}
 
-	_, err := c.d.Send(pkt.Data(), c.inboundAddr)
+	_, err := c.d.Send(pkt.Bytes(), c.inboundAddr)
 	return err
 }
 

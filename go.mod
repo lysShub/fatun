@@ -6,9 +6,10 @@ require golang.org/x/sys v0.16.0
 
 require (
 	github.com/lysShub/divert-go v0.0.0-20240313084012-1361fa303219
-	github.com/lysShub/sockit v0.0.0-20240403140344-5fa429cc9c32
+	github.com/lysShub/sockit v0.0.0-20240407171327-598c54350b9d
 	github.com/stretchr/testify v1.8.4
 	golang.org/x/net v0.20.0
+	golang.org/x/sync v0.5.0
 	gvisor.dev/gvisor v0.0.0-20230916030846-1d82564559db
 )
 
@@ -29,7 +30,6 @@ require (
 	github.com/tklauser/go-sysconf v0.3.12 // indirect
 	github.com/tklauser/numcpus v0.6.1 // indirect
 	github.com/yusufpapurcu/wmi v1.2.3 // indirect
-	golang.org/x/sync v0.5.0 // indirect
 )
 
 require (
@@ -43,3 +43,7 @@ require (
 	golang.zx2c4.com/wireguard/windows v0.5.3 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+// replace (
+// github.com/lysShub/sockit => D:\OneDrive\code\go\sockit
+// )

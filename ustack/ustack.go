@@ -20,6 +20,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 )
 
+// user tcp stack
 type Ustack interface {
 	Close() error
 	Stack() *stack.Stack
@@ -120,7 +121,7 @@ type endpoint struct {
 	ipstack    *ipstack.IPStack
 }
 
-func NewEndpoint(stack Ustack, localPort uint16, remoteAddr netip.AddrPort) (Endpoint, error) {
+func NewEndpoint(stack Ustack, localPort uint16, remoteAddr netip.AddrPort) (*endpoint, error) {
 	var ep = &endpoint{
 		stack:      stack,
 		localPort:  localPort,
@@ -135,22 +136,17 @@ func NewEndpoint(stack Ustack, localPort uint16, remoteAddr netip.AddrPort) (End
 	if err != nil {
 		return nil, err
 	}
-
 	return ep, nil
 }
 
-func (e *endpoint) Close() error  { return nil }
-func (e *endpoint) Stack() Ustack { return e.stack }
-func (e *endpoint) LocalAddr() netip.AddrPort {
-	return netip.AddrPortFrom(e.stack.Addr(), e.localPort)
-}
-func (e *endpoint) RemoteAddr() netip.AddrPort {
-	return e.remoteAddr
-}
+func (e *endpoint) Close() error               { return nil }
+func (e *endpoint) Stack() Ustack              { return e.stack }
+func (e *endpoint) LocalAddr() netip.AddrPort  { return netip.AddrPortFrom(e.stack.Addr(), e.localPort) }
+func (e *endpoint) RemoteAddr() netip.AddrPort { return e.remoteAddr }
 func (e *endpoint) Inbound(tcp *packet.Packet) {
 	e.ipstack.AttachInbound(tcp)
 	if debug.Debug() {
-		test.ValidIP(test.T(), tcp.Data())
+		test.ValidIP(test.T(), tcp.Bytes())
 	}
 
 	e.stack.Inbound(tcp)
@@ -160,8 +156,7 @@ func (e *endpoint) Outbound(ctx context.Context, tcp *packet.Packet) error {
 }
 
 type oneEndpoint struct {
-	Endpoint
-	stack Ustack
+	*endpoint
 }
 
 func ToEndpoint(stack Ustack, localPort uint16, remoteAddr netip.AddrPort) (Endpoint, error) {
@@ -169,11 +164,6 @@ func ToEndpoint(stack Ustack, localPort uint16, remoteAddr netip.AddrPort) (Endp
 	if err != nil {
 		return nil, err
 	}
-
-	return &oneEndpoint{
-		Endpoint: ep,
-		stack:    stack,
-	}, nil
+	return &oneEndpoint{endpoint: ep}, nil
 }
-
 func (e *oneEndpoint) Close() error { return e.stack.Close() }

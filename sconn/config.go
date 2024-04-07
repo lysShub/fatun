@@ -3,11 +3,13 @@ package sconn
 import (
 	"bytes"
 	"context"
-	"errors"
+	"encoding/gob"
 	"fmt"
 	"io"
 	"net"
 	"time"
+
+	"github.com/pkg/errors"
 
 	"github.com/lysShub/itun/crypto"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -19,16 +21,18 @@ type Config struct {
 	PrevPackets PrevPackets //todo: support mutiple data set
 
 	// swap secret key
-	SwapKey crypto.SecretKey
+	SwapKey SwapKey
 
-	MTU int
-
-	// todo: timeout
+	HandshakeMTU int
 }
 
 func (c *Config) init() error {
 	if c == nil {
 		return errors.New("xx")
+	}
+
+	if c.HandshakeMTU <= 0 {
+		return errors.New("invalid mtu")
 	}
 
 	return nil
@@ -43,20 +47,20 @@ func (e ErrPrevPacketInvalid) Error() string {
 }
 
 func (pps PrevPackets) Client(ctx context.Context, conn net.Conn) (err error) {
-	var retCh = make(chan struct{})
+	var ret = make(chan struct{})
 	var canceled bool
 	defer func() {
 		if canceled {
 			err = ctx.Err()
 		}
-		close(retCh)
+		close(ret)
 	}()
 	go func() {
 		select {
 		case <-ctx.Done():
 			canceled = true
 			conn.SetDeadline(time.Now())
-		case <-retCh:
+		case <-ret:
 		}
 	}()
 
@@ -116,4 +120,61 @@ func (pps PrevPackets) Server(ctx context.Context, conn net.Conn) (err error) {
 		}
 	}
 	return nil
+}
+
+type SwapKey interface {
+	Client(ctx context.Context, conn net.Conn) (crypto.Key, error)
+	Server(ctx context.Context, conn net.Conn) (crypto.Key, error)
+}
+
+// Sign sign can't guarantee transport security
+type Sign struct {
+	Sign   []byte
+	Parser func(sign []byte) (crypto.Key, error)
+}
+
+func (t *Sign) Client(ctx context.Context, conn net.Conn) (crypto.Key, error) {
+	key, err := t.Parser(t.Sign)
+	if err != nil {
+		return crypto.Key{}, err
+	}
+
+	var ret = make(chan struct{})
+	defer close(ret)
+	go func() {
+		select {
+		case <-ctx.Done():
+			conn.SetDeadline(time.Now())
+		case <-ret:
+			return
+		}
+	}()
+
+	err = gob.NewEncoder(conn).Encode(t.Sign)
+	if err != nil {
+		return crypto.Key{}, errors.WithStack(err)
+	}
+
+	return key, nil
+}
+
+func (t Sign) Server(ctx context.Context, conn net.Conn) (crypto.Key, error) {
+	var ret = make(chan struct{})
+	defer close(ret)
+	go func() {
+		select {
+		case <-ctx.Done():
+			conn.SetDeadline(time.Now())
+		case <-ret:
+			return
+		}
+	}()
+
+	var sign []byte
+	err := gob.NewDecoder(conn).Decode(&sign)
+	if err != nil {
+		return crypto.Key{}, errors.WithStack(err)
+	}
+
+	return t.Parser(sign)
 }

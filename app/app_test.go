@@ -6,7 +6,6 @@ import (
 
 	"github.com/lysShub/itun/crypto"
 	"github.com/lysShub/itun/sconn"
-	"github.com/pkg/errors"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
@@ -24,19 +23,11 @@ var (
 	ht = time.Hour
 )
 
-type tkClient struct{}
-
-func (c *tkClient) Token() (tk []byte, key crypto.Key, err error) {
-	return []byte("hello"), crypto.Key{1: 1}, nil
-}
-
-type tkServer struct{}
-
-func (c *tkServer) Valid(tk []byte) (key crypto.Key, err error) {
-	if string(tk) == "hello" {
-		return crypto.Key{1: 1}, nil
-	}
-	return crypto.Key{}, errors.Errorf("invalid token")
+var sign = &sconn.Sign{
+	Sign: []byte("0123456789abcdef"),
+	Parser: func(sign []byte) (crypto.Key, error) {
+		return crypto.Key{9: 1}, nil
+	},
 }
 
 var pps = sconn.PrevPackets{

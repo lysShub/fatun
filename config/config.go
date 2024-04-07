@@ -4,7 +4,6 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/lysShub/itun/crypto"
 	"github.com/lysShub/itun/sconn"
 )
 
@@ -18,5 +17,5 @@ type Config struct {
 	HandShakeTimeout time.Duration
 
 	// swap secret key
-	SwapKey crypto.SecretKey
+	SwapKey sconn.SwapKey
 }

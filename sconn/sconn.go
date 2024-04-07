@@ -2,22 +2,19 @@ package sconn
 
 import (
 	"context"
-	"io"
+	"errors"
 	"net"
 	"net/netip"
 	"os"
 	"sync/atomic"
+	"time"
 
-	"github.com/pkg/errors"
-
-	"github.com/lysShub/itun/cctx"
 	"github.com/lysShub/itun/crypto"
 	"github.com/lysShub/itun/errorx"
+	"github.com/lysShub/itun/faketcp"
 	"github.com/lysShub/itun/session"
 	"github.com/lysShub/itun/ustack"
-	"github.com/lysShub/itun/ustack/faketcp"
 	"github.com/lysShub/itun/ustack/gonet"
-	"github.com/lysShub/itun/ustack/link"
 	"github.com/lysShub/sockit/conn"
 	"github.com/lysShub/sockit/packet"
 
@@ -28,12 +25,13 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
-type role string
+type Sconn interface {
+	net.Conn // control tcp conn
 
-const (
-	client role = "client"
-	server role = "server"
-)
+	// Recv/Send segment packet
+	Recv(ctx context.Context, pkt *packet.Packet) (id session.ID, err error)
+	Send(ctx context.Context, pkt *packet.Packet, id session.ID) (err error)
+}
 
 // security datagram conn
 type Conn struct {
@@ -41,16 +39,29 @@ type Conn struct {
 	raw  conn.RawConn
 	role role
 
-	pseudoSum1 uint16
-	seq, ack   uint32
+	ep       ustack.Endpoint
+	net.Conn // control tcp conn
 
-	fake   *faketcp.FakeTCP
-	crypto *crypto.TCP
+	inited     atomic.Bool
+	precvRecvs atomic.Pointer[[]*packet.Packet]
 
-	closeErr atomic.Pointer[error]
+	pseudoSum1 uint16           //
+	seq, ack   uint32           // init seq/ack
+	fake       *faketcp.FakeTCP //
+
+	srvCtx    context.Context
+	srvCancel context.CancelFunc
+	closeErr  atomic.Pointer[error]
 }
 
-func newConn(raw conn.RawConn, role role, cfg *Config) (*Conn, error) {
+type role string
+
+const (
+	client role = "client"
+	server role = "server"
+)
+
+func newConn(raw conn.RawConn, ep ustack.Endpoint, role role, cfg *Config) (*Conn, error) {
 	if err := cfg.init(); err != nil {
 		return nil, err
 	}
@@ -59,14 +70,17 @@ func newConn(raw conn.RawConn, role role, cfg *Config) (*Conn, error) {
 		cfg:  cfg,
 		raw:  raw,
 		role: role,
+
+		ep: ep,
 	}
+	c.precvRecvs.Store(new([]*packet.Packet))
 	c.pseudoSum1 = header.PseudoHeaderChecksum(
 		header.TCPProtocolNumber,
 		tcpip.AddrFromSlice(c.raw.LocalAddr().Addr().AsSlice()),
 		tcpip.AddrFromSlice(c.raw.RemoteAddr().Addr().AsSlice()),
 		0,
 	)
-
+	c.srvCtx, c.srvCancel = context.WithCancel(context.Background())
 	return c, nil
 }
 
@@ -76,24 +90,39 @@ func (c *Conn) close(cause error) (err error) {
 	}
 
 	if c.closeErr.CompareAndSwap(nil, &cause) {
-		err = cause
+		if c.Conn != nil {
+			c.Conn.SetDeadline(time.Now())
+			cause = errorx.Join(cause, c.Conn.Close())
+		}
+		if c.ep != nil {
+			cause = errorx.Join(cause, c.ep.Close())
+		}
+
+		if c.srvCancel != nil {
+			c.srvCancel()
+		}
 
 		if c.raw != nil {
-			err = errorx.Join(err,
-				c.raw.Close(),
-			)
+			cause = errorx.Join(cause, c.raw.Close())
 		}
-		return err
+
+		c.closeErr.Store(&cause)
+		return cause
 	} else {
 		return *c.closeErr.Load()
 	}
 }
 
-func (c *Conn) handshakeConnect(parentCtx context.Context, stack ustack.Ustack) error {
-	ctx := cctx.WithContext(parentCtx)
-	defer ctx.Cancel(nil)
-	go c.inboundService(ctx, stack)
-	go c.outboundService(ctx, stack)
+func (c *Conn) Overhead() int {
+	n := session.Size
+	return n + c.fake.Overhead()
+}
+
+func (c *Conn) handshakeClient(ctx context.Context, stack ustack.Ustack) error {
+	inctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	go c.handshakeInboundService(inctx)
+	go c.outboundService()
 
 	tcp, err := gonet.DialTCPWithBind(
 		ctx, stack,
@@ -101,195 +130,219 @@ func (c *Conn) handshakeConnect(parentCtx context.Context, stack ustack.Ustack) 
 		header.IPv4ProtocolNumber,
 	)
 	if err != nil {
-		return c.close(errorx.Join(err, ctx.Err()))
-	}
-
-	err = c.cfg.PrevPackets.Client(ctx, tcp)
-	if err != nil {
 		return c.close(err)
 	}
-
-	key, err := c.cfg.SwapKey.SecretKey(ctx, tcp)
-	if err != nil {
-		return c.close(err)
-	} else {
-		c.crypto, err = crypto.NewTCP(key, c.pseudoSum1)
-		if err != nil {
-			return c.close(err)
-		}
-	}
-
-	if err = tcp.Close(); err != nil {
-		return c.close(err)
-	}
-	ctx.Cancel(nil)
-
-	c.fake = faketcp.NewFakeTCP(
-		c.raw.LocalAddr().Port(), c.raw.RemoteAddr().Port(),
-		faketcp.InitSeqAck(c.seq, c.ack), faketcp.PseudoSum1(c.pseudoSum1), faketcp.SeqOverhead(crypto.Bytes),
-	)
-
-	return nil
+	return c.handshake(ctx, tcp)
 }
 
-func (c *Conn) handshakeAccept(parentCtx context.Context, stack ustack.Ustack, l *gonet.TCPListener) error {
-	ctx := cctx.WithContext(parentCtx)
-	defer ctx.Cancel(nil)
-	go c.inboundService(ctx, stack)
-	go c.outboundService(ctx, stack)
+func (c *Conn) handshakeServer(ctx context.Context, l *gonet.TCPListener) error {
+	inctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	go c.handshakeInboundService(inctx)
+	go c.outboundService()
 
 	tcp, err := l.AcceptBy(ctx, c.raw.RemoteAddr())
 	if err != nil {
 		return c.close(err)
 	}
+	return c.handshake(ctx, tcp)
+}
 
-	if err = c.cfg.PrevPackets.Server(ctx, tcp); err != nil {
-		return c.close(err)
-	}
-	if key, err := c.cfg.SwapKey.SecretKey(ctx, tcp); err != nil {
-		return c.close(err)
+func (c *Conn) handshake(ctx context.Context, tcp *gonet.TCPConn) (err error) {
+	var key crypto.Key
+	if c.role == server {
+		if err := c.cfg.PrevPackets.Server(ctx, tcp); err != nil {
+			return c.close(err)
+		}
+		if key, err = c.cfg.SwapKey.Server(ctx, tcp); err != nil {
+			return c.close(err)
+		}
 	} else {
-		c.crypto, err = crypto.NewTCP(key, c.pseudoSum1)
-		if err != nil {
+		if err := c.cfg.PrevPackets.Client(ctx, tcp); err != nil {
+			return c.close(err)
+		}
+		if key, err = c.cfg.SwapKey.Client(ctx, tcp); err != nil {
 			return c.close(err)
 		}
 	}
-
-	// wait tcp close
-	if err = waitClose(tcp); err != nil {
+	cpt, err := crypto.NewTCP(key, c.pseudoSum1)
+	if err != nil {
 		return c.close(err)
 	}
-	ctx.Cancel(nil)
 
-	// todo: NewFakeTCP not need calc csum
-	c.fake = faketcp.NewFakeTCP(
+	if err := tcp.WaitSendbuffDrained(ctx); err != nil {
+		return c.close(err)
+	}
+
+	c.fake = faketcp.New(
 		c.raw.LocalAddr().Port(),
 		c.raw.RemoteAddr().Port(),
-		faketcp.InitSeqAck(c.seq, c.ack), faketcp.PseudoSum1(c.pseudoSum1), faketcp.SeqOverhead(crypto.Bytes),
+		faketcp.SeqAck(c.seq, c.ack), faketcp.Crypto(cpt),
 	)
+	c.inited.Store(true)
 
+	// 当前control的mtu直接是原始mtu减去overhead, 可以确保mtu容量的
+	// pkt在Send/Recv, 但这样会导致在握手阶段的数据包大小不符合期望。
+	// 应该在握手完成后更改MaxPayloadSize
+	// todo: should be change endpoint.sender.MaxPayloadSize
+	// if err := tcp.SetSockOptInt(
+	// 	tcpip.MaxSegOption, c.cfg.HandshakeMTU-c.Overhead(),
+	// ); err != nil {
+	// 	return c.close(err)
+	// }
+
+	c.Conn = tcp
 	return nil
 }
 
-func waitClose(conn net.Conn) error {
-	var b = make([]byte, 1)
-	n, err := conn.Read(b)
-	if n > 0 {
-		return errors.New("peer not close")
-	} else {
-		if errors.Is(err, io.EOF) {
-			return nil
-		}
-		return errors.WithStack(err)
-	}
-}
+/*
+	旧的管理：
+		server:
+			在握手完成后进入prepare阶段
+			等待接收到第一个fake包， 初始化faketcp
+			继续处理第一个fake包，发送的也是fake包
 
-func (c *Conn) inboundService(ctx cctx.CancelCtx, stack ustack.Ustack) {
+
+		根本在于等待第一个fake包
+
+		这里面有状态转移，需要区分CS:
+		cliet-up --> server-up --> server-down --> client-down
+
+	现在尝试设计不要区分CS的：
+	1. swapkey完成时，等待sendbuff清空后，inited。之后：
+		outboundService发送的将是faketcp（buff清空只是代表发出去了，不代表收到，可能重传，重传的不应该fake、否则对面将无法完成swapkey，可以依据seq进行判定）。
+		handshakeInboundService 将立即退出；如果在inited之前收到fake包，应该缓存（这是由于IP包乱序导致的）。
+*/
+
+func (c *Conn) handshakeInboundService(ctx context.Context) error {
 	var (
-		ip  = packet.NewPacket(0, c.cfg.MTU)
-		ret = false
-	)
-
-	for !ret {
-		ip.Sets(0, c.cfg.MTU)
-
-		err := c.raw.Read(ctx, ip)
-		if err != nil {
-			ctx.Cancel(err)
-			break
-		}
-
-		// record ack
-		tcphdr := header.TCP(ip.Data())
-		c.ack = max(c.ack, tcphdr.SequenceNumber())
-
-		// avoid read segment packet
-		ret = link.IsFakeFIN(tcphdr)
-
-		// recover to ip packet
-		ip.SetHead(0)
-		if debug.Debug() {
-			test.ValidIP(test.T(), ip.Data())
-		}
-
-		stack.Inbound(ip)
-	}
-}
-
-func (c *Conn) outboundService(ctx cctx.CancelCtx, stack ustack.Ustack) {
-	var (
-		ip  = packet.NewPacket(0, c.cfg.MTU)
-		dst = c.raw.RemoteAddr()
+		pkt = packet.Make(0, c.cfg.HandshakeMTU)
 	)
 
 	for {
-		ip.SetHead(0)
-		err := stack.OutboundBy(ctx, dst, ip)
+		err := c.raw.Read(ctx, pkt.SetHead(0))
 		if err != nil {
-			ctx.Cancel(err)
-			break
-		}
-
-		tcphdr := header.TCP(ip.Data())
-		c.seq = max(c.seq, tcphdr.SequenceNumber()+uint32(len(tcphdr.Payload())))
-
-		err = c.raw.Write(context.Background(), ip)
-		if err != nil {
-			ctx.Cancel(err)
-			break
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return nil
+			}
+			return c.close(err)
 		}
 
 		if debug.Debug() {
-			ip.SetHead(0)
-			test.ValidIP(test.T(), ip.Data())
+			old := pkt.Head()
+			pkt.SetHead(0)
+			test.ValidIP(test.T(), pkt.Bytes())
+			pkt.SetHead(old)
+		}
+
+		if faketcp.Is(pkt.Bytes()) {
+			if !c.inited.Load() {
+				s := c.precvRecvs.Load()
+				*s = append(*s, pkt.Clone())
+				c.precvRecvs.Store(s)
+			} else {
+				return nil
+			}
+		} else {
+			// record ack
+			tcp := header.TCP(pkt.Bytes())
+			// c.ack = max(c.ack, tcp.SequenceNumber())
+			c.ack = max(c.ack, tcp.SequenceNumber()+uint32(len(tcp.Payload())))
+
+			c.ep.Inbound(pkt)
+		}
+	}
+}
+
+func (c *Conn) outboundService() error {
+	var (
+		pkt = packet.Make(0, c.cfg.HandshakeMTU)
+	)
+
+	for {
+		err := c.ep.Outbound(c.srvCtx, pkt.SetHead(0))
+		if err != nil {
+			return c.close(err)
+		}
+
+		if c.inited.Load() {
+			// todo: better use tcp seq
+			if debug.Debug() {
+				tcp := header.TCP(pkt.Bytes())
+				v := tcp.SequenceNumber() + uint32(len(tcp.Payload()))
+				require.GreaterOrEqual(test.T(), v, c.seq)
+			}
+
+			err = c.Send(c.srvCtx, pkt, session.CtrSessID)
+			if err != nil {
+				return c.close(err)
+			}
+		} else {
+			tcphdr := header.TCP(pkt.Bytes())
+			c.seq = max(c.seq, tcphdr.SequenceNumber()+uint32(len(tcphdr.Payload())))
+
+			err = c.raw.Write(context.Background(), pkt)
+			if err != nil {
+				return c.close(err)
+			}
+
+			if debug.Debug() {
+				test.ValidIP(test.T(), pkt.SetHead(0).Bytes())
+			}
 		}
 	}
 }
 
 func (c *Conn) Send(ctx context.Context, pkt *packet.Packet, id session.ID) (err error) {
+	session.Encode(pkt, id)
+	c.fake.AttachSend(pkt)
 
-	// fmt.Println("send", header.TCP(pkt.Data()).Flags())
-
-	session.SetID(pkt, id)
-	c.fake.SendAttach(pkt)
-
-	c.crypto.Encrypt(pkt)
 	if debug.Debug() {
-		test.ValidTCP(test.T(), pkt.Data(), c.pseudoSum1)
-		require.True(test.T(), faketcp.IsFakeTCP(pkt.Data()))
+		test.ValidTCP(test.T(), pkt.Bytes(), c.pseudoSum1)
+		require.True(test.T(), faketcp.Is(pkt.Bytes()))
 	}
 
 	err = c.raw.Write(ctx, pkt)
 	return err
 }
 
+func (c *Conn) recv(ctx context.Context, pkt *packet.Packet) error {
+	if p := c.precvRecvs.Swap(nil); p != nil {
+		if n := len(*p); n > 0 {
+			e := (*p)[n-1]
+			pkt.SetData(0).Append(e.Bytes())
+
+			*p = (*p)[:n-1]
+			c.precvRecvs.Store(p)
+			return nil
+		}
+	}
+
+	err := c.raw.Read(ctx, pkt)
+	return err
+}
+
 func (c *Conn) Recv(ctx context.Context, pkt *packet.Packet) (id session.ID, err error) {
-	err = c.raw.Read(ctx, pkt)
-	if err != nil {
-		return 0, err
+	head := pkt.Head()
+	for {
+		if err = c.recv(ctx, pkt.SetHead(head)); err != nil {
+			return 0, err
+		}
+
+		err = c.fake.DetachRecv(pkt)
+		if err != nil {
+			return 0, errorx.Temporary(err)
+		}
+
+		id = session.Decode(pkt)
+		if id == session.CtrSessID {
+			c.ep.Inbound(pkt)
+			continue
+		}
+		return id, nil
 	}
-
-	err = c.crypto.Decrypt(pkt)
-	if err != nil {
-		return 0, errorx.Temporary(err)
-	}
-
-	c.fake.RecvStrip(pkt)
-
-	id = session.GetID(pkt)
-
-	// fmt.Println("recv", header.TCP(pkt.Data()).Flags())
-	return id, nil
 }
 
-func (c *Conn) LocalAddr() netip.AddrPort {
-	return c.raw.LocalAddr()
-}
-
-func (c *Conn) RemoteAddr() netip.AddrPort {
-	return c.raw.RemoteAddr()
-}
-
-func (c *Conn) Close() error {
-	return c.close(os.ErrClosed)
-}
+func (c *Conn) LocalAddrPort() netip.AddrPort  { return c.raw.LocalAddr() }
+func (c *Conn) RemoteAddrPort() netip.AddrPort { return c.raw.RemoteAddr() }
+func (c *Conn) Close() error                   { return c.close(os.ErrClosed) }

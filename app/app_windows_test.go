@@ -15,7 +15,6 @@ import (
 	"github.com/lysShub/itun/app/client"
 	"github.com/lysShub/itun/app/client/capture"
 	"github.com/lysShub/itun/app/client/filter"
-	"github.com/lysShub/itun/crypto"
 	"github.com/lysShub/itun/sconn"
 	"github.com/lysShub/sockit/conn/tcp"
 	"github.com/stretchr/testify/require"
@@ -37,9 +36,9 @@ func TestXxxx(t *testing.T) {
 		cfg := &app.Config{
 			Config: sconn.Config{
 				PrevPackets: pps,
-				SwapKey:     &crypto.TokenClient{Tokener: &tkClient{}},
-				MTU:         1536 * 2,
+				SwapKey:     sign,
 			},
+			MTU:    1536 * 2,
 			Logger: slog.NewJSONHandler(os.Stdout, nil),
 		}
 

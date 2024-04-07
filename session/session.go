@@ -18,16 +18,12 @@ import (
 
 type ID uint16
 
-func SetID(pkt *packet.Packet, id ID) {
-	pkt.AllocHead(Size)
-	pkt.SetHead(pkt.Head() - Size)
-
-	b := pkt.Data()
-	binary.BigEndian.PutUint16(b[idOffset1:idOffset2], uint16(id))
+func Encode(pkt *packet.Packet, id ID) {
+	pkt.Attach(binary.BigEndian.AppendUint16(nil, uint16(id)))
 }
 
-func GetID(seg *packet.Packet) ID {
-	b := seg.Data()
+func Decode(seg *packet.Packet) ID {
+	b := seg.Bytes()
 	id := binary.BigEndian.Uint16(b[idOffset1:idOffset2])
 	seg.SetHead(seg.Head() + Size)
 	return ID(id)

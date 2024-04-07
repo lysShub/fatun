@@ -2,7 +2,6 @@ package link
 
 import (
 	"context"
-	"io"
 	"net/netip"
 	"sync"
 
@@ -44,62 +43,36 @@ func NewList(size int, mtu int) Link {
 var _ stack.LinkEndpoint = (*List)(nil)
 
 func (l *List) Outbound(ctx context.Context, tcp *packet.Packet) error {
-	pkb := l.list.Get(ctx)
-	if pkb.IsNil() {
-		return errors.WithStack(ctx.Err())
-	}
-	defer pkb.DecRef()
-
-	if pkb.Size() > tcp.Cap() {
-		return errors.WithStack(io.ErrShortBuffer)
-	}
-	tcp.SetLen(pkb.Size())
-	data := tcp.Data()
-
-	n := 0
-	for _, e := range pkb.AsSlices() {
-		n += copy(data[n:], e)
-	}
-
-	if debug.Debug() {
-		test.ValidIP(test.T(), tcp.Data())
-	}
-	switch pkb.NetworkProtocolNumber {
-	case header.IPv4ProtocolNumber:
-		hdrLen := header.IPv4(tcp.Data()).HeaderLength()
-		tcp.SetHead(int(hdrLen))
-	case header.IPv6ProtocolNumber:
-		tcp.SetHead(header.IPv6MinimumSize)
-	default:
-		panic("")
-	}
-	return nil
+	return l.outboundBy(ctx, netip.AddrPort{}, tcp)
 }
 
 func (l *List) OutboundBy(ctx context.Context, dst netip.AddrPort, tcp *packet.Packet) error {
-	pkb := l.list.GetBy(ctx, dst)
-	if pkb.IsNil() {
+	return l.outboundBy(ctx, dst, tcp)
+}
+
+func (l *List) outboundBy(ctx context.Context, dst netip.AddrPort, tcp *packet.Packet) error {
+	var pkt *stack.PacketBuffer
+	if dst.IsValid() {
+		pkt = l.list.GetBy(ctx, dst)
+	} else {
+		pkt = l.list.Get(ctx)
+	}
+	if pkt.IsNil() {
 		return errors.WithStack(ctx.Err())
 	}
-	defer pkb.DecRef()
+	defer pkt.DecRef()
 
-	if pkb.Size() > tcp.Cap() {
-		return errors.WithStack(io.ErrShortBuffer)
-	}
-	tcp.SetLen(pkb.Size())
-	data := tcp.Data()
-
-	n := 0
-	for _, e := range pkb.AsSlices() {
-		n += copy(data[n:], e)
+	tcp.SetData(0)
+	for _, e := range pkt.AsSlices() {
+		tcp.Append(e)
 	}
 
 	if debug.Debug() {
-		test.ValidIP(test.T(), tcp.Data())
+		test.ValidIP(test.T(), tcp.Bytes())
 	}
-	switch pkb.NetworkProtocolNumber {
+	switch pkt.NetworkProtocolNumber {
 	case header.IPv4ProtocolNumber:
-		hdrLen := header.IPv4(tcp.Data()).HeaderLength()
+		hdrLen := header.IPv4(tcp.Bytes()).HeaderLength()
 		tcp.SetHead(int(hdrLen))
 	case header.IPv6ProtocolNumber:
 		tcp.SetHead(header.IPv6MinimumSize)
@@ -112,7 +85,7 @@ func (l *List) OutboundBy(ctx context.Context, dst netip.AddrPort, tcp *packet.P
 
 func (l *List) Inbound(ip *packet.Packet) {
 	pkb := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Payload: buffer.MakeWithData(ip.Data()),
+		Payload: buffer.MakeWithData(ip.Bytes()),
 	})
 
 	l.dispatcherMu.RLock()
