@@ -5,7 +5,6 @@ import (
 	"log/slog"
 	"net"
 	"net/netip"
-	"os"
 	"sync/atomic"
 
 	"github.com/lysShub/itun/app"
@@ -91,7 +90,7 @@ func NewProxyer(srv Server, conn *sconn.Conn) (*Proxyer, error) {
 
 func (p *Proxyer) close(cause error) error {
 	if cause == nil {
-		cause = os.ErrClosed
+		return *p.closeErr.Load()
 	}
 
 	if p.closeErr.CompareAndSwap(nil, &cause) {
@@ -123,7 +122,7 @@ func (p *Proxyer) Proxy(ctx context.Context) error {
 	return p.close(err)
 }
 
-func (p *Proxyer) downlinkService() {
+func (p *Proxyer) downlinkService() error {
 	var (
 		tcp = packet.Make(0, p.cfg.MTU)
 		err error
@@ -133,18 +132,18 @@ func (p *Proxyer) downlinkService() {
 		tcp.Sets(0, p.cfg.MTU)
 		err = p.ep.Outbound(p.srvCtx, tcp)
 		if err != nil {
-			break
+			return p.close(err)
 		}
 
 		err = p.conn.Send(p.srvCtx, tcp, session.CtrSessID)
 		if err != nil {
-			break
+			return p.close(err)
 		}
 	}
-	p.close(err)
+
 }
 
-func (p *Proxyer) uplinkService() {
+func (p *Proxyer) uplinkService() error {
 	var (
 		tinyCnt int
 		tcp     = packet.Make(0, p.cfg.MTU)
@@ -161,7 +160,7 @@ func (p *Proxyer) uplinkService() {
 				tinyCnt++
 				p.logger.Warn(err.Error())
 			} else {
-				break
+				return p.close(err)
 			}
 		}
 
@@ -176,11 +175,11 @@ func (p *Proxyer) uplinkService() {
 
 			err = s.Send(tcp)
 			if err != nil {
-				break
+				return p.close(err)
 			}
 		}
 	}
-	p.close(err)
+	return nil
 }
 
 func (p *Proxyer) downlink(pkt *packet.Packet, id session.ID) error {

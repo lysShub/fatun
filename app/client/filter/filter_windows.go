@@ -7,7 +7,6 @@ import (
 	"syscall"
 
 	"github.com/lysShub/itun"
-	"github.com/lysShub/itun/cctx"
 	"github.com/lysShub/itun/session"
 	"github.com/pkg/errors"
 	"github.com/shirou/gopsutil/v3/net"
@@ -15,17 +14,13 @@ import (
 )
 
 type filter struct {
-	ctx cctx.CancelCtx
-
 	// tood: delete
 	conns   map[session.Session]bool // hited
 	connsMu sync.RWMutex
 }
 
-func NewFilter(ctx cctx.CancelCtx) (*filter, error) {
+func NewFilter() (*filter, error) {
 	f := &filter{
-		ctx: ctx,
-
 		conns: make(map[session.Session]bool, 16),
 	}
 	return f, nil

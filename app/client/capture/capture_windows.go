@@ -30,9 +30,6 @@ import (
 type capture struct {
 	opt *Option
 
-	closed   atomic.Bool
-	closeErr error
-
 	hitter filter.Hitter
 
 	captures   map[sess.Session]*session
@@ -40,6 +37,7 @@ type capture struct {
 
 	sessCh chan *session
 
+	closeErr  atomic.Pointer[error]
 	srvCtx    context.Context
 	srvCancel context.CancelFunc
 }
@@ -67,10 +65,12 @@ func (s *capture) Close() error {
 	return nil
 }
 
-func (s *capture) close(cause error) {
-	if s.closed.CompareAndSwap(false, true) {
-		s.closeErr = cause
+func (s *capture) close(cause error) error {
+	if cause == nil {
+		cause = os.ErrClosed
+	}
 
+	if s.closeErr.CompareAndSwap(nil, &cause) {
 		s.srvCancel()
 
 		close(s.sessCh)
@@ -86,6 +86,10 @@ func (s *capture) close(cause error) {
 		for _, e := range cs {
 			e.Close()
 		}
+
+		return cause
+	} else {
+		return *s.closeErr.Load()
 	}
 }
 
@@ -93,7 +97,7 @@ func (s *capture) Get(ctx context.Context) (Session, error) {
 	select {
 	case sess, ok := <-s.sessCh:
 		if !ok {
-			return nil, s.closeErr
+			return nil, *s.closeErr.Load()
 		}
 		return sess, nil
 	case <-ctx.Done():
@@ -111,12 +115,11 @@ func (s *capture) del(sess sess.Session) {
 	}
 }
 
-func (s *capture) tcpService() {
+func (s *capture) tcpService() error {
 	filter := "outbound and !loopback and ip and tcp.Syn"
 	d, err := divert.Open(filter, divert.Network, s.opt.Priority, 0)
 	if err != nil {
-		s.close(err)
-		return
+		return s.close(err)
 	}
 
 	var addr divert.Address
@@ -124,8 +127,7 @@ func (s *capture) tcpService() {
 	for {
 		n, err := d.RecvCtx(s.srvCtx, p, &addr)
 		if err != nil {
-			s.close(err)
-			return
+			return s.close(err)
 		}
 
 		ip := header.IPv4(p[:n])
@@ -138,8 +140,7 @@ func (s *capture) tcpService() {
 
 		if !s.hitter.HitOnce(sess) {
 			if _, err = d.Send(p[:n], outbound); err != nil {
-				s.close(err)
-				return
+				return s.close(err)
 			}
 		} else {
 			s.capturesMu.RLock()
@@ -170,12 +171,11 @@ func (s *capture) tcpService() {
 	}
 }
 
-func (s *capture) udpService() {
+func (s *capture) udpService() error {
 	filter := "outbound and !loopback and ip and udp"
 	d, err := divert.Open(filter, divert.Network, s.opt.Priority, 0)
 	if err != nil {
-		s.close(err)
-		return
+		return s.close(err)
 	}
 
 	var addr divert.Address
@@ -183,8 +183,7 @@ func (s *capture) udpService() {
 	for {
 		n, err := d.RecvCtx(context.Background(), p, &addr)
 		if err != nil {
-			s.close(err)
-			return
+			return s.close(err)
 		}
 
 		ip := header.IPv4(p[:n])
@@ -197,8 +196,7 @@ func (s *capture) udpService() {
 
 		if !s.hitter.HitOnce(sess) { // pass
 			if _, err = d.Send(p[:n], outbound); err != nil {
-				s.close(err)
-				return
+				return s.close(err)
 			}
 		} else {
 			s.capturesMu.RLock()

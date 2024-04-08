@@ -3,7 +3,6 @@ package session
 import (
 	"context"
 	"net/netip"
-	"os"
 	"sync/atomic"
 	"time"
 
@@ -67,9 +66,9 @@ func newSession(
 	return s, nil
 }
 
-func (s *Session) close(cause error) {
+func (s *Session) close(cause error) error {
 	if cause == nil {
-		cause = os.ErrClosed
+		return *s.closeErr.Load()
 	}
 
 	if s.closeErr.CompareAndSwap(nil, &cause) {
@@ -90,6 +89,10 @@ func (s *Session) close(cause error) {
 
 		s.proxyer.Logger().Info("session close")
 		s.closeErr.Store(&err)
+
+		return cause
+	} else {
+		return *s.closeErr.Load()
 	}
 }
 
@@ -97,7 +100,7 @@ func (s *Session) ID() session.ID {
 	return s.id
 }
 
-func (s *Session) downlinkService() {
+func (s *Session) downlinkService() error {
 	var (
 		mtu = s.proxyer.MTU()
 		seg = packet.Make(0, mtu)
@@ -108,8 +111,7 @@ func (s *Session) downlinkService() {
 		seg.Sets(0, mtu)
 		err := s.sender.Recv(s.srvCtx, seg)
 		if err != nil {
-			s.close(err)
-			return
+			return s.close(err)
 		}
 
 		switch s.session.Proto {
@@ -122,8 +124,7 @@ func (s *Session) downlinkService() {
 
 		err = s.proxyer.Downlink(seg, s.id)
 		if err != nil {
-			s.close(err)
-			return
+			return s.close(err)
 		}
 	}
 }
@@ -143,11 +144,11 @@ func (s *Session) Send(pkt *packet.Packet) error {
 
 	err := s.sender.Send(pkt)
 	if err != nil {
-		s.close(err)
+		return s.close(err)
 	}
 
 	s.cnt.Add(1)
-	return err
+	return nil
 }
 
 func (s *Session) keepalive() {

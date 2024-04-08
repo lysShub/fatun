@@ -88,7 +88,7 @@ func NewClient(ctx context.Context, conn *sconn.Conn, cfg *app.Config) (*Client,
 
 func (c *Client) close(cause error) (err error) {
 	if cause == nil {
-		cause = os.ErrClosed
+		return *c.closeErr.Load()
 	}
 
 	if c.closeErr.CompareAndSwap(nil, &cause) {
@@ -117,7 +117,7 @@ func (c *Client) close(cause error) (err error) {
 	}
 }
 
-func (c *Client) uplinkService() {
+func (c *Client) uplinkService() error {
 	var (
 		tcp = packet.Make(0, c.cfg.MTU)
 		err error
@@ -127,15 +127,15 @@ func (c *Client) uplinkService() {
 		tcp.Sets(0, c.cfg.MTU)
 		err = c.ep.Outbound(c.srvCtx, tcp)
 		if err != nil {
-			break
+			return c.close(err)
 		}
 
 		err = c.uplink(c.srvCtx, tcp, session.CtrSessID)
 		if err != nil {
-			break
+			return c.close(err)
 		}
 	}
-	c.close(err)
+
 }
 
 func (c *Client) downService() {

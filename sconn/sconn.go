@@ -85,7 +85,7 @@ func newConn(raw conn.RawConn, ep ustack.Endpoint, role role, cfg *Config) (*Con
 
 func (c *Conn) close(cause error) (err error) {
 	if cause == nil {
-		cause = os.ErrClosed
+		return *c.closeErr.Load()
 	}
 
 	if c.closeErr.CompareAndSwap(nil, &cause) {

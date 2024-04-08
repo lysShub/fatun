@@ -3,7 +3,6 @@ package session
 import (
 	"context"
 	"log/slog"
-	"os"
 	"sync/atomic"
 	"time"
 
@@ -54,7 +53,7 @@ func newSession(
 
 func (s *Session) close(cause error) error {
 	if cause == nil {
-		cause = os.ErrClosed
+		return *s.closeErr.Load()
 	}
 
 	if s.closeErr.CompareAndSwap(nil, &cause) {
@@ -75,7 +74,7 @@ func (s *Session) close(cause error) error {
 	}
 }
 
-func (s *Session) uplinkService() {
+func (s *Session) uplinkService() error {
 	var mtu = s.client.MTU()
 	pkt := packet.Make(0, mtu)
 
@@ -85,16 +84,14 @@ func (s *Session) uplinkService() {
 
 		err := s.capture.Capture(s.srvCtx, pkt)
 		if err != nil {
-			s.close(err)
-			return
+			return s.close(err)
 		}
 
 		// todo: reset tcp mss
 
 		err = s.client.Uplink(pkt, session.ID(s.id))
 		if err != nil {
-			s.close(err)
-			return
+			return s.close(err)
 		}
 	}
 }

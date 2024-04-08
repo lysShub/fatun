@@ -1,21 +1,19 @@
 package filter
 
 import (
-	"context"
 	"fmt"
 	"testing"
 	"time"
 
 	"github.com/lysShub/divert-go"
 	"github.com/lysShub/itun"
-	"github.com/lysShub/itun/cctx"
 )
 
 func Test_Filter(t *testing.T) {
 	divert.Load(divert.Mem)
 	defer divert.Release()
 
-	f, _ := NewFilter(cctx.WithContext(context.Background()))
+	f, _ := NewFilter()
 
 	f.AddRule("chrome.exe", itun.TCP)
 
