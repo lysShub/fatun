@@ -8,7 +8,6 @@ import (
 	"github.com/lysShub/itun/ustack"
 	"github.com/lysShub/itun/ustack/gonet"
 	"github.com/lysShub/itun/ustack/link"
-	utest "github.com/lysShub/itun/ustack/test"
 	"github.com/lysShub/sockit/conn"
 
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -31,7 +30,7 @@ func NewListener(l conn.Listener, cfg *Config) (*Listener, error) {
 	if err != nil {
 		return nil, err
 	}
-	stack = utest.MustWrapPcap("ustack.pcap", stack)
+	// stack = utest.MustWrapPcap("ustack.pcap", stack)
 
 	listener, err := gonet.ListenTCP(stack, l.Addr(), header.IPv4ProtocolNumber)
 	if err != nil {
@@ -64,7 +63,7 @@ func (l *Listener) AcceptCtx(ctx context.Context) (*Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err = conn.handshakeServer(context.Background(), l.l); err != nil {
+	if err = conn.handshakeServer(ctx, l.l); err != nil {
 		return nil, err
 	}
 	return conn, nil

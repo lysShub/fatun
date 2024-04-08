@@ -12,7 +12,6 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/lysShub/itun/crypto"
-	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
 type Config struct {
@@ -38,7 +37,7 @@ func (c *Config) init() error {
 	return nil
 }
 
-type PrevPackets []header.TCP
+type PrevPackets [][]byte
 
 type ErrPrevPacketInvalid int
 
@@ -47,34 +46,22 @@ func (e ErrPrevPacketInvalid) Error() string {
 }
 
 func (pps PrevPackets) Client(ctx context.Context, conn net.Conn) (err error) {
-	var ret = make(chan struct{})
-	var canceled bool
-	defer func() {
-		if canceled {
-			err = ctx.Err()
-		}
-		close(ret)
-	}()
-	go func() {
-		select {
-		case <-ctx.Done():
-			canceled = true
-			conn.SetDeadline(time.Now())
-		case <-ret:
-		}
-	}()
+	stop := context.AfterFunc(ctx, func() {
+		conn.SetDeadline(time.Now())
+	})
+	defer stop()
 
 	for i := 0; i < len(pps); i++ {
 		if i%2 == 0 {
 			_, err := conn.Write(pps[i])
 			if err != nil {
-				return err
+				return errors.WithStack(err)
 			}
 		} else {
 			var b = make([]byte, len(pps[i]))
 
 			if _, err := io.ReadFull(conn, b); err != nil {
-				return err
+				return errors.WithStack(err)
 			}
 			if !bytes.Equal(b, pps[i]) {
 				return ErrPrevPacketInvalid(i)
@@ -85,29 +72,17 @@ func (pps PrevPackets) Client(ctx context.Context, conn net.Conn) (err error) {
 }
 
 func (pps PrevPackets) Server(ctx context.Context, conn net.Conn) (err error) {
-	var retCh = make(chan struct{})
-	var canceled bool
-	defer func() {
-		if canceled {
-			err = ctx.Err()
-		}
-		close(retCh)
-	}()
-	go func() {
-		select {
-		case <-ctx.Done():
-			canceled = true
-			conn.SetDeadline(time.Now())
-		case <-retCh:
-		}
-	}()
+	stop := context.AfterFunc(ctx, func() {
+		conn.SetDeadline(time.Now())
+	})
+	defer stop()
 
 	for i := 0; i < len(pps); i++ {
 		if i%2 == 0 {
 			var b = make([]byte, len(pps[i]))
 
 			if _, err := io.ReadFull(conn, b); err != nil {
-				return err
+				return errors.WithStack(err)
 			}
 			if !bytes.Equal(b, pps[i]) {
 				return ErrPrevPacketInvalid(i)
@@ -115,7 +90,7 @@ func (pps PrevPackets) Server(ctx context.Context, conn net.Conn) (err error) {
 		} else {
 			_, err := conn.Write(pps[i])
 			if err != nil {
-				return err
+				return errors.WithStack(err)
 			}
 		}
 	}
@@ -134,21 +109,15 @@ type Sign struct {
 }
 
 func (t *Sign) Client(ctx context.Context, conn net.Conn) (crypto.Key, error) {
+	stop := context.AfterFunc(ctx, func() {
+		conn.SetDeadline(time.Now())
+	})
+	defer stop()
+
 	key, err := t.Parser(t.Sign)
 	if err != nil {
 		return crypto.Key{}, err
 	}
-
-	var ret = make(chan struct{})
-	defer close(ret)
-	go func() {
-		select {
-		case <-ctx.Done():
-			conn.SetDeadline(time.Now())
-		case <-ret:
-			return
-		}
-	}()
 
 	err = gob.NewEncoder(conn).Encode(t.Sign)
 	if err != nil {
@@ -158,22 +127,21 @@ func (t *Sign) Client(ctx context.Context, conn net.Conn) (crypto.Key, error) {
 	return key, nil
 }
 
-func (t Sign) Server(ctx context.Context, conn net.Conn) (crypto.Key, error) {
-	var ret = make(chan struct{})
-	defer close(ret)
-	go func() {
-		select {
-		case <-ctx.Done():
-			conn.SetDeadline(time.Now())
-		case <-ret:
-			return
-		}
-	}()
+func (t *Sign) Server(ctx context.Context, conn net.Conn) (crypto.Key, error) {
+	stop := context.AfterFunc(ctx, func() {
+		conn.SetDeadline(time.Now())
+	})
+	defer stop()
 
 	var sign []byte
 	err := gob.NewDecoder(conn).Decode(&sign)
 	if err != nil {
-		return crypto.Key{}, errors.WithStack(err)
+		select {
+		case <-ctx.Done():
+			return crypto.Key{}, errors.WithStack(ctx.Err())
+		default:
+			return crypto.Key{}, errors.WithStack(err)
+		}
 	}
 
 	return t.Parser(sign)

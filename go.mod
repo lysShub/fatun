@@ -6,7 +6,7 @@ require golang.org/x/sys v0.16.0
 
 require (
 	github.com/lysShub/divert-go v0.0.0-20240313084012-1361fa303219
-	github.com/lysShub/sockit v0.0.0-20240407171327-598c54350b9d
+	github.com/lysShub/sockit v0.0.0-20240408083354-950d240ad991
 	github.com/stretchr/testify v1.8.4
 	golang.org/x/net v0.20.0
 	golang.org/x/sync v0.5.0

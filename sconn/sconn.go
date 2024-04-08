@@ -7,7 +7,6 @@ import (
 	"net/netip"
 	"os"
 	"sync/atomic"
-	"time"
 
 	"github.com/lysShub/itun/crypto"
 	"github.com/lysShub/itun/errorx"
@@ -91,7 +90,6 @@ func (c *Conn) close(cause error) (err error) {
 
 	if c.closeErr.CompareAndSwap(nil, &cause) {
 		if c.Conn != nil {
-			c.Conn.SetDeadline(time.Now())
 			cause = errorx.Join(cause, c.Conn.Close())
 		}
 		if c.ep != nil {
@@ -132,7 +130,12 @@ func (c *Conn) handshakeClient(ctx context.Context, stack ustack.Ustack) error {
 	if err != nil {
 		return c.close(err)
 	}
-	return c.handshake(ctx, tcp)
+
+	if err := c.handshake(ctx, tcp); err != nil {
+		tcp.Close()
+		return c.close(err)
+	}
+	return nil
 }
 
 func (c *Conn) handshakeServer(ctx context.Context, l *gonet.TCPListener) error {
@@ -145,33 +148,38 @@ func (c *Conn) handshakeServer(ctx context.Context, l *gonet.TCPListener) error 
 	if err != nil {
 		return c.close(err)
 	}
-	return c.handshake(ctx, tcp)
+
+	if err := c.handshake(ctx, tcp); err != nil {
+		tcp.Close()
+		return c.close(err)
+	}
+	return nil
 }
 
 func (c *Conn) handshake(ctx context.Context, tcp *gonet.TCPConn) (err error) {
 	var key crypto.Key
 	if c.role == server {
 		if err := c.cfg.PrevPackets.Server(ctx, tcp); err != nil {
-			return c.close(err)
+			return err
 		}
 		if key, err = c.cfg.SwapKey.Server(ctx, tcp); err != nil {
-			return c.close(err)
+			return err
 		}
 	} else {
 		if err := c.cfg.PrevPackets.Client(ctx, tcp); err != nil {
-			return c.close(err)
+			return err
 		}
 		if key, err = c.cfg.SwapKey.Client(ctx, tcp); err != nil {
-			return c.close(err)
+			return err
 		}
 	}
 	cpt, err := crypto.NewTCP(key, c.pseudoSum1)
 	if err != nil {
-		return c.close(err)
+		return err
 	}
 
 	if err := tcp.WaitSendbuffDrained(ctx); err != nil {
-		return c.close(err)
+		return err
 	}
 
 	c.fake = faketcp.New(

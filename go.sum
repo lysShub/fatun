@@ -34,6 +34,8 @@ github.com/lysShub/sockit v0.0.0-20240406100237-e9d0e7250bfd h1:9Brg2s10OPi+bb0J
 github.com/lysShub/sockit v0.0.0-20240406100237-e9d0e7250bfd/go.mod h1:7NOxF8F8VL95114wYgKatHJiGhU3vgGgKCAQ0i72Geo=
 github.com/lysShub/sockit v0.0.0-20240407171327-598c54350b9d h1:qs69JoBAtTnIJiVG4kSVfl2eTKljbThsx6cDxOmilLM=
 github.com/lysShub/sockit v0.0.0-20240407171327-598c54350b9d/go.mod h1:7NOxF8F8VL95114wYgKatHJiGhU3vgGgKCAQ0i72Geo=
+github.com/lysShub/sockit v0.0.0-20240408083354-950d240ad991 h1:8DCy+4Non3Rz+RljBQJ4FlQHWoS6Ogq1yp7UFjv4iSY=
+github.com/lysShub/sockit v0.0.0-20240408083354-950d240ad991/go.mod h1:7NOxF8F8VL95114wYgKatHJiGhU3vgGgKCAQ0i72Geo=
 github.com/lysShub/wintun-go v0.0.0-20240311102803-07195f507e37 h1:2vG2+P6wNh+ItpQzRyHgb4+b8u/ReYfNh4GJHl2ZSx0=
 github.com/lysShub/wintun-go v0.0.0-20240311102803-07195f507e37/go.mod h1:BCj6kcW5G30wkjtKulTQ83QKZutWuctHTroy+ciTWpI=
 github.com/mdlayher/arp v0.0.0-20220512170110-6706a2966875 h1:ql8x//rJsHMjS+qqEag8n3i4azw1QneKh5PieH9UEbY=

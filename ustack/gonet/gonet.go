@@ -22,6 +22,7 @@ import (
 	"io"
 	"net"
 	"net/netip"
+	"os"
 	"reflect"
 	"time"
 
@@ -34,18 +35,6 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
-
-var (
-	errCanceled   = errors.New("operation canceled")
-	errWouldBlock = errors.New("operation would block")
-)
-
-// timeoutError is how the net package reports timeouts.
-type timeoutError struct{}
-
-func (e *timeoutError) Error() string   { return "i/o timeout" }
-func (e *timeoutError) Timeout() bool   { return true }
-func (e *timeoutError) Temporary() bool { return true }
 
 // A TCPListener is a wrapper around a TCP tcpip.Endpoint that implements
 // net.Listener.
@@ -279,7 +268,7 @@ func (l *TCPListener) Accept(ctx context.Context) (*TCPConn, error) {
 
 			select {
 			case <-l.cancel:
-				return nil, errCanceled
+				return nil, errors.WithStack(context.Canceled)
 			case <-notifyCh:
 			case <-ctx.Done():
 				return nil, errors.WithStack(ctx.Err())
@@ -318,7 +307,7 @@ func (l *TCPListener) AcceptBy(ctx context.Context, src netip.AddrPort) (*TCPCon
 
 			select {
 			case <-l.cancel:
-				return nil, errors.WithStack(errCanceled)
+				return nil, errors.WithStack(context.Canceled)
 			case <-notifyCh:
 			case <-ctx.Done():
 				return nil, errors.WithStack(ctx.Err())
@@ -347,7 +336,7 @@ type opErrorer interface {
 func commonRead(ctx context.Context, b []byte, ep tcpip.Endpoint, wq *waiter.Queue, deadline <-chan struct{}, addr *tcpip.FullAddress, errorer opErrorer) (int, error) {
 	select {
 	case <-deadline:
-		return 0, errorer.newOpError("read", &timeoutError{})
+		return 0, errorer.newOpError("read", os.ErrDeadlineExceeded)
 	case <-ctx.Done():
 		return 0, errors.WithStack(ctx.Err())
 	default:
@@ -369,7 +358,7 @@ func commonRead(ctx context.Context, b []byte, ep tcpip.Endpoint, wq *waiter.Que
 			}
 			select {
 			case <-deadline:
-				return 0, errorer.newOpError("read", &timeoutError{})
+				return 0, errorer.newOpError("read", os.ErrDeadlineExceeded)
 			case <-ctx.Done():
 				return 0, errors.WithStack(ctx.Err())
 			case <-notifyCh:
@@ -411,7 +400,7 @@ func (c *TCPConn) Write(b []byte) (int, error) {
 	// Check if deadlineTimer has already expired.
 	select {
 	case <-deadline:
-		return 0, c.newOpError("write", &timeoutError{})
+		return 0, c.newOpError("write", os.ErrDeadlineExceeded)
 	default:
 	}
 
@@ -449,7 +438,7 @@ func (c *TCPConn) Write(b []byte) (int, error) {
 				// the notification.
 				select {
 				case <-deadline:
-					return nbytes, c.newOpError("write", &timeoutError{})
+					return nbytes, c.newOpError("write", os.ErrDeadlineExceeded)
 				case <-ch:
 					continue
 				}
@@ -733,7 +722,7 @@ func (c *UDPConn) WriteTo(b []byte, addr net.Addr) (int, error) {
 	// Check if deadline has already expired.
 	select {
 	case <-deadline:
-		return 0, c.newRemoteOpError("write", addr, &timeoutError{})
+		return 0, c.newRemoteOpError("write", addr, os.ErrDeadlineExceeded)
 	default:
 	}
 
@@ -758,7 +747,7 @@ func (c *UDPConn) WriteTo(b []byte, addr net.Addr) (int, error) {
 		for {
 			select {
 			case <-deadline:
-				return int(n), c.newRemoteOpError("write", addr, &timeoutError{})
+				return int(n), c.newRemoteOpError("write", addr, os.ErrDeadlineExceeded)
 			case <-notifyCh:
 			}
 
