@@ -15,8 +15,6 @@ import (
 )
 
 type filter struct {
-	ctx cctx.CancelCtx
-
 	// tood: delete
 	conns   map[session.Session]bool // hited
 	connsMu sync.RWMutex
@@ -24,8 +22,6 @@ type filter struct {
 
 func NewFilter(ctx cctx.CancelCtx) (*filter, error) {
 	f := &filter{
-		ctx: ctx,
-
 		conns: make(map[session.Session]bool, 16),
 	}
 	return f, nil

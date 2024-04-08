@@ -4,7 +4,6 @@ import (
 	"context"
 	"net"
 
-	"github.com/lysShub/itun/cctx"
 	"github.com/lysShub/itun/session"
 )
 
@@ -42,9 +41,6 @@ func NewServer(conn net.Conn, hdr Handler) Server {
 	return newGobServer(conn, hdr)
 }
 
-func Serve(ctx cctx.CancelCtx, conn net.Conn, hdr Handler) {
-	err := NewServer(conn, hdr).Serve(ctx)
-	if err != nil {
-		ctx.Cancel(err)
-	}
+func Serve(ctx context.Context, conn net.Conn, hdr Handler) error {
+	return NewServer(conn, hdr).Serve(ctx)
 }

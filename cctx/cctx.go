@@ -5,6 +5,15 @@ import (
 	"time"
 )
 
+/*
+	cctx: cancel context, 基本思想是将ctx,cancel合并于一起。
+
+	最初是使用场景是：一个对象需要同时运行多个协程才能正常工作，其中一个协程出错将导致整个对象不可工作。
+
+	弃用原因：ctx作用于动作函数，而不是其对象本身，parent cancel 只会中止子动作函数执行，而不会影响对应子
+		对象。所以，不应该"存储" ctx。
+*/
+
 // context can cancel, only used by parallel task
 type CancelCtx interface {
 	context.Context
