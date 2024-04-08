@@ -75,14 +75,14 @@ func (s *Session) close(cause error) error {
 }
 
 func (s *Session) uplinkService() error {
-	var mtu = s.client.MTU()
-	pkt := packet.Make(0, mtu)
+	var (
+		pkt = packet.Make(64, s.client.MTU())
+	)
 
 	for {
-		pkt.Sets(0, mtu)
 		s.cnt.Add(1)
 
-		err := s.capture.Capture(s.srvCtx, pkt)
+		err := s.capture.Capture(s.srvCtx, pkt.SetHead(64))
 		if err != nil {
 			return s.close(err)
 		}

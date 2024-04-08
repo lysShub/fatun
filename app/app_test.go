@@ -2,7 +2,6 @@ package app_test
 
 import (
 	"net/netip"
-	"time"
 
 	"github.com/lysShub/itun/crypto"
 	"github.com/lysShub/itun/sconn"
@@ -19,8 +18,6 @@ var (
 		// 172, 25, 38, 4,
 		172, 24, 131, 26,
 	}), 8080)
-
-	ht = time.Hour
 )
 
 var sign = &sconn.Sign{

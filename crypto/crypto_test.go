@@ -25,13 +25,13 @@ func UnicomStackAndRaw(t *testing.T, s ustack.Ustack, raw *itun.RawConn, pseudoS
 		var ip = packet.Make(0, mtu)
 
 		for {
-			ip.Sets(0, mtu)
+			ip.Sets(64, mtu)
 			s.Outbound(context.Background(), ip)
 			if ip.Data() == 0 {
 				return
 			}
 
-			ip.SetHead(0)
+			ip.SetHead(64)
 			test.ValidIP(t, ip.Bytes())
 
 			c.EncryptRaw(ip)
@@ -47,14 +47,14 @@ func UnicomStackAndRaw(t *testing.T, s ustack.Ustack, raw *itun.RawConn, pseudoS
 		var tcp = packet.Make(0, mtu)
 
 		for {
-			tcp.Sets(0, mtu)
+			tcp.Sets(64, mtu)
 			err := raw.Read(context.Background(), tcp)
 			if errors.Is(err, io.EOF) {
 				return
 			}
 			require.NoError(t, err)
 
-			tcp.SetHead(0)
+			tcp.SetHead(64)
 			test.ValidIP(t, tcp.Bytes())
 
 			err = c.DecryptRaw(tcp)

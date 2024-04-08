@@ -222,34 +222,30 @@ func Test_Conn_Clients(t *testing.T) {
 
 func UnicomStackAndRaw(t *testing.T, s ustack.Ustack, raw *itun.RawConn) {
 	go func() {
-		mtu := raw.MTU()
-		var p = packet.Make(0, mtu)
+		var pkt = packet.Make(64, raw.MTU())
 
 		for {
-			p.Sets(0, mtu)
-			s.Outbound(context.Background(), p)
-			if p.Data() == 0 {
+			s.Outbound(context.Background(), pkt.SetHead(64))
+			if pkt.Data() == 0 {
 				return
 			}
 
 			// fmt.Println("inbound")
 
-			err := raw.Write(context.Background(), p)
+			err := raw.Write(context.Background(), pkt)
 			require.NoError(t, err)
 
 			if debug.Debug() {
-				p.SetHead(0)
-				test.ValidIP(t, p.Bytes())
+				pkt.SetHead(64)
+				test.ValidIP(t, pkt.Bytes())
 			}
 		}
 	}()
 	go func() {
-		mtu := raw.MTU()
-		var p = packet.Make(0, mtu)
+		var pkt = packet.Make(64, raw.MTU())
 
 		for {
-			p.Sets(0, mtu)
-			err := raw.Read(context.Background(), p)
+			err := raw.Read(context.Background(), pkt.SetHead(64))
 			if errors.Is(err, io.EOF) {
 				return
 			}
@@ -257,22 +253,20 @@ func UnicomStackAndRaw(t *testing.T, s ustack.Ustack, raw *itun.RawConn) {
 
 			// fmt.Println("outbound")
 
-			p.SetHead(0)
-			test.ValidIP(t, p.Bytes())
+			pkt.SetHead(64)
+			test.ValidIP(t, pkt.Bytes())
 
-			s.Inbound(p)
+			s.Inbound(pkt)
 		}
 	}()
 }
 
 func UnicomStackAndRawBy(t *testing.T, s ustack.Ustack, raw *itun.RawConn, dst netip.AddrPort) {
 	go func() {
-		mtu := raw.MTU()
-		var p = packet.Make(0, mtu)
+		var p = packet.Make(64, raw.MTU())
 
 		for {
-			p.Sets(0, mtu)
-			s.OutboundBy(context.Background(), dst, p)
+			s.OutboundBy(context.Background(), dst, p.SetHead(64))
 			if p.Data() == 0 {
 				return
 			}
@@ -281,24 +275,22 @@ func UnicomStackAndRawBy(t *testing.T, s ustack.Ustack, raw *itun.RawConn, dst n
 			require.NoError(t, err)
 
 			if debug.Debug() {
-				p.SetHead(0)
+				p.SetHead(64)
 				test.ValidIP(t, p.Bytes())
 			}
 		}
 	}()
 	go func() {
-		mtu := raw.MTU()
-		var p = packet.Make(0, mtu)
+		var p = packet.Make(64, raw.MTU())
 
 		for {
-			p.Sets(0, mtu)
-			err := raw.Read(context.Background(), p)
+			err := raw.Read(context.Background(), p.SetHead(64))
 			if errors.Is(err, io.EOF) {
 				return
 			}
 			require.NoError(t, err)
 
-			p.SetHead(0)
+			p.SetHead(64)
 			test.ValidIP(t, p.Bytes())
 
 			s.Inbound(p)

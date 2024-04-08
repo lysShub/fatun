@@ -21,10 +21,11 @@ func TestXxxx(t *testing.T) {
 
 	cfg := &app.Config{
 		Config: sconn.Config{
-			PrevPackets: pps,
-			SwapKey:     sign,
+			PrevPackets:  pps,
+			SwapKey:      sign,
+			HandshakeMTU: 1460,
 		},
-		MTU:    1536 * 2,
+		MTU:    1536,
 		Logger: slog.NewJSONHandler(os.Stdout, nil),
 	}
 

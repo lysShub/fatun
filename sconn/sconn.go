@@ -224,11 +224,11 @@ func (c *Conn) handshake(ctx context.Context, tcp *gonet.TCPConn) (err error) {
 
 func (c *Conn) handshakeInboundService(ctx context.Context) error {
 	var (
-		pkt = packet.Make(0, c.cfg.HandshakeMTU)
+		pkt = packet.Make(64, c.cfg.HandshakeMTU)
 	)
 
 	for {
-		err := c.raw.Read(ctx, pkt.SetHead(0))
+		err := c.raw.Read(ctx, pkt.SetHead(64))
 		if err != nil {
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				return nil
@@ -238,7 +238,7 @@ func (c *Conn) handshakeInboundService(ctx context.Context) error {
 
 		if debug.Debug() {
 			old := pkt.Head()
-			pkt.SetHead(0)
+			pkt.SetHead(64)
 			test.ValidIP(test.T(), pkt.Bytes())
 			pkt.SetHead(old)
 		}
@@ -264,11 +264,11 @@ func (c *Conn) handshakeInboundService(ctx context.Context) error {
 
 func (c *Conn) outboundService() error {
 	var (
-		pkt = packet.Make(0, c.cfg.HandshakeMTU)
+		pkt = packet.Make(64, c.cfg.HandshakeMTU)
 	)
 
 	for {
-		err := c.ep.Outbound(c.srvCtx, pkt.SetHead(0))
+		err := c.ep.Outbound(c.srvCtx, pkt.SetHead(64))
 		if err != nil {
 			return c.close(err)
 		}
@@ -295,7 +295,7 @@ func (c *Conn) outboundService() error {
 			}
 
 			if debug.Debug() {
-				test.ValidIP(test.T(), pkt.SetHead(0).Bytes())
+				test.ValidIP(test.T(), pkt.SetHead(64).Bytes())
 			}
 		}
 	}
@@ -333,7 +333,8 @@ func (c *Conn) recv(ctx context.Context, pkt *packet.Packet) error {
 func (c *Conn) Recv(ctx context.Context, pkt *packet.Packet) (id session.ID, err error) {
 	head := pkt.Head()
 	for {
-		if err = c.recv(ctx, pkt.SetHead(head)); err != nil {
+		err = c.recv(ctx, pkt.SetHead(head))
+		if err != nil {
 			return 0, err
 		}
 

@@ -49,7 +49,7 @@ func newSender(loc netip.AddrPort, proto itun.Proto, dst netip.AddrPort) (*sende
 			return nil, err
 		}
 
-		// w, err := test.WrapPcap(tcp, dst.String()+".pcap")
+		// tcp, err = test.WrapPcap(tcp, "sender.pcap")
 		// if err != nil {
 		// 	panic(err)
 		// }

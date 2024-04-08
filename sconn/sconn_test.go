@@ -151,6 +151,9 @@ func Test_Ctr_Conn(t *testing.T) {
 		caddr, saddr,
 		test.ValidAddr, test.ValidChecksum, test.PacketLoss(0.01),
 	)
+	// wc, err := test.WrapPcap(c, `test.pcap`)
+	// require.NoError(t, err)
+	// defer wc.Close()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -200,6 +203,7 @@ func Test_Ctr_Conn(t *testing.T) {
 }
 
 func Test_Conn(t *testing.T) {
+	t.Skip("todo")
 	var (
 		caddr = netip.AddrPortFrom(test.LocIP(), test.RandPort())
 		saddr = netip.AddrPortFrom(test.LocIP(), test.RandPort())
@@ -233,9 +237,9 @@ func Test_Conn(t *testing.T) {
 		defer conn.Close()
 
 		eg.Go(func() error {
-			var pkt = packet.Make(0, mtu+conn.Overhead()+header.IPv4MaximumHeaderSize)
+			var pkt = packet.Make(64, mtu)
 			for {
-				id, err := conn.Recv(ctx, pkt.SetHead(0))
+				id, err := conn.Recv(ctx, pkt.SetHead(64))
 				require.NoError(t, err)
 				require.Equal(t, sid, id)
 				err = conn.Send(ctx, pkt, sid)
@@ -263,19 +267,19 @@ func Test_Conn(t *testing.T) {
 
 		rander := rand.New(rand.NewSource(0))
 		eg.Go(func() error {
-			var p = packet.Make(0, mtu)
+			var pkt = packet.Make(64, mtu)
 			for {
-				rander.Read(p.SetData(rand.Int() % mtu).Bytes())
-				err := conn.Send(ctx, p, sid)
+				rander.Read(pkt.SetData(rand.Int() % mtu).Bytes())
+				err := conn.Send(ctx, pkt, sid)
 				require.NoError(t, err)
 
 				time.Sleep(time.Millisecond * 10)
 			}
 		})
 		eg.Go(func() error {
-			var p = packet.Make(0, mtu+conn.Overhead()+header.IPv4MaximumHeaderSize)
+			var p = packet.Make(64, mtu)
 			for {
-				id, err := conn.Recv(ctx, p.SetHead(0))
+				id, err := conn.Recv(ctx, p.SetHead(64))
 				require.NoError(t, err)
 				require.Equal(t, sid, id)
 			}

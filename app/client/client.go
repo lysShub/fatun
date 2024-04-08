@@ -14,13 +14,9 @@ import (
 	"github.com/lysShub/itun/errorx"
 	"github.com/lysShub/itun/sconn"
 	"github.com/lysShub/itun/session"
-	"github.com/lysShub/itun/ustack"
-	"github.com/lysShub/itun/ustack/gonet"
-	"github.com/lysShub/itun/ustack/link"
 	"github.com/lysShub/sockit/packet"
 
 	"github.com/pkg/errors"
-	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
 type Client struct {
@@ -31,7 +27,6 @@ type Client struct {
 
 	sessMgr *cs.SessionMgr
 
-	ep  ustack.Endpoint
 	ctr control.Client
 
 	srvCtx    context.Context
@@ -51,33 +46,8 @@ func NewClient(ctx context.Context, conn *sconn.Conn, cfg *app.Config) (*Client,
 	}
 	c.srvCtx, c.srvCancel = context.WithCancel(context.Background())
 
-	if stack, err := ustack.NewUstack(
-		link.NewList(8, cfg.MTU),
-		conn.LocalAddrPort().Addr(),
-	); err != nil {
-		return nil, c.close(err)
-	} else {
-		c.ep, err = ustack.ToEndpoint(
-			stack, conn.LocalAddrPort().Port(),
-			conn.RemoteAddrPort(),
-		)
-		if err != nil {
-			return nil, c.close(err)
-		}
-	}
-
-	go c.uplinkService()
-	go c.downService()
-
-	if tcp, err := gonet.DialTCPWithBind(
-		ctx, c.ep.Stack(),
-		conn.LocalAddrPort(), conn.RemoteAddrPort(),
-		header.IPv4ProtocolNumber,
-	); err != nil {
-		return nil, c.close(err)
-	} else {
-		c.ctr = control.NewClient(tcp)
-	}
+	go c.downlinkService()
+	c.ctr = control.NewClient(conn)
 
 	// todo: init config
 	if err := c.ctr.InitConfig(ctx, &control.Config{}); err != nil {
@@ -98,9 +68,6 @@ func (c *Client) close(cause error) (err error) {
 			err = errorx.Join(err, c.ctr.Close())
 		}
 		c.srvCancel()
-		if c.ep != nil {
-			err = errorx.Join(err, c.ep.Close())
-		}
 		if c.sessMgr != nil {
 			err = errorx.Join(err, c.sessMgr.Close())
 		}
@@ -117,64 +84,35 @@ func (c *Client) close(cause error) (err error) {
 	}
 }
 
-func (c *Client) uplinkService() error {
+func (c *Client) downlinkService() error {
 	var (
-		tcp = packet.Make(0, c.cfg.MTU)
+		tcp = packet.Make(64, c.cfg.MTU)
+		id  session.ID
+		s   *cs.Session
 		err error
 	)
 
 	for {
-		tcp.Sets(0, c.cfg.MTU)
-		err = c.ep.Outbound(c.srvCtx, tcp)
-		if err != nil {
-			return c.close(err)
-		}
-
-		err = c.uplink(c.srvCtx, tcp, session.CtrSessID)
-		if err != nil {
-			return c.close(err)
-		}
-	}
-
-}
-
-func (c *Client) downService() {
-	var (
-		tinyCnt int
-		tcp     = packet.Make(0, c.cfg.MTU)
-		id      session.ID
-		s       *cs.Session
-		err     error
-	)
-
-	for tinyCnt < 8 { // todo: from config
-		tcp.Sets(0, c.cfg.MTU)
-		id, err = c.conn.Recv(c.srvCtx, tcp)
+		id, err = c.conn.Recv(c.srvCtx, tcp.SetHead(64))
 		if err != nil {
 			if errorx.IsTemporary(err) {
-				tinyCnt++
 				c.logger.Warn(err.Error())
 			} else {
-				break
+				return c.close(err)
 			}
 		}
 
-		if id == session.CtrSessID {
-			c.ep.Inbound(tcp)
-		} else {
-			s, err = c.sessMgr.Get(id)
-			if err != nil {
-				c.logger.Warn(err.Error())
-				continue
-			}
+		s, err = c.sessMgr.Get(id)
+		if err != nil {
+			c.logger.Warn(err.Error())
+			continue
+		}
 
-			err = s.Inject(tcp)
-			if err != nil {
-				break
-			}
+		err = s.Inject(tcp)
+		if err != nil {
+			return c.close(err)
 		}
 	}
-	c.close(err)
 }
 
 func (c *Client) uplink(ctx context.Context, pkt *packet.Packet, id session.ID) error {

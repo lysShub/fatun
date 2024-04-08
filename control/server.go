@@ -33,15 +33,10 @@ func (s *gobServer) Close() error {
 }
 
 func (s *gobServer) Serve(ctx context.Context) error {
-	var retCh = make(chan struct{})
-	defer close(retCh)
-	go func() {
-		select {
-		case <-ctx.Done():
-			s.conn.SetDeadline(time.Now())
-		case <-retCh:
-		}
-	}()
+	stop := context.AfterFunc(ctx, func() {
+		s.conn.SetDeadline(time.Now())
+	})
+	defer stop()
 
 	var t internal.CtrType
 	var err error

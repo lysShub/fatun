@@ -25,8 +25,8 @@ func TestXxxx(t *testing.T) {
 	defer divert.Release()
 	ctx := context.Background()
 
-	f := filter.NewMock("chrome.exe")
-	// f := filter.NewMock("curl.exe")
+	// f := filter.NewMock("chrome.exe")
+	f := filter.NewMock("curl.exe")
 	capture, err := capture.NewCapture(f)
 	require.NoError(t, err)
 	defer capture.Close()
@@ -35,10 +35,11 @@ func TestXxxx(t *testing.T) {
 	if true {
 		cfg := &app.Config{
 			Config: sconn.Config{
-				PrevPackets: pps,
-				SwapKey:     sign,
+				PrevPackets:  pps,
+				SwapKey:      sign,
+				HandshakeMTU: 1460,
 			},
-			MTU:    1536 * 2,
+			MTU:    1536,
 			Logger: slog.NewJSONHandler(os.Stdout, nil),
 		}
 
@@ -47,11 +48,12 @@ func TestXxxx(t *testing.T) {
 		conn, err := sconn.Dial(raw, &cfg.Config)
 		require.NoError(t, err)
 
+		fmt.Println("connected")
+
 		c, err = client.NewClient(ctx, conn, cfg)
 		require.NoError(t, err)
 		defer c.Close()
 
-		fmt.Println("connected")
 	}
 
 	fmt.Println("prepared")

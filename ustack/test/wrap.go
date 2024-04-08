@@ -42,12 +42,11 @@ func (u *UstackPcapWrap) Inbound(ip *packet.Packet) {
 }
 func (u *UstackPcapWrap) OutboundBy(ctx context.Context, dst netip.AddrPort, tcp *packet.Packet) error {
 	old := tcp.Head()
-
 	if err := u.Ustack.OutboundBy(ctx, dst, tcp); err != nil {
 		return err
 	}
-
 	new := tcp.Head()
+
 	tcp.SetHead(old)
 	if err := u.pcap.WriteIP(tcp.Bytes()); err != nil {
 		return err
@@ -57,12 +56,11 @@ func (u *UstackPcapWrap) OutboundBy(ctx context.Context, dst netip.AddrPort, tcp
 }
 func (u *UstackPcapWrap) Outbound(ctx context.Context, tcp *packet.Packet) error {
 	old := tcp.Head()
-
 	if err := u.Ustack.Outbound(ctx, tcp); err != nil {
 		return err
 	}
-
 	new := tcp.Head()
+
 	tcp.SetHead(old)
 	if err := u.pcap.WriteIP(tcp.Bytes()); err != nil {
 		return err

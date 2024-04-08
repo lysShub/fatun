@@ -73,9 +73,9 @@ func (l *List) outboundBy(ctx context.Context, dst netip.AddrPort, tcp *packet.P
 	switch pkt.NetworkProtocolNumber {
 	case header.IPv4ProtocolNumber:
 		hdrLen := header.IPv4(tcp.Bytes()).HeaderLength()
-		tcp.SetHead(int(hdrLen))
+		tcp.SetHead(tcp.Head() + int(hdrLen))
 	case header.IPv6ProtocolNumber:
-		tcp.SetHead(header.IPv6MinimumSize)
+		tcp.SetHead(tcp.Head() + header.IPv6MinimumSize)
 	default:
 		panic("")
 	}
