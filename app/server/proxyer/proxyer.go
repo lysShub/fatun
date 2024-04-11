@@ -3,15 +3,16 @@ package proxyer
 import (
 	"context"
 	"log/slog"
+	"os"
 	"sync/atomic"
 
 	"github.com/lysShub/itun/app"
 	"github.com/lysShub/itun/app/server/adapter"
 	ss "github.com/lysShub/itun/app/server/proxyer/session"
 	"github.com/lysShub/itun/control"
-	"github.com/lysShub/itun/errorx"
 	"github.com/lysShub/itun/sconn"
 	"github.com/lysShub/itun/session"
+	"github.com/lysShub/sockit/errorx"
 	"github.com/lysShub/sockit/packet"
 )
 
@@ -56,7 +57,7 @@ func NewProxyer(srv Server, conn *sconn.Conn) (*Proxyer, error) {
 		srv:  srv,
 		cfg:  cfg,
 		logger: slog.New(cfg.Logger.WithGroup("proxyer").WithAttrs([]slog.Attr{
-			{Key: "src", Value: slog.StringValue(conn.RemoteAddrPort().String())},
+			{Key: "src", Value: slog.StringValue(conn.RemoteAddr().String())},
 		})),
 	}
 	p.sessionMgr = ss.NewSessionMgr(proxyerImplPtr(p))
@@ -64,32 +65,27 @@ func NewProxyer(srv Server, conn *sconn.Conn) (*Proxyer, error) {
 
 	p.logger.Info("accept")
 	go p.uplinkService()
-	p.ctr = control.NewServer(conn, controlImplPtr(p))
+	p.ctr = control.NewServer(conn.TCP(), controlImplPtr(p))
 
 	return p, nil
 }
 
 func (p *Proxyer) close(cause error) error {
-	if cause == nil {
-		return *p.closeErr.Load()
-	}
-
-	if p.closeErr.CompareAndSwap(nil, &cause) {
-		err := cause
-
+	if p.closeErr.CompareAndSwap(nil, &os.ErrClosed) {
 		if p.ctr != nil {
-			err = errorx.Join(
-				err,
-				p.ctr.Close(),
-			)
+			if err := p.ctr.Close(); err != nil {
+				cause = err
+				p.logger.Error(err.Error(), errorx.TraceAttr(err))
+			}
 		}
 		p.srvCancel()
 
-		p.logger.Error(err.Error(), errorx.TraceAttr(err))
-		return err
-	} else {
-		return *p.closeErr.Load()
+		if cause != nil {
+			p.closeErr.Store(&cause)
+		}
+		return cause
 	}
+	return *p.closeErr.Load()
 }
 
 func (p *Proxyer) Proxy(ctx context.Context) error {
@@ -108,8 +104,9 @@ func (p *Proxyer) uplinkService() error {
 	for {
 		id, err = p.conn.Recv(p.srvCtx, tcp.SetHead(64))
 		if err != nil {
-			if errorx.IsTemporary(err) {
+			if errorx.Temporary(err) {
 				p.logger.Warn(err.Error())
+				continue
 			} else {
 				return p.close(err)
 			}

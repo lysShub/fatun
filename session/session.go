@@ -50,17 +50,17 @@ type Session struct {
 	Dst   netip.AddrPort
 }
 
-func (s *Session) IsValid() bool {
+func (s Session) IsValid() bool {
 	return s.Src.IsValid() &&
 		s.Proto.IsValid() &&
 		s.Dst.IsValid()
 }
 
-func (s *Session) String() string {
+func (s Session) String() string {
 	return fmt.Sprintf("%s:%s->%s", s.Proto, s.Src, s.Dst)
 }
 
-func (s *Session) IPVersion() int {
+func (s Session) IPVersion() int {
 	if s.Src.Addr().Is4() {
 		return 4
 	}

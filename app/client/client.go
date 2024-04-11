@@ -5,15 +5,16 @@ import (
 	"log/slog"
 	"os"
 	"sync/atomic"
+	"time"
 
 	"github.com/lysShub/itun"
 	"github.com/lysShub/itun/app"
 	"github.com/lysShub/itun/app/client/capture"
 	cs "github.com/lysShub/itun/app/client/session"
 	"github.com/lysShub/itun/control"
-	"github.com/lysShub/itun/errorx"
 	"github.com/lysShub/itun/sconn"
 	"github.com/lysShub/itun/session"
+	"github.com/lysShub/sockit/errorx"
 	"github.com/lysShub/sockit/packet"
 
 	"github.com/pkg/errors"
@@ -38,8 +39,8 @@ func NewClient(ctx context.Context, conn *sconn.Conn, cfg *app.Config) (*Client,
 	var c = &Client{
 		cfg: cfg,
 		logger: slog.New(cfg.Logger.WithGroup("client").WithAttrs([]slog.Attr{
-			{Key: "local", Value: slog.StringValue(conn.LocalAddrPort().String())},
-			{Key: "proxyer", Value: slog.StringValue(conn.RemoteAddrPort().String())},
+			{Key: "local", Value: slog.StringValue(conn.LocalAddr().String())},
+			{Key: "proxyer", Value: slog.StringValue(conn.RemoteAddr().String())},
 		})),
 		conn:    conn,
 		sessMgr: cs.NewSessionMgr(),
@@ -47,7 +48,7 @@ func NewClient(ctx context.Context, conn *sconn.Conn, cfg *app.Config) (*Client,
 	c.srvCtx, c.srvCancel = context.WithCancel(context.Background())
 
 	go c.downlinkService()
-	c.ctr = control.NewClient(conn)
+	c.ctr = control.NewClient(conn.TCP())
 
 	// todo: init config
 	if err := c.ctr.InitConfig(ctx, &control.Config{}); err != nil {
@@ -56,32 +57,32 @@ func NewClient(ctx context.Context, conn *sconn.Conn, cfg *app.Config) (*Client,
 	return c, nil
 }
 
-func (c *Client) close(cause error) (err error) {
-	if cause == nil {
-		return *c.closeErr.Load()
-	}
-
-	if c.closeErr.CompareAndSwap(nil, &cause) {
-		err := cause
-
+func (c *Client) close(cause error) error {
+	if c.closeErr.CompareAndSwap(nil, &os.ErrClosed) {
 		if c.ctr != nil {
-			err = errorx.Join(err, c.ctr.Close())
+			if err := c.ctr.Close(); err != nil {
+				cause = err
+			}
 		}
 		c.srvCancel()
 		if c.sessMgr != nil {
-			err = errorx.Join(err, c.sessMgr.Close())
+			if err := c.sessMgr.Close(); err != nil {
+				cause = err
+			}
 		}
 		if c.conn != nil {
-			err = errorx.Join(err, c.conn.Close())
+			if err := c.conn.Close(); err != nil {
+				cause = err
+			}
 		}
 
-		c.logger.Info("close", "cause", err.Error())
-
-		c.closeErr.Store(&err)
-		return err
-	} else {
-		return *c.closeErr.Load()
+		if cause != nil {
+			c.closeErr.Store(&cause)
+			c.logger.Info("close", "cause", cause.Error(), errorx.TraceAttr(errors.WithStack(cause)))
+		}
+		return cause
 	}
+	return *c.closeErr.Load()
 }
 
 func (c *Client) downlinkService() error {
@@ -95,7 +96,7 @@ func (c *Client) downlinkService() error {
 	for {
 		id, err = c.conn.Recv(c.srvCtx, tcp.SetHead(64))
 		if err != nil {
-			if errorx.IsTemporary(err) {
+			if errorx.Temporary(err) {
 				c.logger.Warn(err.Error())
 			} else {
 				return c.close(err)
@@ -120,10 +121,13 @@ func (c *Client) uplink(ctx context.Context, pkt *packet.Packet, id session.ID) 
 }
 
 func (c *Client) AddSession(ctx context.Context, s capture.Session) error {
+	ctx, cancel := context.WithTimeout(ctx, time.Second*3)
+	defer cancel()
+
 	self := session.Session{
-		Src:   c.conn.LocalAddrPort(),
+		Src:   c.conn.LocalAddr(),
 		Proto: itun.TCP,
-		Dst:   c.conn.RemoteAddrPort(),
+		Dst:   c.conn.RemoteAddr(),
 	}
 	if s.Session() == self {
 		return errors.Errorf("can't proxy self %s", self.String())
@@ -139,6 +143,4 @@ func (c *Client) AddSession(ctx context.Context, s capture.Session) error {
 	}
 }
 
-func (c *Client) Close() error {
-	return c.close(os.ErrClosed)
-}
+func (c *Client) Close() error { return c.close(nil) }

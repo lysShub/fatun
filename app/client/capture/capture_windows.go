@@ -15,8 +15,8 @@ import (
 	"github.com/lysShub/divert-go"
 	"github.com/lysShub/itun"
 	"github.com/lysShub/itun/app/client/filter"
-	"github.com/lysShub/itun/errorx"
 	sess "github.com/lysShub/itun/session"
+	"github.com/lysShub/sockit/errorx"
 	"github.com/lysShub/sockit/helper/ipstack"
 	"github.com/lysShub/sockit/packet"
 
@@ -66,13 +66,8 @@ func (s *capture) Close() error {
 }
 
 func (s *capture) close(cause error) error {
-	if cause == nil {
-		cause = os.ErrClosed
-	}
-
-	if s.closeErr.CompareAndSwap(nil, &cause) {
+	if s.closeErr.CompareAndSwap(nil, &os.ErrClosed) {
 		s.srvCancel()
-
 		close(s.sessCh)
 
 		var cs []*session
@@ -84,13 +79,17 @@ func (s *capture) close(cause error) error {
 		s.capturesMu.Unlock()
 
 		for _, e := range cs {
-			e.Close()
+			if err := e.Close(); err != nil {
+				cause = err
+			}
 		}
 
+		if cause != nil {
+			s.closeErr.Store(&cause)
+		}
 		return cause
-	} else {
-		return *s.closeErr.Load()
 	}
+	return *s.closeErr.Load()
 }
 
 func (s *capture) Get(ctx context.Context) (Session, error) {
@@ -144,7 +143,7 @@ func (s *capture) tcpService() error {
 			}
 		} else {
 			s.capturesMu.RLock()
-			_, ok := s.captures[sess] // todo: HitOnce 不需要这个map
+			_, ok := s.captures[sess] // todo: HitOnce 不需要查询这个map
 			s.capturesMu.RUnlock()
 
 			if !ok {
@@ -164,7 +163,7 @@ func (s *capture) tcpService() error {
 					s.capturesMu.Unlock()
 				default:
 					c.Close()
-					s.opt.Logger.Warn("xxx")
+					s.opt.Logger.Warn("capture接收阻塞")
 				}
 			}
 		}
@@ -264,6 +263,7 @@ type session struct {
 
 var _ Session = (*session)(nil)
 
+// todo: 要注意创建的session没被使用要自动close
 func newSession(
 	capture *capture, s sess.Session,
 	injectIfIdx int, priority int16,

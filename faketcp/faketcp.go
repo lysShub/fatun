@@ -5,7 +5,7 @@ import (
 	"sync/atomic"
 
 	"github.com/lysShub/itun/crypto"
-	"github.com/lysShub/itun/errorx"
+	"github.com/lysShub/sockit/errorx"
 	"github.com/lysShub/sockit/packet"
 	"github.com/stretchr/testify/require"
 
@@ -24,13 +24,6 @@ type FakeTCP struct {
 
 	pseudoSum1 *uint16
 	crypto     crypto.Crypto
-}
-
-func SeqAck(seq, ack uint32) func(f *FakeTCP) {
-	return func(opt *FakeTCP) {
-		opt.seq.Store(seq)
-		opt.ack.Store(ack)
-	}
 }
 
 // PseudoSum1 if set, will calc tcp header checksum
@@ -55,6 +48,11 @@ func New(localPort, remotePort uint16, opts ...func(*FakeTCP)) *FakeTCP {
 	}
 
 	return f
+}
+
+func (f *FakeTCP) InitSeqAck(seq, ack uint32) {
+	f.seq.Store(seq)
+	f.ack.Store(ack)
 }
 
 func (f *FakeTCP) Overhead() int {
@@ -108,7 +106,7 @@ func (f *FakeTCP) AttachSend(seg *packet.Packet) {
 func (f *FakeTCP) DetachRecv(tcp *packet.Packet) error {
 	if f.crypto != nil {
 		if err := f.crypto.Decrypt(tcp); err != nil {
-			return errorx.Temporary(err)
+			return errorx.WrapTemp(err)
 		}
 	} else if f.pseudoSum1 != nil {
 		if debug.Debug() {
@@ -128,6 +126,8 @@ func (f *FakeTCP) DetachRecv(tcp *packet.Packet) error {
 }
 
 const (
+	// todo: 区分fakeFlag采用tcp MSS option, 有为fake packet
+
 	fakeFlagOffset = header.TCPDataOffset
 	fakeFlag       = 0b10
 )

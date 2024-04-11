@@ -369,6 +369,9 @@ func commonRead(ctx context.Context, b []byte, ep tcpip.Endpoint, wq *waiter.Que
 	if _, ok := err.(*tcpip.ErrClosedForReceive); ok {
 		return 0, io.EOF
 	}
+	if _, ok := err.(*tcpip.ErrConnectionReset); ok {
+		return 0, errorer.newOpError("read", ErrConnectReset)
+	}
 
 	if err != nil {
 		return 0, errorer.newOpError("read", errors.New(err.String()))
@@ -496,33 +499,67 @@ func (c *TCPConn) RemoteAddr() net.Addr {
 	return fullToTCPAddr(a)
 }
 
-func (c *TCPConn) WaitSendbuffDrained(ctx context.Context) error {
+// WaitBeforeDataTransmitted wait before writen data is recved by peer. firstly wait
+// send-buff drain, secondly wait SndUna==SndNxt.
+//
+// require doesn't Write data actively when call WaitBeforeDataTransmitted.
+func (c *TCPConn) WaitBeforeDataTransmitted(ctx context.Context) (err error) {
 	ep, ok := c.ep.(interface {
 		LockUser()
 		UnlockUser()
 	})
 	if !ok {
-		return errors.New("invalid endpoint")
+		return errors.Errorf("not support endpoint type %T", c.ep)
 	}
 
-	snd := reflect.Indirect(reflect.ValueOf(c.ep)).FieldByName("sndQueueInfo")
-	v := snd.FieldByName("SndBufUsed")
+	var used, una, nxt reflect.Value
+	func() {
+		defer func() { _ = recover() }()
+		snd := reflect.Indirect(reflect.ValueOf(c.ep)).FieldByName("sndQueueInfo")
+		used = snd.FieldByName("SndBufUsed")
 
+		state := reflect.Indirect(reflect.Indirect(reflect.ValueOf(c.ep)).FieldByName("snd")).FieldByName("TCPSenderState")
+		una = state.FieldByName("SndUna")
+		nxt = state.FieldByName("SndNxt")
+	}()
+	if !una.IsValid() || !nxt.IsValid() {
+		return errors.Errorf("not support endpoint type %T", c.ep)
+	}
+
+	t := time.NewTicker(time.Millisecond * 100)
+	defer t.Stop()
 	for {
+		ep.LockUser()
+		vused := used.Int()
+		ep.UnlockUser()
+		if vused <= 0 {
+			break
+		}
+		fmt.Println("vused", vused)
+
 		select {
 		case <-ctx.Done():
 			return errors.WithStack(ctx.Err())
-		default:
+		case <-t.C:
 		}
+	}
 
+	for {
 		ep.LockUser()
-		used := v.Int()
+		vuna := una.Uint()
+		vnxt := nxt.Uint()
 		ep.UnlockUser()
-
-		if used == 0 {
+		if vuna >= vnxt {
+			fmt.Println("WaitBeforeDataTransmitted return")
 			return nil
 		}
-		time.Sleep(time.Millisecond * 10)
+		fmt.Printf("vuna %d vnxt %d \n", vuna, vnxt)
+
+		select {
+		case <-ctx.Done():
+			return errors.WithStack(ctx.Err())
+		case <-t.C:
+		}
 	}
 }
 

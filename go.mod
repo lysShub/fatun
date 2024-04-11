@@ -5,8 +5,8 @@ go 1.21
 require golang.org/x/sys v0.16.0
 
 require (
-	github.com/lysShub/divert-go v0.0.0-20240313084012-1361fa303219
-	github.com/lysShub/sockit v0.0.0-20240408184219-694e9c2e1271
+	github.com/lysShub/divert-go v0.0.0-20240410134915-f315ccee7ff6
+	github.com/lysShub/sockit v0.0.0-20240411071819-d1cf017c73f7
 	github.com/stretchr/testify v1.8.4
 	golang.org/x/net v0.20.0
 	golang.org/x/sync v0.5.0
@@ -35,7 +35,7 @@ require (
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/google/btree v1.1.2 // indirect
-	github.com/lysShub/wintun-go v0.0.0-20240311102803-07195f507e37 // indirect
+	github.com/lysShub/wintun-go v0.0.0-20240410130619-383598c11ea1 // indirect
 	github.com/pkg/errors v0.9.1
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/shirou/gopsutil/v3 v3.24.1
@@ -44,6 +44,5 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-// replace (
-// 	github.com/lysShub/sockit => D:\OneDrive\code\go\sockit
-// )
+// replace github.com/lysShub/sockit => D:\OneDrive\code\go\sockit
+// replace github.com/lysShub/divert-go => D:\OneDrive\code\go\divert-go

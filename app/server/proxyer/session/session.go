@@ -3,12 +3,12 @@ package session
 import (
 	"context"
 	"net/netip"
+	"os"
 	"sync/atomic"
 	"time"
 
 	"github.com/lysShub/itun"
 	"github.com/lysShub/itun/app/server/proxyer/sender"
-	"github.com/lysShub/itun/errorx"
 	"github.com/lysShub/itun/session"
 	"github.com/lysShub/sockit/packet"
 
@@ -67,33 +67,34 @@ func newSession(
 }
 
 func (s *Session) close(cause error) error {
-	if cause == nil {
-		return *s.closeErr.Load()
-	}
-
-	if s.closeErr.CompareAndSwap(nil, &cause) {
-		err := cause
-
+	if s.closeErr.CompareAndSwap(nil, &os.ErrClosed) {
 		if s.mgr != nil {
 			s.mgr.del(s)
 		}
 		s.srvCancel()
 
 		if s.sender != nil {
-			err = errorx.Join(err, s.sender.Close())
+			if err := s.sender.Close(); err != nil {
+				cause = err
+			}
 		}
 
 		sess := s.session
-		e := s.proxyer.Adapter().DelPort(sess.Proto, s.locAddr.Port(), sess.Dst)
-		err = errorx.Join(err, e)
+		if s.proxyer != nil {
+			if err := s.proxyer.Adapter().DelPort(
+				sess.Proto, s.locAddr.Port(), sess.Dst,
+			); err != nil {
+				cause = err
+			}
+		}
 
 		s.proxyer.Logger().Info("session close")
-		s.closeErr.Store(&err)
-
+		if cause != nil {
+			s.closeErr.Store(&cause)
+		}
 		return cause
-	} else {
-		return *s.closeErr.Load()
 	}
+	return *s.closeErr.Load()
 }
 
 func (s *Session) ID() session.ID {

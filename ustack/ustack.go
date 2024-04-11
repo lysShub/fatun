@@ -3,6 +3,7 @@ package ustack
 import (
 	"context"
 	"net/netip"
+	"time"
 
 	"github.com/pkg/errors"
 
@@ -69,10 +70,12 @@ func NewUstack(link link.Link, addr netip.Addr) (Ustack, error) {
 	if err := u.stack.CreateNIC(nicid, u.link); err != nil {
 		return nil, errors.New(err.String())
 	}
-	u.stack.AddProtocolAddress(nicid, tcpip.ProtocolAddress{
+	if err := u.stack.AddProtocolAddress(nicid, tcpip.ProtocolAddress{
 		Protocol:          u.proto,
 		AddressWithPrefix: tcpip.AddrFromSlice(u.addr.AsSlice()).WithPrefix(),
-	}, stack.AddressProperties{})
+	}, stack.AddressProperties{}); err != nil {
+		return nil, errors.New(err.String())
+	}
 	u.stack.SetRouteTable([]tcpip.Route{
 		{Destination: header.IPv4EmptySubnet, NIC: nicid},
 		{Destination: header.IPv6EmptySubnet, NIC: nicid},
@@ -82,17 +85,13 @@ func NewUstack(link link.Link, addr netip.Addr) (Ustack, error) {
 }
 
 func (u *ustack) Close() error {
-	u.stack.Stats()
-
-	u.stack.Destroy()
-	return nil
+	u.stack.Close()
+	return u.link.SynClose(time.Second)
 }
 
-func (u *ustack) Stack() *stack.Stack { return u.stack }
-func (u *ustack) Addr() netip.Addr    { return u.addr }
-func (u *ustack) Inbound(ip *packet.Packet) {
-	u.link.Inbound(ip)
-}
+func (u *ustack) Stack() *stack.Stack       { return u.stack }
+func (u *ustack) Addr() netip.Addr          { return u.addr }
+func (u *ustack) Inbound(ip *packet.Packet) { u.link.Inbound(ip) }
 
 // OutboundBy only use by server, read stack outbound tcp packet
 func (u *ustack) OutboundBy(ctx context.Context, dst netip.AddrPort, tcp *packet.Packet) error {

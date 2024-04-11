@@ -10,7 +10,7 @@ import (
 )
 
 func Test_Filter(t *testing.T) {
-	divert.Load(divert.Mem)
+	divert.Load(divert.DLL)
 	defer divert.Release()
 
 	f, _ := NewFilter()
@@ -31,7 +31,7 @@ func Test_Filter(t *testing.T) {
 }
 
 func TestClient(t *testing.T) {
-	divert.MustLoad(divert.Mem)
+	divert.MustLoad(divert.DLL)
 	defer divert.Release()
 
 	var s = "udp and !ipv6 and event=CONNECT"

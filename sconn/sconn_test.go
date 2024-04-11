@@ -2,9 +2,9 @@ package sconn_test
 
 import (
 	"context"
-	"errors"
 	"io"
 	"math/rand"
+	"net"
 	"net/netip"
 	"os"
 	"testing"
@@ -13,6 +13,8 @@ import (
 	"github.com/lysShub/itun/crypto"
 	"github.com/lysShub/itun/sconn"
 	"github.com/lysShub/itun/session"
+	"github.com/lysShub/itun/ustack/gonet"
+	"github.com/pkg/errors"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/lysShub/sockit/packet"
@@ -155,9 +157,7 @@ func Test_Ctr_Conn(t *testing.T) {
 	// require.NoError(t, err)
 	// defer wc.Close()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	eg, ctx := errgroup.WithContext(ctx)
+	eg, ctx := errgroup.WithContext(context.Background())
 
 	// echo server
 	eg.Go(func() error {
@@ -172,12 +172,14 @@ func Test_Ctr_Conn(t *testing.T) {
 		eg.Go(func() error {
 			var p = packet.Make(0, mtu)
 			_, err := conn.Recv(ctx, p)
-			require.True(t, errors.Is(err, os.ErrClosed), err)
+			require.True(t, errors.Is(err, net.ErrClosed), err)
 			return nil
 		})
 
-		io.Copy(conn, conn)
-		return nil
+		tcp := conn.TCP()
+		_, err = io.Copy(tcp, tcp)
+
+		return err
 	})
 
 	// client
@@ -189,17 +191,20 @@ func Test_Ctr_Conn(t *testing.T) {
 		eg.Go(func() error {
 			var p = packet.Make(0, mtu)
 			_, err := conn.Recv(ctx, p)
-			require.True(t, errors.Is(err, os.ErrClosed), err)
+			require.True(t, errors.Is(err, net.ErrClosed), err)
 			return nil
 		})
 
 		rander := rand.New(rand.NewSource(0))
-		test.ValidPingPongConn(t, rander, conn, 0xffff)
+		test.ValidPingPongConn(t, rander, conn.TCP(), 0xffff)
 
 		return nil
 	})
 
-	eg.Wait()
+	err := eg.Wait()
+	ok := errors.Is(err, gonet.ErrConnectReset) ||
+		errors.Is(err, io.EOF)
+	require.True(t, ok, err)
 }
 
 func Test_Conn(t *testing.T) {
@@ -247,7 +252,8 @@ func Test_Conn(t *testing.T) {
 			}
 		})
 
-		io.Copy(conn, conn)
+		tcp := conn.TCP()
+		io.Copy(tcp, tcp)
 		return nil
 	})
 
@@ -285,7 +291,7 @@ func Test_Conn(t *testing.T) {
 			}
 		})
 
-		test.ValidPingPongConn(t, rander, conn, 0xff)
+		test.ValidPingPongConn(t, rander, conn.TCP(), 0xff)
 
 		cancel()
 		return nil

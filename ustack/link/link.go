@@ -3,6 +3,7 @@ package link
 import (
 	"context"
 	"net/netip"
+	"time"
 
 	"github.com/lysShub/sockit/packet"
 
@@ -12,6 +13,9 @@ import (
 
 type Link interface {
 	stack.LinkEndpoint
+
+	// SynClose close util buffed packets be consumed.
+	SynClose(timeout time.Duration) error
 
 	Inbound(ip *packet.Packet)
 

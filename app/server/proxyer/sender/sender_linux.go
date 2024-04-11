@@ -90,7 +90,6 @@ func (s *sender) Send(pkt *packet.Packet) error {
 
 func (s *sender) Recv(ctx context.Context, pkt *packet.Packet) error {
 	err := s.raw.Read(ctx, pkt)
-
 	return err
 }
 

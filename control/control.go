@@ -16,6 +16,7 @@ type Handler interface {
 }
 
 type Config struct {
+	MSS int
 }
 
 type Client interface {

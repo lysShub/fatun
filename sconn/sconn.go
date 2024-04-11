@@ -7,14 +7,15 @@ import (
 	"net/netip"
 	"os"
 	"sync/atomic"
+	"time"
 
 	"github.com/lysShub/itun/crypto"
-	"github.com/lysShub/itun/errorx"
 	"github.com/lysShub/itun/faketcp"
 	"github.com/lysShub/itun/session"
 	"github.com/lysShub/itun/ustack"
 	"github.com/lysShub/itun/ustack/gonet"
 	"github.com/lysShub/sockit/conn"
+	"github.com/lysShub/sockit/errorx"
 	"github.com/lysShub/sockit/packet"
 
 	"github.com/lysShub/sockit/test"
@@ -38,15 +39,17 @@ type Conn struct {
 	raw  conn.RawConn
 	role role
 
-	ep       ustack.Endpoint
-	net.Conn // control tcp conn
+	ep  ustack.Endpoint
+	tcp net.Conn // control tcp conn
 
 	inited     atomic.Bool
+	initedTime time.Time
 	precvRecvs atomic.Pointer[[]*packet.Packet]
 
 	pseudoSum1 uint16           //
 	seq, ack   uint32           // init seq/ack
 	fake       *faketcp.FakeTCP //
+	fakeinited atomic.Bool
 
 	srvCtx    context.Context
 	srvCancel context.CancelFunc
@@ -83,17 +86,23 @@ func newConn(raw conn.RawConn, ep ustack.Endpoint, role role, cfg *Config) (*Con
 	return c, nil
 }
 
-func (c *Conn) close(cause error) (err error) {
-	if cause == nil {
-		return *c.closeErr.Load()
-	}
+func (c *Conn) close(cause error) error {
+	if c.closeErr.CompareAndSwap(nil, &os.ErrClosed) {
+		if c.tcp != nil {
+			// maybe closed before, ignore return error
+			c.tcp.Close()
 
-	if c.closeErr.CompareAndSwap(nil, &cause) {
-		if c.Conn != nil {
-			cause = errorx.Join(cause, c.Conn.Close())
+			// wait tcp close finished
+			if gotcp, ok := c.tcp.(*gonet.TCPConn); ok {
+				ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
+				defer cancel()
+				gotcp.WaitBeforeDataTransmitted(ctx)
+			}
 		}
 		if c.ep != nil {
-			cause = errorx.Join(cause, c.ep.Close())
+			if err := c.ep.Close(); err != nil {
+				cause = err
+			}
 		}
 
 		if c.srvCancel != nil {
@@ -101,19 +110,17 @@ func (c *Conn) close(cause error) (err error) {
 		}
 
 		if c.raw != nil {
-			cause = errorx.Join(cause, c.raw.Close())
+			if err := c.raw.Close(); err != nil {
+				cause = err
+			}
 		}
 
-		c.closeErr.Store(&cause)
+		if cause != nil {
+			c.closeErr.Store(&cause)
+		}
 		return cause
-	} else {
-		return *c.closeErr.Load()
 	}
-}
-
-func (c *Conn) Overhead() int {
-	n := session.Size
-	return n + c.fake.Overhead()
+	return *c.closeErr.Load()
 }
 
 func (c *Conn) handshakeClient(ctx context.Context, stack ustack.Ustack) error {
@@ -173,42 +180,37 @@ func (c *Conn) handshake(ctx context.Context, tcp *gonet.TCPConn) (err error) {
 			return err
 		}
 	}
-	cpt, err := crypto.NewTCP(key, c.pseudoSum1)
-	if err != nil {
+
+	if cpt, err := crypto.NewTCP(key, c.pseudoSum1); err != nil {
 		return err
+	} else {
+		c.fake = faketcp.New(
+			c.raw.LocalAddr().Port(),
+			c.raw.RemoteAddr().Port(),
+			faketcp.Crypto(cpt),
+		)
+		c.fakeinited.Store(true)
 	}
 
-	if err := tcp.WaitSendbuffDrained(ctx); err != nil {
+	// wait before writen data be recved by peer.
+	if err := tcp.WaitBeforeDataTransmitted(ctx); err != nil {
 		return err
 	}
+	c.fake.InitSeqAck(c.seq, c.ack)
 
-	c.fake = faketcp.New(
-		c.raw.LocalAddr().Port(),
-		c.raw.RemoteAddr().Port(),
-		faketcp.SeqAck(c.seq, c.ack), faketcp.Crypto(cpt),
-	)
 	c.inited.Store(true)
+	c.initedTime = time.Now()
 
-	// 当前control的mtu直接是原始mtu减去overhead, 可以确保mtu容量的
-	// pkt在Send/Recv, 但这样会导致在握手阶段的数据包大小不符合期望。
-	// 应该在握手完成后更改MaxPayloadSize
-	// todo: should be change endpoint.sender.MaxPayloadSize
-	// if err := tcp.SetSockOptInt(
-	// 	tcpip.MaxSegOption, c.cfg.HandshakeMTU-c.Overhead(),
-	// ); err != nil {
-	// 	return c.close(err)
-	// }
-
-	c.Conn = tcp
+	c.tcp = tcp
 	return nil
 }
 
 /*
-	旧的管理：
+	旧的握手状态转移管理：
 		server:
 			在握手完成后进入prepare阶段
 			等待接收到第一个fake包， 初始化faketcp
-			继续处理第一个fake包，发送的也是fake包
+			之后处理第一个fake包，发送的也是fake包
 
 
 		根本在于等待第一个fake包
@@ -216,10 +218,21 @@ func (c *Conn) handshake(ctx context.Context, tcp *gonet.TCPConn) (err error) {
 		这里面有状态转移，需要区分CS:
 		cliet-up --> server-up --> server-down --> client-down
 
-	现在尝试设计不要区分CS的：
-	1. swapkey完成时，等待sendbuff清空后，inited。之后：
-		outboundService发送的将是faketcp（buff清空只是代表发出去了，不代表收到，可能重传，重传的不应该fake、否则对面将无法完成swapkey，可以依据seq进行判定）。
-		handshakeInboundService 将立即退出；如果在inited之前收到fake包，应该缓存（这是由于IP包乱序导致的）。
+	新的（设计不要区分CS的）：
+		swapkey完成时，不主动发送任何数据包，等待发送的数据被对方接收到，然后inited。之后：
+			1.outboundService发送的将是faketcp。
+			2.handshakeInboundService 将立即退出、并循环调用Recv。
+				a.如果在inited之前（handshakeInboundService）收到fake包，应该缓存(×)，这是peer先完成握手导致的；
+				b.如果在inited之后，（Recv）收到非fake包，因该忽略，这是peer后完成握手，重传的数据包导致的；
+				a,b 两种情况都是边界竞争导致的，不会有太多的数据包处于这种状态。
+
+		存在问题：如果一方完先成握手, 发送的数据包将是fake, 对方只会暂存此包,但是此包可能是对方期望的ack包, 也就可能导致对方
+				 的WaitBeforeDataTransmitted 始终阻塞。
+				解决方法：1. 使用seq   2. init之前即可解包fake
+					尝试方案2, 在initfake后尝试解包, 如果是ctrid 则注入,fake需要New和SetInitSeq, 在SetInitSeq之前不能发送数据包
+
+
+		// （buff清空只是代表发出去了，不代表收到，可能重传，重传的不应该fake、否则对面将无法完成swapkey，可以依据seq进行判定）
 */
 
 func (c *Conn) handshakeInboundService(ctx context.Context) error {
@@ -244,17 +257,24 @@ func (c *Conn) handshakeInboundService(ctx context.Context) error {
 		}
 
 		if faketcp.Is(pkt.Bytes()) {
-			if !c.inited.Load() {
+			seg := pkt.Clone()
+			if c.fakeinited.Load() &&
+				c.fake.DetachRecv(seg) == nil &&
+				session.Decode(seg) == session.CtrSessID {
+
+				c.ep.Inbound(seg)
+			} else {
 				s := c.precvRecvs.Load()
 				*s = append(*s, pkt.Clone())
 				c.precvRecvs.Store(s)
-			} else {
+			}
+
+			if c.inited.Load() {
 				return nil
 			}
 		} else {
 			// record ack
 			tcp := header.TCP(pkt.Bytes())
-			// c.ack = max(c.ack, tcp.SequenceNumber())
 			c.ack = max(c.ack, tcp.SequenceNumber()+uint32(len(tcp.Payload())))
 
 			c.ep.Inbound(pkt)
@@ -274,13 +294,6 @@ func (c *Conn) outboundService() error {
 		}
 
 		if c.inited.Load() {
-			// todo: better use tcp seq
-			if debug.Debug() {
-				tcp := header.TCP(pkt.Bytes())
-				v := tcp.SequenceNumber() + uint32(len(tcp.Payload()))
-				require.GreaterOrEqual(test.T(), v, c.seq)
-			}
-
 			err = c.Send(c.srvCtx, pkt, session.CtrSessID)
 			if err != nil {
 				return c.close(err)
@@ -300,6 +313,13 @@ func (c *Conn) outboundService() error {
 		}
 	}
 }
+
+func (c *Conn) Overhead() int {
+	n := session.Size
+	return n + c.fake.Overhead()
+}
+
+func (c *Conn) TCP() net.Conn { return c.tcp }
 
 func (c *Conn) Send(ctx context.Context, pkt *packet.Packet, id session.ID) (err error) {
 	session.Encode(pkt, id)
@@ -340,7 +360,10 @@ func (c *Conn) Recv(ctx context.Context, pkt *packet.Packet) (id session.ID, err
 
 		err = c.fake.DetachRecv(pkt)
 		if err != nil {
-			return 0, errorx.Temporary(err)
+			if time.Since(c.initedTime) < time.Second*3 {
+				continue
+			}
+			return 0, errorx.WrapTemp(err)
 		}
 
 		id = session.Decode(pkt)
@@ -352,6 +375,6 @@ func (c *Conn) Recv(ctx context.Context, pkt *packet.Packet) (id session.ID, err
 	}
 }
 
-func (c *Conn) LocalAddrPort() netip.AddrPort  { return c.raw.LocalAddr() }
-func (c *Conn) RemoteAddrPort() netip.AddrPort { return c.raw.RemoteAddr() }
-func (c *Conn) Close() error                   { return c.close(os.ErrClosed) }
+func (c *Conn) LocalAddr() netip.AddrPort  { return c.raw.LocalAddr() }
+func (c *Conn) RemoteAddr() netip.AddrPort { return c.raw.RemoteAddr() }
+func (c *Conn) Close() error               { return c.close(nil) }

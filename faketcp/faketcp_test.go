@@ -15,7 +15,7 @@ func Test_FakeTCP(t *testing.T) {
 
 	var f = faketcp.New(
 		19986, 8080, nil,
-		faketcp.SeqAck(1234, 5678), faketcp.PseudoSum1(pseudoSum1),
+		faketcp.PseudoSum1(pseudoSum1),
 	)
 
 	var p = packet.Make(0, 16)

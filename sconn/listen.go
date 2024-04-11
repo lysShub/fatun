@@ -2,13 +2,15 @@ package sconn
 
 import (
 	"context"
+	"net"
 	"net/netip"
+	"sync/atomic"
 
-	"github.com/lysShub/itun/errorx"
 	"github.com/lysShub/itun/ustack"
 	"github.com/lysShub/itun/ustack/gonet"
 	"github.com/lysShub/itun/ustack/link"
 	"github.com/lysShub/sockit/conn"
+	"github.com/pkg/errors"
 
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
@@ -19,30 +21,58 @@ type Listener struct {
 
 	stack ustack.Ustack
 	l     *gonet.TCPListener
+
+	closeErr atomic.Pointer[error]
 }
 
 func NewListener(l conn.Listener, cfg *Config) (*Listener, error) {
 	if err := cfg.init(); err != nil {
 		return nil, err
 	}
+	var li = &Listener{cfg: cfg, raw: l}
 
-	stack, err := ustack.NewUstack(link.NewList(64, cfg.HandshakeMTU-overhead), l.Addr().Addr())
-	if err != nil {
-		return nil, err
+	var err error
+	if li.stack, err = ustack.NewUstack(
+		link.NewList(64, cfg.HandshakeMTU-maxOverhead), l.Addr().Addr(),
+	); err != nil {
+		return nil, li.close(err)
 	}
-	// stack = utest.MustWrapPcap("ustack.pcap", stack)
+	// li.stack = utest.MustWrapPcap("server.pcap", li.stack)
 
-	listener, err := gonet.ListenTCP(stack, l.Addr(), header.IPv4ProtocolNumber)
-	if err != nil {
-		return nil, err
+	if li.l, err = gonet.ListenTCP(
+		li.stack, l.Addr(),
+		header.IPv4ProtocolNumber,
+	); err != nil {
+		return nil, li.close(err)
 	}
 
-	return &Listener{
-		cfg:   cfg,
-		raw:   l,
-		stack: stack,
-		l:     listener,
-	}, nil
+	return li, nil
+}
+
+func (l *Listener) close(cause error) error {
+	if l.closeErr.CompareAndSwap(nil, &net.ErrClosed) {
+		if l.l != nil {
+			if err := l.l.Close(); err != nil {
+				cause = errors.WithStack(err)
+			}
+		}
+		if l.stack != nil {
+			if err := l.stack.Close(); err != nil {
+				cause = err
+			}
+		}
+		if l.raw != nil {
+			if err := l.raw.Close(); err != nil {
+				cause = err
+			}
+		}
+
+		if cause != nil {
+			l.closeErr.Store(&cause)
+		}
+		return cause
+	}
+	return *l.closeErr.Load()
 }
 
 func (l *Listener) Accept() (*Conn, error) {
@@ -63,6 +93,8 @@ func (l *Listener) AcceptCtx(ctx context.Context) (*Conn, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// todo: handshakeServer should not here, will block queue
 	if err = conn.handshakeServer(ctx, l.l); err != nil {
 		return nil, err
 	}
@@ -71,10 +103,4 @@ func (l *Listener) AcceptCtx(ctx context.Context) (*Conn, error) {
 
 func (l *Listener) Addr() netip.AddrPort { return l.raw.Addr() }
 
-func (l *Listener) Close() error {
-	err := errorx.Join(
-		l.l.Close(),
-		l.raw.Close(),
-	)
-	return err
-}
+func (l *Listener) Close() error { return l.close(nil) }

@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/netip"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/pkg/errors"
 
@@ -19,6 +21,7 @@ import (
 )
 
 type List struct {
+	id   string
 	list listIface
 
 	dispatcher   stack.NetworkDispatcher
@@ -27,20 +30,45 @@ type List struct {
 	mtu                int
 	LinkEPCapabilities stack.LinkEndpointCapabilities
 	SupportedGSOKind   stack.SupportedGSO
+	closed             atomic.Bool
 }
 
 var _ Link = (*List)(nil)
 
-func NewList(size int, mtu int) Link {
-	size = max(size, 4)
+func NewList(buff, mtu int) *List {
+	buff = max(buff, 4)
 	return &List{
 		// list:         newHeap(size), // todo: heap can't pass ut, fix bug
-		list: newSlice(size),
+		list: newSlice(buff),
 		mtu:  mtu,
 	}
 }
 
+func NewListWithID(buff, mut int, id string) *List {
+	l := NewList(buff, mut)
+	l.id = id
+	return l
+}
+
 var _ stack.LinkEndpoint = (*List)(nil)
+
+func (l *List) SynClose(timeout time.Duration) error {
+	if l.closed.CompareAndSwap(false, true) {
+		l.closed.Store(true)
+
+		dead := time.Now().Add(timeout)
+		for l.list.Size() > 0 || time.Now().Before(dead) {
+			time.Sleep(time.Millisecond * 10)
+		}
+
+		n := l.list.Size()
+		l.list = nil
+		if n > 0 {
+			return errors.Errorf("SynClose timeout %s", timeout.String())
+		}
+	}
+	return nil
+}
 
 func (l *List) Outbound(ctx context.Context, tcp *packet.Packet) error {
 	return l.outboundBy(ctx, netip.AddrPort{}, tcp)
@@ -60,8 +88,11 @@ func (l *List) outboundBy(ctx context.Context, dst netip.AddrPort, tcp *packet.P
 	if pkt.IsNil() {
 		return errors.WithStack(ctx.Err())
 	}
-	defer pkt.DecRef()
 
+	if debug.Debug() {
+		defer func() { require.Zero(test.T(), pkt.ReadRefs()) }()
+	}
+	defer pkt.DecRef()
 	tcp.SetData(0)
 	for _, e := range pkt.AsSlices() {
 		tcp.Append(e)
@@ -84,6 +115,10 @@ func (l *List) outboundBy(ctx context.Context, dst netip.AddrPort, tcp *packet.P
 }
 
 func (l *List) Inbound(ip *packet.Packet) {
+	if debug.Debug() {
+		test.ValidIP(test.T(), ip.Bytes())
+	}
+
 	pkb := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Payload: buffer.MakeWithData(ip.Bytes()),
 	})
@@ -97,6 +132,10 @@ func (l *List) Inbound(ip *packet.Packet) {
 }
 
 func (l *List) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) {
+	if l.closed.Load() {
+		return 0, &tcpip.ErrClosedForSend{}
+	}
+
 	n := 0
 	for i, pkb := range pkts.AsSlice() {
 		if debug.Debug() {
@@ -171,6 +210,7 @@ func (s *slice) Put(pkb *stack.PacketBuffer) (ok bool) {
 	if len(s.s) == cap(s.s) {
 		return false
 	} else {
+
 		s.s = append(s.s, pkb.IncRef())
 		select {
 		case s.writeCh <- struct{}{}:
@@ -199,20 +239,6 @@ func (s *slice) Get(ctx context.Context) (pkb *stack.PacketBuffer) {
 	}
 }
 
-func (s *slice) get() (pkb *stack.PacketBuffer) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if len(s.s) > 0 {
-		pkb = s.s[0]
-		n := copy(s.s, s.s[1:])
-		s.s = s.s[:n]
-		return pkb
-	} else {
-		return nil
-	}
-}
-
 func (s *slice) GetBy(ctx context.Context, dst netip.AddrPort) (pkb *stack.PacketBuffer) {
 	pkb = s.getBy(dst)
 	if !pkb.IsNil() {
@@ -229,6 +255,20 @@ func (s *slice) GetBy(ctx context.Context, dst netip.AddrPort) (pkb *stack.Packe
 				return pkb
 			}
 		}
+	}
+}
+
+func (s *slice) get() (pkb *stack.PacketBuffer) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if len(s.s) > 0 {
+		pkb = s.s[0]
+		n := copy(s.s, s.s[1:])
+		s.s = s.s[:n]
+		return pkb
+	} else {
+		return nil
 	}
 }
 

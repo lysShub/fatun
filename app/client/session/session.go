@@ -3,12 +3,12 @@ package session
 import (
 	"context"
 	"log/slog"
+	"os"
 	"sync/atomic"
 	"time"
 
 	"github.com/lysShub/itun"
 	"github.com/lysShub/itun/app/client/capture"
-	"github.com/lysShub/itun/errorx"
 	"github.com/lysShub/itun/session"
 	"github.com/lysShub/sockit/packet"
 )
@@ -52,26 +52,26 @@ func newSession(
 }
 
 func (s *Session) close(cause error) error {
-	if cause == nil {
-		return *s.closeErr.Load()
-	}
-
-	if s.closeErr.CompareAndSwap(nil, &cause) {
-		s.mgr.del(s.id)
+	if s.closeErr.CompareAndSwap(nil, &os.ErrClosed) {
+		if s.mgr != nil {
+			s.mgr.del(s.id)
+		}
 
 		s.srvCancel()
 
-		err := errorx.Join(
-			cause,
-			s.capture.Close(),
-		)
+		if s.capture != nil {
+			if err := s.capture.Close(); err != nil {
+				cause = err
+			}
+		}
 
 		s.client.Logger().Info("session close")
-		s.closeErr.Store(&err)
-		return err
-	} else {
-		return *s.closeErr.Load()
+		if cause != nil {
+			s.closeErr.Store(&cause)
+		}
+		return cause
 	}
+	return *s.closeErr.Load()
 }
 
 func (s *Session) uplinkService() error {

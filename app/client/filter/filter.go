@@ -7,7 +7,11 @@ import (
 
 // Hitter validate the session is hit rule.
 type Hitter interface {
+
+	//
 	Hit(s session.Session) bool
+
+	// ？忘了这个和hit有啥区别？
 	HitOnce(s session.Session) bool
 }
 

@@ -6,7 +6,6 @@ import (
 	"sync"
 
 	"github.com/lysShub/itun"
-	"github.com/lysShub/itun/errorx"
 	"github.com/pkg/errors"
 )
 
@@ -186,9 +185,11 @@ func (a *Ports) Close() (err error) {
 		case itun.UDP:
 			e = a.mgr.DelUDPPort(pk.loaclPort)
 		default:
-			e = errorx.Join(err, itun.ErrInvalidProto(pk.proto))
+			panic("invalid proto")
 		}
-		err = errorx.Join(err, e)
+		if e != nil {
+			e = err
+		}
 	}
 
 	a.ports = map[portKey]*AddrSet{}
