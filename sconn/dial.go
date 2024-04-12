@@ -36,7 +36,7 @@ func dial(ctx context.Context, raw conn.RawConn, cfg *Config) (*Conn, error) {
 	}
 	// stack = test.MustWrapPcap("client.pcap", stack)
 
-	ep, err := ustack.ToEndpoint(stack, raw.LocalAddr().Port(), raw.RemoteAddr())
+	ep, err := stack.LinkEndpoint(raw.LocalAddr().Port(), raw.RemoteAddr())
 	if err != nil {
 		return nil, err
 	}
@@ -45,8 +45,12 @@ func dial(ctx context.Context, raw conn.RawConn, cfg *Config) (*Conn, error) {
 	if err != nil {
 		return nil, conn.close(err)
 	}
+	conn.factory = &clientFactory{
+		local: conn.LocalAddr(), remote: conn.RemoteAddr(),
+		stack: stack,
+	}
 
-	if err = conn.handshakeClient(ctx, stack); err != nil {
+	if err = conn.handshake(ctx); err != nil {
 		return nil, conn.close(err)
 	}
 	return conn, nil

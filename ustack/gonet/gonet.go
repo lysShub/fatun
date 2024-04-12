@@ -535,7 +535,6 @@ func (c *TCPConn) WaitBeforeDataTransmitted(ctx context.Context) (err error) {
 		if vused <= 0 {
 			break
 		}
-		fmt.Println("vused", vused)
 
 		select {
 		case <-ctx.Done():
@@ -550,10 +549,8 @@ func (c *TCPConn) WaitBeforeDataTransmitted(ctx context.Context) (err error) {
 		vnxt := nxt.Uint()
 		ep.UnlockUser()
 		if vuna >= vnxt {
-			fmt.Println("WaitBeforeDataTransmitted return")
 			return nil
 		}
-		fmt.Printf("vuna %d vnxt %d \n", vuna, vnxt)
 
 		select {
 		case <-ctx.Done():

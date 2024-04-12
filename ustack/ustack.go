@@ -26,6 +26,7 @@ type Ustack interface {
 	Close() error
 	Stack() *stack.Stack
 	Addr() netip.Addr
+	LinkEndpoint(localPort uint16, remoteAddr netip.AddrPort) (*LinkEndpoint, error)
 
 	Inbound(ip *packet.Packet)
 	OutboundBy(ctx context.Context, dst netip.AddrPort, tcp *packet.Packet) error
@@ -89,8 +90,12 @@ func (u *ustack) Close() error {
 	return u.link.SynClose(time.Second)
 }
 
-func (u *ustack) Stack() *stack.Stack       { return u.stack }
-func (u *ustack) Addr() netip.Addr          { return u.addr }
+func (u *ustack) Stack() *stack.Stack { return u.stack }
+func (u *ustack) Addr() netip.Addr    { return u.addr }
+func (u *ustack) LinkEndpoint(localPort uint16, remoteAddr netip.AddrPort) (*LinkEndpoint, error) {
+	return NewLinkEndpoint(u, localPort, remoteAddr)
+}
+
 func (u *ustack) Inbound(ip *packet.Packet) { u.link.Inbound(ip) }
 
 // OutboundBy only use by server, read stack outbound tcp packet
@@ -103,25 +108,15 @@ func (u *ustack) Outbound(ctx context.Context, tcp *packet.Packet) error {
 	return u.link.Outbound(ctx, tcp)
 }
 
-type Endpoint interface {
-	Close() error
-	Stack() Ustack
-	LocalAddr() netip.AddrPort
-	RemoteAddr() netip.AddrPort
-
-	Inbound(tcp *packet.Packet)
-	Outbound(ctx context.Context, tcp *packet.Packet) error
-}
-
-type endpoint struct {
+type LinkEndpoint struct {
 	stack      Ustack
 	localPort  uint16
 	remoteAddr netip.AddrPort
 	ipstack    *ipstack.IPStack
 }
 
-func NewEndpoint(stack Ustack, localPort uint16, remoteAddr netip.AddrPort) (*endpoint, error) {
-	var ep = &endpoint{
+func NewLinkEndpoint(stack Ustack, localPort uint16, remoteAddr netip.AddrPort) (*LinkEndpoint, error) {
+	var ep = &LinkEndpoint{
 		stack:      stack,
 		localPort:  localPort,
 		remoteAddr: remoteAddr,
@@ -138,31 +133,19 @@ func NewEndpoint(stack Ustack, localPort uint16, remoteAddr netip.AddrPort) (*en
 	return ep, nil
 }
 
-func (e *endpoint) Close() error               { return nil }
-func (e *endpoint) Stack() Ustack              { return e.stack }
-func (e *endpoint) LocalAddr() netip.AddrPort  { return netip.AddrPortFrom(e.stack.Addr(), e.localPort) }
-func (e *endpoint) RemoteAddr() netip.AddrPort { return e.remoteAddr }
-func (e *endpoint) Inbound(tcp *packet.Packet) {
+func (e *LinkEndpoint) Close() error  { return nil }
+func (e *LinkEndpoint) Stack() Ustack { return e.stack }
+func (e *LinkEndpoint) LocalAddr() netip.AddrPort {
+	return netip.AddrPortFrom(e.stack.Addr(), e.localPort)
+}
+func (e *LinkEndpoint) RemoteAddr() netip.AddrPort { return e.remoteAddr }
+func (e *LinkEndpoint) Inbound(tcp *packet.Packet) {
 	e.ipstack.AttachInbound(tcp)
 	if debug.Debug() {
 		test.ValidIP(test.T(), tcp.Bytes())
 	}
-
 	e.stack.Inbound(tcp)
 }
-func (e *endpoint) Outbound(ctx context.Context, tcp *packet.Packet) error {
+func (e *LinkEndpoint) Outbound(ctx context.Context, tcp *packet.Packet) error {
 	return e.stack.OutboundBy(ctx, e.remoteAddr, tcp)
 }
-
-type oneEndpoint struct {
-	*endpoint
-}
-
-func ToEndpoint(stack Ustack, localPort uint16, remoteAddr netip.AddrPort) (Endpoint, error) {
-	ep, err := NewEndpoint(stack, localPort, remoteAddr)
-	if err != nil {
-		return nil, err
-	}
-	return &oneEndpoint{endpoint: ep}, nil
-}
-func (e *oneEndpoint) Close() error { return e.stack.Close() }

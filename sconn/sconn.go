@@ -2,14 +2,13 @@ package sconn
 
 import (
 	"context"
-	"errors"
 	"net"
 	"net/netip"
 	"os"
+	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/lysShub/itun/crypto"
 	"github.com/lysShub/itun/faketcp"
 	"github.com/lysShub/itun/session"
 	"github.com/lysShub/itun/ustack"
@@ -35,35 +34,46 @@ type Sconn interface {
 
 // security datagram conn
 type Conn struct {
-	cfg  *Config
-	raw  conn.RawConn
-	role role
+	cfg   *Config
+	raw   conn.RawConn
+	role  role
+	state state
 
-	ep  ustack.Endpoint
-	tcp net.Conn // control tcp conn
+	handshakedTime    time.Time
+	handshakedNotify  sync.WaitGroup
+	handshakeRecvSegs *heap
 
-	inited     atomic.Bool
-	initedTime time.Time
-	precvRecvs atomic.Pointer[[]*packet.Packet]
+	ep      *ustack.LinkEndpoint
+	factory tcpFactory
+	tcp     net.Conn // control tcp conn
 
 	pseudoSum1 uint16           //
 	seq, ack   uint32           // init seq/ack
 	fake       *faketcp.FakeTCP //
-	fakeinited atomic.Bool
 
 	srvCtx    context.Context
 	srvCancel context.CancelFunc
 	closeErr  atomic.Pointer[error]
 }
 
-type role string
+type role uint8
 
 const (
-	client role = "client"
-	server role = "server"
+	client role = 1
+	server role = 2
 )
 
-func newConn(raw conn.RawConn, ep ustack.Endpoint, role role, cfg *Config) (*Conn, error) {
+type state = atomic.Uint32
+
+const (
+	initial    uint32 = 0
+	handshake1 uint32 = 1 // handle self
+	handshake2 uint32 = 2 // wait peer finish
+	transmit   uint32 = 3
+	closed     uint32 = 4
+)
+
+func newConn(raw conn.RawConn, ep *ustack.LinkEndpoint, role role, cfg *Config) (*Conn, error) {
 	if err := cfg.init(); err != nil {
 		return nil, err
 	}
@@ -73,9 +83,11 @@ func newConn(raw conn.RawConn, ep ustack.Endpoint, role role, cfg *Config) (*Con
 		raw:  raw,
 		role: role,
 
+		handshakeRecvSegs: &heap{},
+
 		ep: ep,
 	}
-	c.precvRecvs.Store(new([]*packet.Packet))
+	c.handshakedNotify.Add(1)
 	c.pseudoSum1 = header.PseudoHeaderChecksum(
 		header.TCPProtocolNumber,
 		tcpip.AddrFromSlice(c.raw.LocalAddr().Addr().AsSlice()),
@@ -83,6 +95,8 @@ func newConn(raw conn.RawConn, ep ustack.Endpoint, role role, cfg *Config) (*Con
 		0,
 	)
 	c.srvCtx, c.srvCancel = context.WithCancel(context.Background())
+
+	go c.outboundService()
 	return c, nil
 }
 
@@ -123,165 +137,6 @@ func (c *Conn) close(cause error) error {
 	return *c.closeErr.Load()
 }
 
-func (c *Conn) handshakeClient(ctx context.Context, stack ustack.Ustack) error {
-	inctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	go c.handshakeInboundService(inctx)
-	go c.outboundService()
-
-	tcp, err := gonet.DialTCPWithBind(
-		ctx, stack,
-		c.raw.LocalAddr(), c.raw.RemoteAddr(),
-		header.IPv4ProtocolNumber,
-	)
-	if err != nil {
-		return c.close(err)
-	}
-
-	if err := c.handshake(ctx, tcp); err != nil {
-		tcp.Close()
-		return c.close(err)
-	}
-	return nil
-}
-
-func (c *Conn) handshakeServer(ctx context.Context, l *gonet.TCPListener) error {
-	inctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	go c.handshakeInboundService(inctx)
-	go c.outboundService()
-
-	tcp, err := l.AcceptBy(ctx, c.raw.RemoteAddr())
-	if err != nil {
-		return c.close(err)
-	}
-
-	if err := c.handshake(ctx, tcp); err != nil {
-		tcp.Close()
-		return c.close(err)
-	}
-	return nil
-}
-
-func (c *Conn) handshake(ctx context.Context, tcp *gonet.TCPConn) (err error) {
-	var key crypto.Key
-	if c.role == server {
-		if err := c.cfg.PrevPackets.Server(ctx, tcp); err != nil {
-			return err
-		}
-		if key, err = c.cfg.SwapKey.Server(ctx, tcp); err != nil {
-			return err
-		}
-	} else {
-		if err := c.cfg.PrevPackets.Client(ctx, tcp); err != nil {
-			return err
-		}
-		if key, err = c.cfg.SwapKey.Client(ctx, tcp); err != nil {
-			return err
-		}
-	}
-
-	if cpt, err := crypto.NewTCP(key, c.pseudoSum1); err != nil {
-		return err
-	} else {
-		c.fake = faketcp.New(
-			c.raw.LocalAddr().Port(),
-			c.raw.RemoteAddr().Port(),
-			faketcp.Crypto(cpt),
-		)
-		c.fakeinited.Store(true)
-	}
-
-	// wait before writen data be recved by peer.
-	if err := tcp.WaitBeforeDataTransmitted(ctx); err != nil {
-		return err
-	}
-	c.fake.InitSeqAck(c.seq, c.ack)
-
-	c.inited.Store(true)
-	c.initedTime = time.Now()
-
-	c.tcp = tcp
-	return nil
-}
-
-/*
-	旧的握手状态转移管理：
-		server:
-			在握手完成后进入prepare阶段
-			等待接收到第一个fake包， 初始化faketcp
-			之后处理第一个fake包，发送的也是fake包
-
-
-		根本在于等待第一个fake包
-
-		这里面有状态转移，需要区分CS:
-		cliet-up --> server-up --> server-down --> client-down
-
-	新的（设计不要区分CS的）：
-		swapkey完成时，不主动发送任何数据包，等待发送的数据被对方接收到，然后inited。之后：
-			1.outboundService发送的将是faketcp。
-			2.handshakeInboundService 将立即退出、并循环调用Recv。
-				a.如果在inited之前（handshakeInboundService）收到fake包，应该缓存(×)，这是peer先完成握手导致的；
-				b.如果在inited之后，（Recv）收到非fake包，因该忽略，这是peer后完成握手，重传的数据包导致的；
-				a,b 两种情况都是边界竞争导致的，不会有太多的数据包处于这种状态。
-
-		存在问题：如果一方完先成握手, 发送的数据包将是fake, 对方只会暂存此包,但是此包可能是对方期望的ack包, 也就可能导致对方
-				 的WaitBeforeDataTransmitted 始终阻塞。
-				解决方法：1. 使用seq   2. init之前即可解包fake
-					尝试方案2, 在initfake后尝试解包, 如果是ctrid 则注入,fake需要New和SetInitSeq, 在SetInitSeq之前不能发送数据包
-
-
-		// （buff清空只是代表发出去了，不代表收到，可能重传，重传的不应该fake、否则对面将无法完成swapkey，可以依据seq进行判定）
-*/
-
-func (c *Conn) handshakeInboundService(ctx context.Context) error {
-	var (
-		pkt = packet.Make(64, c.cfg.HandshakeMTU)
-	)
-
-	for {
-		err := c.raw.Read(ctx, pkt.SetHead(64))
-		if err != nil {
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				return nil
-			}
-			return c.close(err)
-		}
-
-		if debug.Debug() {
-			old := pkt.Head()
-			pkt.SetHead(64)
-			test.ValidIP(test.T(), pkt.Bytes())
-			pkt.SetHead(old)
-		}
-
-		if faketcp.Is(pkt.Bytes()) {
-			seg := pkt.Clone()
-			if c.fakeinited.Load() &&
-				c.fake.DetachRecv(seg) == nil &&
-				session.Decode(seg) == session.CtrSessID {
-
-				c.ep.Inbound(seg)
-			} else {
-				s := c.precvRecvs.Load()
-				*s = append(*s, pkt.Clone())
-				c.precvRecvs.Store(s)
-			}
-
-			if c.inited.Load() {
-				return nil
-			}
-		} else {
-			// record ack
-			tcp := header.TCP(pkt.Bytes())
-			c.ack = max(c.ack, tcp.SequenceNumber()+uint32(len(tcp.Payload())))
-
-			c.ep.Inbound(pkt)
-		}
-	}
-}
-
 func (c *Conn) outboundService() error {
 	var (
 		pkt = packet.Make(64, c.cfg.HandshakeMTU)
@@ -293,7 +148,7 @@ func (c *Conn) outboundService() error {
 			return c.close(err)
 		}
 
-		if c.inited.Load() {
+		if c.state.Load() == transmit {
 			err = c.Send(c.srvCtx, pkt, session.CtrSessID)
 			if err != nil {
 				return c.close(err)
@@ -319,9 +174,16 @@ func (c *Conn) Overhead() int {
 	return n + c.fake.Overhead()
 }
 
-func (c *Conn) TCP() net.Conn { return c.tcp }
+func (c *Conn) TCP() net.Conn {
+	c.handshakedNotify.Wait()
+	return c.tcp
+}
 
 func (c *Conn) Send(ctx context.Context, pkt *packet.Packet, id session.ID) (err error) {
+	if err := c.handshake(ctx); err != nil {
+		return err
+	}
+
 	session.Encode(pkt, id)
 	c.fake.AttachSend(pkt)
 
@@ -335,22 +197,17 @@ func (c *Conn) Send(ctx context.Context, pkt *packet.Packet, id session.ID) (err
 }
 
 func (c *Conn) recv(ctx context.Context, pkt *packet.Packet) error {
-	if p := c.precvRecvs.Swap(nil); p != nil {
-		if n := len(*p); n > 0 {
-			e := (*p)[n-1]
-			pkt.SetData(0).Append(e.Bytes())
-
-			*p = (*p)[:n-1]
-			c.precvRecvs.Store(p)
-			return nil
-		}
+	if c.handshakeRecvSegs.pop(pkt) {
+		return nil
 	}
-
-	err := c.raw.Read(ctx, pkt)
-	return err
+	return c.raw.Read(ctx, pkt)
 }
 
 func (c *Conn) Recv(ctx context.Context, pkt *packet.Packet) (id session.ID, err error) {
+	if err := c.handshake(ctx); err != nil {
+		return 0, err
+	}
+
 	head := pkt.Head()
 	for {
 		err = c.recv(ctx, pkt.SetHead(head))
@@ -360,7 +217,7 @@ func (c *Conn) Recv(ctx context.Context, pkt *packet.Packet) (id session.ID, err
 
 		err = c.fake.DetachRecv(pkt)
 		if err != nil {
-			if time.Since(c.initedTime) < time.Second*3 {
+			if time.Since(c.handshakedTime) < time.Second*3 {
 				continue
 			}
 			return 0, errorx.WrapTemp(err)

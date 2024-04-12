@@ -85,7 +85,7 @@ func (l *Listener) AcceptCtx(ctx context.Context) (*Conn, error) {
 		return nil, err
 	}
 
-	ep, err := ustack.NewEndpoint(l.stack, l.Addr().Port(), raw.RemoteAddr())
+	ep, err := l.stack.LinkEndpoint(l.Addr().Port(), raw.RemoteAddr())
 	if err != nil {
 		return nil, err
 	}
@@ -93,11 +93,7 @@ func (l *Listener) AcceptCtx(ctx context.Context) (*Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	// todo: handshakeServer should not here, will block queue
-	if err = conn.handshakeServer(ctx, l.l); err != nil {
-		return nil, err
-	}
+	conn.factory = &serverFactory{l: l.l, remote: conn.RemoteAddr()}
 	return conn, nil
 }
 

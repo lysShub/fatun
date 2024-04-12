@@ -151,7 +151,7 @@ func Test_Ctr_Conn(t *testing.T) {
 	c, s := test.NewMockRaw(
 		t, header.TCPProtocolNumber,
 		caddr, saddr,
-		test.ValidAddr, test.ValidChecksum, test.PacketLoss(0.01),
+		test.ValidAddr, test.ValidChecksum, test.PacketLoss(0.01), test.Delay(time.Millisecond*50),
 	)
 	// wc, err := test.WrapPcap(c, `test.pcap`)
 	// require.NoError(t, err)
@@ -178,7 +178,6 @@ func Test_Ctr_Conn(t *testing.T) {
 
 		tcp := conn.TCP()
 		_, err = io.Copy(tcp, tcp)
-
 		return err
 	})
 
@@ -202,8 +201,7 @@ func Test_Ctr_Conn(t *testing.T) {
 	})
 
 	err := eg.Wait()
-	ok := errors.Is(err, gonet.ErrConnectReset) ||
-		errors.Is(err, io.EOF)
+	ok := errors.Is(err, gonet.ErrConnectReset) || err == nil
 	require.True(t, ok, err)
 }
 
