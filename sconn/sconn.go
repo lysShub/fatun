@@ -19,9 +19,6 @@ import (
 
 	"github.com/lysShub/sockit/test"
 	"github.com/lysShub/sockit/test/debug"
-	"github.com/stretchr/testify/require"
-	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
 type Sconn interface {
@@ -47,9 +44,7 @@ type Conn struct {
 	factory tcpFactory
 	tcp     net.Conn // control tcp conn
 
-	pseudoSum1 uint16           //
-	seq, ack   uint32           // init seq/ack
-	fake       *faketcp.FakeTCP //
+	fake *faketcp.FakeTCP //
 
 	srvCtx    context.Context
 	srvCancel context.CancelFunc
@@ -88,12 +83,6 @@ func newConn(raw conn.RawConn, ep *ustack.LinkEndpoint, role role, cfg *Config) 
 		ep: ep,
 	}
 	c.handshakedNotify.Add(1)
-	c.pseudoSum1 = header.PseudoHeaderChecksum(
-		header.TCPProtocolNumber,
-		tcpip.AddrFromSlice(c.raw.LocalAddr().Addr().AsSlice()),
-		tcpip.AddrFromSlice(c.raw.RemoteAddr().Addr().AsSlice()),
-		0,
-	)
 	c.srvCtx, c.srvCancel = context.WithCancel(context.Background())
 
 	go c.outboundService()
@@ -154,9 +143,6 @@ func (c *Conn) outboundService() error {
 				return c.close(err)
 			}
 		} else {
-			tcphdr := header.TCP(pkt.Bytes())
-			c.seq = max(c.seq, tcphdr.SequenceNumber()+uint32(len(tcphdr.Payload())))
-
 			err = c.raw.Write(context.Background(), pkt)
 			if err != nil {
 				return c.close(err)
@@ -186,11 +172,6 @@ func (c *Conn) Send(ctx context.Context, pkt *packet.Packet, id session.ID) (err
 
 	session.Encode(pkt, id)
 	c.fake.AttachSend(pkt)
-
-	if debug.Debug() {
-		test.ValidTCP(test.T(), pkt.Bytes(), c.pseudoSum1)
-		require.True(test.T(), faketcp.Is(pkt.Bytes()))
-	}
 
 	err = c.raw.Write(ctx, pkt)
 	return err

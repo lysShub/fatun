@@ -503,27 +503,34 @@ func (c *TCPConn) RemoteAddr() net.Addr {
 // send-buff drain, secondly wait SndUna==SndNxt.
 //
 // require doesn't Write data actively when call WaitBeforeDataTransmitted.
-func (c *TCPConn) WaitBeforeDataTransmitted(ctx context.Context) (err error) {
+func (c *TCPConn) WaitBeforeDataTransmitted(ctx context.Context) (sndnxt, rcvnxt uint32, err error) {
 	ep, ok := c.ep.(interface {
 		LockUser()
 		UnlockUser()
 	})
 	if !ok {
-		return errors.Errorf("not support endpoint type %T", c.ep)
+		return 0, 0, errors.Errorf("not support endpoint type %T", c.ep)
 	}
 
-	var used, una, nxt reflect.Value
+	var (
+		used           reflect.Value
+		sndUna, sndNxt reflect.Value
+		rcvNxt         reflect.Value
+	)
 	func() {
 		defer func() { _ = recover() }()
-		snd := reflect.Indirect(reflect.ValueOf(c.ep)).FieldByName("sndQueueInfo")
-		used = snd.FieldByName("SndBufUsed")
+		info := reflect.Indirect(reflect.ValueOf(c.ep)).FieldByName("sndQueueInfo")
+		used = info.FieldByName("SndBufUsed")
 
-		state := reflect.Indirect(reflect.Indirect(reflect.ValueOf(c.ep)).FieldByName("snd")).FieldByName("TCPSenderState")
-		una = state.FieldByName("SndUna")
-		nxt = state.FieldByName("SndNxt")
+		snd := reflect.Indirect(reflect.Indirect(reflect.ValueOf(c.ep)).FieldByName("snd")).FieldByName("TCPSenderState")
+		sndUna = snd.FieldByName("SndUna")
+		sndNxt = snd.FieldByName("SndNxt")
+
+		rcv := reflect.Indirect(reflect.Indirect(reflect.ValueOf(c.ep)).FieldByName("rcv")).FieldByName("TCPReceiverState")
+		rcvNxt = rcv.FieldByName("RcvNxt")
 	}()
-	if !una.IsValid() || !nxt.IsValid() {
-		return errors.Errorf("not support endpoint type %T", c.ep)
+	if used.IsValid() || !sndUna.IsValid() || !sndNxt.IsValid() || rcvNxt.IsValid() {
+		return 0, 0, errors.Errorf("not support endpoint type %T", c.ep)
 	}
 
 	t := time.NewTicker(time.Millisecond * 100)
@@ -538,23 +545,27 @@ func (c *TCPConn) WaitBeforeDataTransmitted(ctx context.Context) (err error) {
 
 		select {
 		case <-ctx.Done():
-			return errors.WithStack(ctx.Err())
+			return 0, 0, errors.WithStack(ctx.Err())
 		case <-t.C:
 		}
 	}
 
 	for {
 		ep.LockUser()
-		vuna := una.Uint()
-		vnxt := nxt.Uint()
+		snduna := sndUna.Uint()
+		sndnxt := sndNxt.Uint()
 		ep.UnlockUser()
-		if vuna >= vnxt {
-			return nil
+		if snduna >= sndnxt {
+			ep.LockUser()
+			rcvnxt := rcvNxt.Uint()
+			ep.UnlockUser()
+
+			return uint32(sndnxt), uint32(rcvnxt), nil
 		}
 
 		select {
 		case <-ctx.Done():
-			return errors.WithStack(ctx.Err())
+			return 0, 0, errors.WithStack(ctx.Err())
 		case <-t.C:
 		}
 	}

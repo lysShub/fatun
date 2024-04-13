@@ -52,7 +52,7 @@ func Test_WaitBeforeDataTransmitted(t *testing.T) {
 
 		test.ValidPingPongConn(t, rand.New(rand.NewSource(0)), conn, 0xffff)
 
-		err = conn.WaitBeforeDataTransmitted(ctx)
+		_, _, err = conn.WaitBeforeDataTransmitted(ctx)
 		require.NoError(t, err)
 		return nil
 	})

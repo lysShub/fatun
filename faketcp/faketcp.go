@@ -19,8 +19,8 @@ import (
 // todo: more reasonable wnd
 type FakeTCP struct {
 	lport, rport uint16
-	seq          atomic.Uint32
-	ack          atomic.Uint32
+	sndNxt       atomic.Uint32
+	rcvNxt       atomic.Uint32
 
 	pseudoSum1 *uint16
 	crypto     crypto.Crypto
@@ -41,8 +41,8 @@ func New(localPort, remotePort uint16, opts ...func(*FakeTCP)) *FakeTCP {
 		lport: localPort,
 		rport: remotePort,
 	}
-	f.seq.Store(rand.Uint32())
-	f.ack.Store(rand.Uint32())
+	f.sndNxt.Store(rand.Uint32())
+	f.rcvNxt.Store(rand.Uint32())
 	for _, e := range opts {
 		e(f)
 	}
@@ -50,9 +50,9 @@ func New(localPort, remotePort uint16, opts ...func(*FakeTCP)) *FakeTCP {
 	return f
 }
 
-func (f *FakeTCP) InitSeqAck(seq, ack uint32) {
-	f.seq.Store(seq)
-	f.ack.Store(ack)
+func (f *FakeTCP) InitNxt(snd, rcv uint32) {
+	f.sndNxt.Store(snd)
+	f.rcvNxt.Store(rcv)
 }
 
 func (f *FakeTCP) Overhead() int {
@@ -71,8 +71,8 @@ func (f *FakeTCP) AttachSend(seg *packet.Packet) {
 	hdr.Encode(&header.TCPFields{
 		SrcPort:    f.lport,
 		DstPort:    f.rport,
-		SeqNum:     f.seq.Load(),
-		AckNum:     f.ack.Load(),
+		SeqNum:     f.sndNxt.Load(),
+		AckNum:     f.rcvNxt.Load(),
 		DataOffset: header.TCPMinimumSize,
 		// todo: if ACK not increase，not set ack，otherwise: TCP segment of a reassembled PDU
 		Flags:         header.TCPFlagPsh | header.TCPFlagAck,
@@ -84,10 +84,10 @@ func (f *FakeTCP) AttachSend(seg *packet.Packet) {
 	seg.Attach(hdr)
 
 	if f.crypto != nil {
-		f.seq.Add(uint32(payload + f.crypto.Overhead()))
+		f.sndNxt.Add(uint32(payload + f.crypto.Overhead()))
 		f.crypto.Encrypt(seg)
 	} else if f.pseudoSum1 != nil {
-		f.seq.Add(uint32(payload))
+		f.sndNxt.Add(uint32(payload))
 
 		tcp := header.TCP(seg.Bytes())
 		psum := checksum.Combine(*f.pseudoSum1, uint16(len(tcp)))
@@ -117,7 +117,7 @@ func (f *FakeTCP) DetachRecv(tcp *packet.Packet) error {
 	}
 
 	hdr := header.TCP(tcp.Bytes())
-	f.ack.Store(max(f.ack.Load(), hdr.SequenceNumber()+uint32(len(hdr.Payload()))))
+	f.rcvNxt.Store(max(f.rcvNxt.Load(), hdr.SequenceNumber()+uint32(len(hdr.Payload()))))
 	// f.ack.Store(max(f.ack.Load(), hdr.SequenceNumber()))
 
 	// remove tcp header

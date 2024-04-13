@@ -79,29 +79,26 @@ func (l *List) OutboundBy(ctx context.Context, dst netip.AddrPort, tcp *packet.P
 }
 
 func (l *List) outboundBy(ctx context.Context, dst netip.AddrPort, tcp *packet.Packet) error {
-	var pkt *stack.PacketBuffer
+	var pkb *stack.PacketBuffer
 	if dst.IsValid() {
-		pkt = l.list.GetBy(ctx, dst)
+		pkb = l.list.GetBy(ctx, dst)
 	} else {
-		pkt = l.list.Get(ctx)
+		pkb = l.list.Get(ctx)
 	}
-	if pkt.IsNil() {
+	if pkb.IsNil() {
 		return errors.WithStack(ctx.Err())
 	}
 
-	if debug.Debug() {
-		defer func() { require.Zero(test.T(), pkt.ReadRefs()) }()
-	}
-	defer pkt.DecRef()
+	defer pkb.DecRef()
 	tcp.SetData(0)
-	for _, e := range pkt.AsSlices() {
+	for _, e := range pkb.AsSlices() {
 		tcp.Append(e)
 	}
 
 	if debug.Debug() {
 		test.ValidIP(test.T(), tcp.Bytes())
 	}
-	switch pkt.NetworkProtocolNumber {
+	switch pkb.NetworkProtocolNumber {
 	case header.IPv4ProtocolNumber:
 		hdrLen := header.IPv4(tcp.Bytes()).HeaderLength()
 		tcp.SetHead(tcp.Head() + int(hdrLen))

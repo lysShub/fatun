@@ -15,6 +15,7 @@ import (
 	"github.com/lysShub/sockit/test"
 	"github.com/lysShub/sockit/test/debug"
 	"github.com/pkg/errors"
+	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
@@ -115,7 +116,14 @@ func (c *Conn) handshake(ctx context.Context) (err error) {
 	} else {
 		return errors.Errorf("sconn invalid role %d", c.role)
 	}
-	if cpt, err := crypto.NewTCP(key, c.pseudoSum1); err != nil {
+
+	pseudoSum1 := header.PseudoHeaderChecksum(
+		header.TCPProtocolNumber,
+		tcpip.AddrFromSlice(c.raw.LocalAddr().Addr().AsSlice()),
+		tcpip.AddrFromSlice(c.raw.RemoteAddr().Addr().AsSlice()),
+		0,
+	)
+	if cpt, err := crypto.NewTCP(key, pseudoSum1); err != nil {
 		return err
 	} else {
 		c.fake = faketcp.New(
@@ -127,10 +135,11 @@ func (c *Conn) handshake(ctx context.Context) (err error) {
 	c.state.CompareAndSwap(handshake1, handshake2)
 
 	// wait before writen data be recved by peer.
-	if err := tcp.WaitBeforeDataTransmitted(ctx); err != nil {
+	if sndnxt, rcvnxt, err := tcp.WaitBeforeDataTransmitted(ctx); err != nil {
 		return err
+	} else {
+		c.fake.InitNxt(sndnxt, rcvnxt)
 	}
-	c.fake.InitSeqAck(c.seq, c.ack)
 
 	c.handshakedTime = time.Now()
 	c.tcp = tcp
@@ -169,7 +178,7 @@ func (c *Conn) handshakeInboundService(ctx context.Context) error {
 
 				c.ep.Inbound(seg)
 			} else {
-				c.handshakeRecvSegs.pop(pkt)
+				c.handshakeRecvSegs.put(pkt)
 				// todo：log
 			}
 
@@ -177,10 +186,6 @@ func (c *Conn) handshakeInboundService(ctx context.Context) error {
 				return nil
 			}
 		} else {
-			// record ack
-			tcp := header.TCP(pkt.Bytes())
-			c.ack = max(c.ack, tcp.SequenceNumber()+uint32(len(tcp.Payload())))
-
 			c.ep.Inbound(pkt)
 		}
 	}
