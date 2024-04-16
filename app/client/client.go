@@ -135,6 +135,9 @@ func (c *Client) AddSession(ctx context.Context, s capture.Session) error {
 
 	resp, err := c.ctr.AddSession(ctx, s.Session())
 	if err != nil {
+		if c.closeErr.Load() != nil {
+			return *c.closeErr.Load()
+		}
 		return err
 	} else if resp.Err != nil {
 		return resp.Err

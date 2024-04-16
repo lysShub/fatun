@@ -30,8 +30,14 @@ github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 h1:6E+4a0GO5zZEnZ
 github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0/go.mod h1:zJYVVT2jmtg6P3p1VtQj7WsuWi/y4VnjVBn7F8KPB3I=
 github.com/lysShub/divert-go v0.0.0-20240410134915-f315ccee7ff6 h1:weG1cqqhMKBVOd0J4Zb/I77yXu3WBeS9HM1Bg/n9bY4=
 github.com/lysShub/divert-go v0.0.0-20240410134915-f315ccee7ff6/go.mod h1:iWqZEwCkgY3PZpUFbyvOvErYC9DZv3Tv/SS1glsiIl0=
+github.com/lysShub/divert-go v0.0.0-20240414004500-8a35168a0092 h1:Z5iqT5I9jwv3QthLG/nbyiU6YtHIV/mifkctCGiUQyw=
+github.com/lysShub/divert-go v0.0.0-20240414004500-8a35168a0092/go.mod h1:iWqZEwCkgY3PZpUFbyvOvErYC9DZv3Tv/SS1glsiIl0=
+github.com/lysShub/divert-go v0.0.0-20240415114628-03a432d8c814 h1:P2VygPzHOJZYk8yMXuylJUzAMqg8ePtZ8RvJ2hgC+UU=
+github.com/lysShub/divert-go v0.0.0-20240415114628-03a432d8c814/go.mod h1:iWqZEwCkgY3PZpUFbyvOvErYC9DZv3Tv/SS1glsiIl0=
 github.com/lysShub/sockit v0.0.0-20240411071819-d1cf017c73f7 h1:33yeSqpte5NnVSr0Cgo09Gc5K3T9LgRO2eiNyue8ARg=
 github.com/lysShub/sockit v0.0.0-20240411071819-d1cf017c73f7/go.mod h1:C0hAcpEZJcmRcjYbsCYmlflifzi+Nm/O+vKpeLM2KcA=
+github.com/lysShub/sockit v0.0.0-20240414130457-339c3aea1cd2 h1:Gt7gI/JbmFX4szeDROG/jJiZ+ivBwz47gougKzocB78=
+github.com/lysShub/sockit v0.0.0-20240414130457-339c3aea1cd2/go.mod h1:TRrkGHrBk/LebOxgRG+vHwIdeUnRO65gZEewkdH16UQ=
 github.com/lysShub/wintun-go v0.0.0-20240410130619-383598c11ea1 h1:AV6Pt7nAFy3nvbRX9M8DOZ6gFSTEmq1DUNTIq2QoqeA=
 github.com/lysShub/wintun-go v0.0.0-20240410130619-383598c11ea1/go.mod h1:BCj6kcW5G30wkjtKulTQ83QKZutWuctHTroy+ciTWpI=
 github.com/mdlayher/arp v0.0.0-20220512170110-6706a2966875 h1:ql8x//rJsHMjS+qqEag8n3i4azw1QneKh5PieH9UEbY=

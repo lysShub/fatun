@@ -7,23 +7,21 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"net/netip"
 	"os"
 	"testing"
 
+	_ "net/http/pprof"
+
 	"github.com/lysShub/divert-go"
-	"github.com/lysShub/itun"
 	"github.com/lysShub/itun/app"
 	"github.com/lysShub/itun/app/client"
 	"github.com/lysShub/itun/app/client/capture"
 	"github.com/lysShub/itun/app/client/filter"
 	"github.com/lysShub/itun/sconn"
-	"github.com/lysShub/itun/session"
 	"github.com/lysShub/sockit/conn/tcp"
 	sd "github.com/lysShub/sockit/conn/tcp/divert"
 	"github.com/lysShub/sockit/packet"
 	"github.com/stretchr/testify/require"
-	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
 func TestXxxx(t *testing.T) {
@@ -32,8 +30,8 @@ func TestXxxx(t *testing.T) {
 	ctx := context.Background()
 	fmt.Println("启动")
 
-	// f := filter.NewMock("chrome.exe")
-	f := filter.NewMock("curl.exe")
+	f := filter.NewMock("chrome.exe")
+	// f := filter.NewMock("curl.exe")
 	capture, err := capture.NewCapture(f)
 	require.NoError(t, err)
 	defer capture.Close()
@@ -52,6 +50,8 @@ func TestXxxx(t *testing.T) {
 
 		raw, err := tcp.Connect(caddr, saddr, sd.Priority(1))
 		require.NoError(t, err)
+		// wraw, err := test.WrapPcap(raw, "raw.pcap")
+		// require.NoError(t, err)
 		conn, err := sconn.Dial(raw, &cfg.Config)
 		require.NoError(t, err)
 
@@ -108,40 +108,5 @@ func Test_Capture(t *testing.T) {
 				require.NoError(t, err)
 			}
 		}()
-	}
-}
-
-func TestVvvv(t *testing.T) {
-	divert.Load(divert.DLL)
-	defer divert.Release()
-
-	var f = `outbound and !loopback and ip and tcp.Syn`
-
-	h, err := divert.Open(f, divert.Network, 0, divert.ReadOnly)
-	require.NoError(t, err)
-
-	var b = make([]byte, 1536)
-	var ctx = context.Background()
-	var addr divert.Address
-	for {
-		n, err := h.RecvCtx(ctx, b, &addr)
-		require.NoError(t, err)
-
-		ip := header.IPv4(b[:n])
-		if ip.TransportProtocol() == header.TCPProtocolNumber {
-			tcp := header.TCP(ip.Payload())
-			var s = session.Session{
-				Src:   netip.AddrPortFrom(netip.MustParseAddr(ip.SourceAddress().String()), tcp.SourcePort()),
-				Proto: itun.TCP,
-				Dst:   netip.AddrPortFrom(netip.MustParseAddr(ip.DestinationAddress().String()), tcp.DestinationPort()),
-			}
-
-			f := filter.NewMock("curl.exe")
-			if f.HitOnce(s) {
-				fmt.Println(s.String())
-			} else {
-				fmt.Println("pass", s.String())
-			}
-		}
 	}
 }

@@ -529,7 +529,7 @@ func (c *TCPConn) WaitBeforeDataTransmitted(ctx context.Context) (sndnxt, rcvnxt
 		rcv := reflect.Indirect(reflect.Indirect(reflect.ValueOf(c.ep)).FieldByName("rcv")).FieldByName("TCPReceiverState")
 		rcvNxt = rcv.FieldByName("RcvNxt")
 	}()
-	if used.IsValid() || !sndUna.IsValid() || !sndNxt.IsValid() || rcvNxt.IsValid() {
+	if !used.IsValid() || !sndUna.IsValid() || !sndNxt.IsValid() || !rcvNxt.IsValid() {
 		return 0, 0, errors.Errorf("not support endpoint type %T", c.ep)
 	}
 

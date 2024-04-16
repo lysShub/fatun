@@ -56,13 +56,16 @@ func (l *List) SynClose(timeout time.Duration) error {
 	if l.closed.CompareAndSwap(false, true) {
 		l.closed.Store(true)
 
+		if err := l.list.Close(); err != nil {
+			return err
+		}
+
 		dead := time.Now().Add(timeout)
 		for l.list.Size() > 0 || time.Now().Before(dead) {
 			time.Sleep(time.Millisecond * 10)
 		}
 
 		n := l.list.Size()
-		l.list = nil
 		if n > 0 {
 			return errors.Errorf("SynClose timeout %s", timeout.String())
 		}
@@ -178,19 +181,20 @@ type listIface interface {
 	Get(ctx context.Context) (pkb *stack.PacketBuffer)
 	GetBy(ctx context.Context, dst netip.AddrPort) (pkb *stack.PacketBuffer)
 	Size() int
+	Close() error
 }
 
 type slice struct {
 	s  []*stack.PacketBuffer
 	mu sync.RWMutex
 
-	writeCh chan struct{}
+	writeNotify chan struct{}
 }
 
 func newSlice(size int) *slice {
 	return &slice{
-		s:       make([]*stack.PacketBuffer, 0, size),
-		writeCh: make(chan struct{}, size),
+		s:           make([]*stack.PacketBuffer, 0, size),
+		writeNotify: make(chan struct{}, size),
 	}
 }
 
@@ -210,7 +214,7 @@ func (s *slice) Put(pkb *stack.PacketBuffer) (ok bool) {
 
 		s.s = append(s.s, pkb.IncRef())
 		select {
-		case s.writeCh <- struct{}{}:
+		case s.writeNotify <- struct{}{}:
 		default:
 		}
 		return true
@@ -227,7 +231,7 @@ func (s *slice) Get(ctx context.Context) (pkb *stack.PacketBuffer) {
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-s.writeCh:
+		case <-s.writeNotify:
 			pkb = s.get()
 			if !pkb.IsNil() {
 				return pkb
@@ -246,7 +250,7 @@ func (s *slice) GetBy(ctx context.Context, dst netip.AddrPort) (pkb *stack.Packe
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-s.writeCh:
+		case <-s.writeNotify:
 			pkb = s.getBy(dst)
 			if !pkb.IsNil() {
 				return pkb
@@ -287,4 +291,8 @@ func (s *slice) getBy(dst netip.AddrPort) (pkb *stack.PacketBuffer) {
 
 func (s *slice) Size() int {
 	return len(s.s)
+}
+
+func (s *slice) Close() error {
+	return nil // todo:
 }

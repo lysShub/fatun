@@ -10,7 +10,9 @@ import (
 	"github.com/lysShub/itun"
 	"github.com/lysShub/itun/app/client/capture"
 	"github.com/lysShub/itun/session"
+	"github.com/lysShub/sockit/errorx"
 	"github.com/lysShub/sockit/packet"
+	"github.com/pkg/errors"
 )
 
 type Client interface {
@@ -65,9 +67,11 @@ func (s *Session) close(cause error) error {
 			}
 		}
 
-		s.client.Logger().Info("session close")
 		if cause != nil {
 			s.closeErr.Store(&cause)
+			s.client.Logger().Warn("session close", cause.Error(), errorx.TraceAttr(cause))
+		} else {
+			s.client.Logger().Info("session close")
 		}
 		return cause
 	}
@@ -110,7 +114,7 @@ func (s *Session) keepalive() {
 	const magic uint32 = 0x23df83a0
 	switch s.cnt.Load() {
 	case magic:
-		s.close(itun.KeepaliveExceeded)
+		s.close(errors.WithStack(itun.KeepaliveExceeded))
 	default:
 		s.cnt.Store(magic)
 		time.AfterFunc(time.Minute, s.keepalive) // todo: from config

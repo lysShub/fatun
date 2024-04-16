@@ -93,7 +93,6 @@ func (f *filter) processService(name string, proto itun.Proto) {
 		}
 		for _, n := range ns {
 			s := toSession(n)
-			fmt.Println(s.String())
 
 			f.connsMu.Lock()
 			f.conns[s] = false // todo: validate

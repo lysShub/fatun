@@ -5,8 +5,8 @@ go 1.21
 require golang.org/x/sys v0.16.0
 
 require (
-	github.com/lysShub/divert-go v0.0.0-20240410134915-f315ccee7ff6
-	github.com/lysShub/sockit v0.0.0-20240411071819-d1cf017c73f7
+	github.com/lysShub/divert-go v0.0.0-20240415114628-03a432d8c814
+	github.com/lysShub/sockit v0.0.0-20240414130457-339c3aea1cd2
 	github.com/stretchr/testify v1.8.4
 	golang.org/x/net v0.20.0
 	golang.org/x/sync v0.5.0
