@@ -62,7 +62,7 @@ type state = atomic.Uint32
 
 const (
 	initial    uint32 = 0
-	handshake1 uint32 = 1 // handle self
+	handshake1 uint32 = 1 // handshake self
 	handshake2 uint32 = 2 // wait peer finish
 	transmit   uint32 = 3
 	closed     uint32 = 4

@@ -59,28 +59,17 @@ func (s *serverFactory) factory(ctx context.Context) (*gonet.TCPConn, error) {
 func (s *serverFactory) Close() error { return nil }
 
 /*
-	旧的握手状态转移管理：
-		server:
-			在握手完成后进入prepare阶段
-			等待接收到第一个fake包， 初始化faketcp
-			之后处理第一个fake包，发送的也是fake包
-
-
-		根本在于等待第一个fake包
-
-		这里面有状态转移，需要区分CS:
-		cliet-up --> server-up --> server-down --> client-down
-
-	握手流程（设计不要区分CS的）：
+	握手关键需要处理好边界情况；关键函数是gonet.WaitBeforeDataTransmitted。
+	流程：
 		handshake1完成后，（handshak2阶段）等待对方握手完成，期间将不会主动发送数据包。判定对方握手完成的依据是我方
 		在握手期间发送的数据包全部被对方收到，及WaitBeforeDataTransmitted。
 		a. 对于outboundService，在handshak2完成后，发送的是control-segment包, 而不是原始的tcp数据包。
-		b. 对于handshakeInboundService，在handshak2完成后，才能退出。如果其运行时收到segment包，要是此时hanshake1
-			已经完成，应该尝试解包，解包结果如果是control包，必须inbound；否则应该暂存。
-		c. 对于Recv，如收到非segment包，应该忽略。
+		b. 对于handshakeInboundService，在handshak2完成后，才能退出。
+		c. 如果handshakeInboundService运行时收到segment包，若此时hanshake1已经完成，应该尝试decode，session-id是CtrSessID
+			必须inbound stack，否则应该将其暂存。
+		d. 如果Recv收到非segment包，应该忽略。
 
-		注：handshakeInboundService收到segment包，Recv收到非segment包的情况都是边界竞争导致的，不会有太多数据包处于这种状态。
-
+		c/d 属于边界情况，一般不会有太多数据包处于这种状态。
 */
 
 func (c *Conn) handshake(ctx context.Context) (err error) {
