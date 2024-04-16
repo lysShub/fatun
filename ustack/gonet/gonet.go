@@ -22,6 +22,8 @@ import (
 	"io"
 	"net"
 	"net/netip"
+	"os"
+	"reflect"
 	"time"
 
 	"github.com/pkg/errors"
@@ -33,18 +35,6 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
-
-var (
-	errCanceled   = errors.New("operation canceled")
-	errWouldBlock = errors.New("operation would block")
-)
-
-// timeoutError is how the net package reports timeouts.
-type timeoutError struct{}
-
-func (e *timeoutError) Error() string   { return "i/o timeout" }
-func (e *timeoutError) Timeout() bool   { return true }
-func (e *timeoutError) Temporary() bool { return true }
 
 // A TCPListener is a wrapper around a TCP tcpip.Endpoint that implements
 // net.Listener.
@@ -76,7 +66,7 @@ const maxListenBacklog = 4096
 
 // ListenTCP creates a new TCPListener.
 func ListenTCP(s ustack.Ustack, addr netip.AddrPort, network tcpip.NetworkProtocolNumber) (*TCPListener, error) {
-	faddr := toFullAddr(addr)
+	fullAddr := toFullAddr(addr)
 	// Create a TCP endpoint, bind it, then start listening.
 	var wq waiter.Queue
 	ep, err := s.Stack().NewEndpoint(tcp.ProtocolNumber, network, &wq)
@@ -84,12 +74,12 @@ func ListenTCP(s ustack.Ustack, addr netip.AddrPort, network tcpip.NetworkProtoc
 		return nil, errors.New(err.String())
 	}
 
-	if err := ep.Bind(faddr); err != nil {
+	if err := ep.Bind(fullAddr); err != nil {
 		ep.Close()
 		return nil, &net.OpError{
 			Op:   "bind",
 			Net:  "tcp",
-			Addr: fullToTCPAddr(faddr),
+			Addr: fullToTCPAddr(fullAddr),
 			Err:  errors.New(err.String()),
 		}
 	}
@@ -99,7 +89,7 @@ func ListenTCP(s ustack.Ustack, addr netip.AddrPort, network tcpip.NetworkProtoc
 		return nil, &net.OpError{
 			Op:   "listen",
 			Net:  "tcp",
-			Addr: fullToTCPAddr(faddr),
+			Addr: fullToTCPAddr(fullAddr),
 			Err:  errors.New(err.String()),
 		}
 	}
@@ -260,7 +250,7 @@ func NewTCPConn(wq *waiter.Queue, ep tcpip.Endpoint) *TCPConn {
 }
 
 // Accept implements net.Conn.Accept.
-func (l *TCPListener) Accept(ctx context.Context) (net.Conn, error) {
+func (l *TCPListener) Accept(ctx context.Context) (*TCPConn, error) {
 	n, wq, err := l.ep.Accept(nil)
 
 	if _, ok := err.(*tcpip.ErrWouldBlock); ok {
@@ -278,10 +268,10 @@ func (l *TCPListener) Accept(ctx context.Context) (net.Conn, error) {
 
 			select {
 			case <-l.cancel:
-				return nil, errCanceled
+				return nil, errors.WithStack(context.Canceled)
 			case <-notifyCh:
 			case <-ctx.Done():
-				return nil, ctx.Err()
+				return nil, errors.WithStack(ctx.Err())
 			}
 		}
 	}
@@ -299,9 +289,9 @@ func (l *TCPListener) Accept(ctx context.Context) (net.Conn, error) {
 }
 
 // Accept implements net.Conn.Accept.
-func (l *TCPListener) AcceptBy(ctx context.Context, src netip.AddrPort) (net.Conn, error) {
-	fsrc := toFullAddr(src)
-	n, wq, err := l.ep.Accept(&fsrc)
+func (l *TCPListener) AcceptBy(ctx context.Context, src netip.AddrPort) (*TCPConn, error) {
+	fullSrc := toFullAddr(src)
+	n, wq, err := l.ep.Accept(&fullSrc)
 	if _, ok := err.(*tcpip.ErrWouldBlock); ok {
 		// Create wait queue entry that notifies a channel.
 		waitEntry, notifyCh := waiter.NewChannelEntry(waiter.ReadableEvents)
@@ -309,7 +299,7 @@ func (l *TCPListener) AcceptBy(ctx context.Context, src netip.AddrPort) (net.Con
 		defer l.wq.EventUnregister(&waitEntry)
 
 		for {
-			n, wq, err = l.ep.Accept(&fsrc)
+			n, wq, err = l.ep.Accept(&fullSrc)
 
 			if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
 				break
@@ -317,10 +307,10 @@ func (l *TCPListener) AcceptBy(ctx context.Context, src netip.AddrPort) (net.Con
 
 			select {
 			case <-l.cancel:
-				return nil, errCanceled
+				return nil, errors.WithStack(context.Canceled)
 			case <-notifyCh:
 			case <-ctx.Done():
-				return nil, ctx.Err()
+				return nil, errors.WithStack(ctx.Err())
 			}
 		}
 	}
@@ -338,7 +328,7 @@ func (l *TCPListener) AcceptBy(ctx context.Context, src netip.AddrPort) (net.Con
 }
 
 type opErrorer interface {
-	newOpError(op string, err error) *net.OpError
+	newOpError(op string, err error) error
 }
 
 // commonRead implements the common logic between net.Conn.Read and
@@ -346,9 +336,9 @@ type opErrorer interface {
 func commonRead(ctx context.Context, b []byte, ep tcpip.Endpoint, wq *waiter.Queue, deadline <-chan struct{}, addr *tcpip.FullAddress, errorer opErrorer) (int, error) {
 	select {
 	case <-deadline:
-		return 0, errorer.newOpError("read", &timeoutError{})
+		return 0, errorer.newOpError("read", os.ErrDeadlineExceeded)
 	case <-ctx.Done():
-		return 0, ctx.Err()
+		return 0, errors.WithStack(ctx.Err())
 	default:
 	}
 
@@ -368,9 +358,9 @@ func commonRead(ctx context.Context, b []byte, ep tcpip.Endpoint, wq *waiter.Que
 			}
 			select {
 			case <-deadline:
-				return 0, errorer.newOpError("read", &timeoutError{})
+				return 0, errorer.newOpError("read", os.ErrDeadlineExceeded)
 			case <-ctx.Done():
-				return 0, ctx.Err()
+				return 0, errors.WithStack(ctx.Err())
 			case <-notifyCh:
 			}
 		}
@@ -378,6 +368,9 @@ func commonRead(ctx context.Context, b []byte, ep tcpip.Endpoint, wq *waiter.Que
 
 	if _, ok := err.(*tcpip.ErrClosedForReceive); ok {
 		return 0, io.EOF
+	}
+	if _, ok := err.(*tcpip.ErrConnectionReset); ok {
+		return 0, errorer.newOpError("read", ErrConnectReset)
 	}
 
 	if err != nil {
@@ -410,7 +403,7 @@ func (c *TCPConn) Write(b []byte) (int, error) {
 	// Check if deadlineTimer has already expired.
 	select {
 	case <-deadline:
-		return 0, c.newOpError("write", &timeoutError{})
+		return 0, c.newOpError("write", os.ErrDeadlineExceeded)
 	default:
 	}
 
@@ -448,7 +441,7 @@ func (c *TCPConn) Write(b []byte) (int, error) {
 				// the notification.
 				select {
 				case <-deadline:
-					return nbytes, c.newOpError("write", &timeoutError{})
+					return nbytes, c.newOpError("write", os.ErrDeadlineExceeded)
 				case <-ch:
 					continue
 				}
@@ -506,14 +499,86 @@ func (c *TCPConn) RemoteAddr() net.Addr {
 	return fullToTCPAddr(a)
 }
 
-func (c *TCPConn) newOpError(op string, err error) *net.OpError {
-	return &net.OpError{
+// WaitBeforeDataTransmitted wait before writen data is recved by peer. firstly wait
+// send-buff drain, secondly wait SndUna==SndNxt.
+//
+// require doesn't Write data actively when call WaitBeforeDataTransmitted.
+func (c *TCPConn) WaitBeforeDataTransmitted(ctx context.Context) (sndnxt, rcvnxt uint32, err error) {
+	ep, ok := c.ep.(interface {
+		LockUser()
+		UnlockUser()
+	})
+	if !ok {
+		return 0, 0, errors.Errorf("not support endpoint type %T", c.ep)
+	}
+
+	var (
+		used           reflect.Value
+		sndUna, sndNxt reflect.Value
+		rcvNxt         reflect.Value
+	)
+	func() {
+		defer func() { _ = recover() }()
+		info := reflect.Indirect(reflect.ValueOf(c.ep)).FieldByName("sndQueueInfo")
+		used = info.FieldByName("SndBufUsed")
+
+		snd := reflect.Indirect(reflect.Indirect(reflect.ValueOf(c.ep)).FieldByName("snd")).FieldByName("TCPSenderState")
+		sndUna = snd.FieldByName("SndUna")
+		sndNxt = snd.FieldByName("SndNxt")
+
+		rcv := reflect.Indirect(reflect.Indirect(reflect.ValueOf(c.ep)).FieldByName("rcv")).FieldByName("TCPReceiverState")
+		rcvNxt = rcv.FieldByName("RcvNxt")
+	}()
+	if !used.IsValid() || !sndUna.IsValid() || !sndNxt.IsValid() || !rcvNxt.IsValid() {
+		return 0, 0, errors.Errorf("not support endpoint type %T", c.ep)
+	}
+
+	t := time.NewTicker(time.Millisecond * 100)
+	defer t.Stop()
+	for {
+		ep.LockUser()
+		vused := used.Int()
+		ep.UnlockUser()
+		if vused <= 0 {
+			break
+		}
+
+		select {
+		case <-ctx.Done():
+			return 0, 0, errors.WithStack(ctx.Err())
+		case <-t.C:
+		}
+	}
+
+	for {
+		ep.LockUser()
+		snduna := sndUna.Uint()
+		sndnxt := sndNxt.Uint()
+		ep.UnlockUser()
+		if snduna >= sndnxt {
+			ep.LockUser()
+			rcvnxt := rcvNxt.Uint()
+			ep.UnlockUser()
+
+			return uint32(sndnxt), uint32(rcvnxt), nil
+		}
+
+		select {
+		case <-ctx.Done():
+			return 0, 0, errors.WithStack(ctx.Err())
+		case <-t.C:
+		}
+	}
+}
+
+func (c *TCPConn) newOpError(op string, err error) error {
+	return errors.WithStack(&net.OpError{
 		Op:     op,
 		Net:    "tcp",
 		Source: c.LocalAddr(),
 		Addr:   c.RemoteAddr(),
 		Err:    err,
-	}
+	})
 }
 
 func fullToTCPAddr(addr tcpip.FullAddress) *net.TCPAddr {
@@ -532,7 +597,7 @@ func DialTCP(s ustack.Ustack, addr netip.AddrPort, network tcpip.NetworkProtocol
 // DialTCPWithBind creates a new TCPConn connected to the specified
 // remoteAddress with its local address bound to localAddr.
 func DialTCPWithBind(ctx context.Context, s ustack.Ustack, localAddr, remoteAddr netip.AddrPort, network tcpip.NetworkProtocolNumber) (*TCPConn, error) {
-	flocalAddr, fremoteAddr := toFullAddr(localAddr), toFullAddr(remoteAddr)
+	localFullAddr, remoteFullAddr := toFullAddr(localAddr), toFullAddr(remoteAddr)
 	// Create TCP endpoint, then connect.
 	var wq waiter.Queue
 	ep, err := s.Stack().NewEndpoint(tcp.ProtocolNumber, network, &wq)
@@ -549,23 +614,23 @@ func DialTCPWithBind(ctx context.Context, s ustack.Ustack, localAddr, remoteAddr
 
 	select {
 	case <-ctx.Done():
-		return nil, ctx.Err()
+		return nil, errors.WithStack(ctx.Err())
 	default:
 	}
 
 	// Bind before connect if requested.
-	if flocalAddr != (tcpip.FullAddress{}) {
-		if err = ep.Bind(flocalAddr); err != nil {
-			return nil, fmt.Errorf("ep.Bind(%+v) = %s", flocalAddr, err)
+	if localFullAddr != (tcpip.FullAddress{}) {
+		if err = ep.Bind(localFullAddr); err != nil {
+			return nil, fmt.Errorf("ep.Bind(%+v) = %s", localFullAddr, err)
 		}
 	}
 
-	err = ep.Connect(fremoteAddr)
+	err = ep.Connect(remoteFullAddr)
 	if _, ok := err.(*tcpip.ErrConnectStarted); ok {
 		select {
 		case <-ctx.Done():
 			ep.Close()
-			return nil, ctx.Err()
+			return nil, errors.WithStack(ctx.Err())
 		case <-notifyCh:
 		}
 
@@ -576,7 +641,7 @@ func DialTCPWithBind(ctx context.Context, s ustack.Ustack, localAddr, remoteAddr
 		return nil, &net.OpError{
 			Op:   "connect",
 			Net:  "tcp",
-			Addr: fullToTCPAddr(fremoteAddr),
+			Addr: fullToTCPAddr(remoteFullAddr),
 			Err:  errors.New(err.String()),
 		}
 	}
@@ -650,18 +715,18 @@ func DialUDP(s ustack.Ustack, laddr, raddr *tcpip.FullAddress, network tcpip.Net
 	return c, nil
 }
 
-func (c *UDPConn) newOpError(op string, err error) *net.OpError {
+func (c *UDPConn) newOpError(op string, err error) error {
 	return c.newRemoteOpError(op, nil, err)
 }
 
-func (c *UDPConn) newRemoteOpError(op string, remote net.Addr, err error) *net.OpError {
-	return &net.OpError{
+func (c *UDPConn) newRemoteOpError(op string, remote net.Addr, err error) error {
+	return errors.WithStack(&net.OpError{
 		Op:     op,
 		Net:    "udp",
 		Source: c.LocalAddr(),
 		Addr:   remote,
 		Err:    err,
-	}
+	})
 }
 
 // RemoteAddr implements net.Conn.RemoteAddr.
@@ -702,7 +767,7 @@ func (c *UDPConn) WriteTo(b []byte, addr net.Addr) (int, error) {
 	// Check if deadline has already expired.
 	select {
 	case <-deadline:
-		return 0, c.newRemoteOpError("write", addr, &timeoutError{})
+		return 0, c.newRemoteOpError("write", addr, os.ErrDeadlineExceeded)
 	default:
 	}
 
@@ -727,7 +792,7 @@ func (c *UDPConn) WriteTo(b []byte, addr net.Addr) (int, error) {
 		for {
 			select {
 			case <-deadline:
-				return int(n), c.newRemoteOpError("write", addr, &timeoutError{})
+				return int(n), c.newRemoteOpError("write", addr, os.ErrDeadlineExceeded)
 			case <-notifyCh:
 			}
 

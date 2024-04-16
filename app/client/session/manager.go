@@ -1,17 +1,14 @@
 package session
 
 import (
-	"context"
+	"os"
 	"sync"
-	"time"
 
-	"github.com/lysShub/itun"
 	"github.com/lysShub/itun/app/client/capture"
 	"github.com/lysShub/itun/session"
 )
 
 type SessionMgr struct {
-	ticker  *time.Ticker
 	closeCh chan struct{}
 
 	mu       sync.RWMutex
@@ -20,13 +17,24 @@ type SessionMgr struct {
 
 func NewSessionMgr() *SessionMgr {
 	var sm = &SessionMgr{
-		ticker:  time.NewTicker(time.Minute), // todo: from config
-		closeCh: make(chan struct{}),
-
 		sessions: make(map[session.ID]*Session, 16),
 	}
-	go sm.keepalive()
 	return sm
+}
+
+func (sm *SessionMgr) Close() error {
+	var ss []*Session
+	sm.mu.Lock()
+	for _, e := range sm.sessions {
+		ss = append(ss, e)
+	}
+	clear(sm.sessions)
+	sm.mu.Unlock()
+
+	for _, e := range ss {
+		e.close(os.ErrClosed)
+	}
+	return nil
 }
 
 func (sm *SessionMgr) Add(client Client, s capture.Session, id session.ID) error {
@@ -34,7 +42,7 @@ func (sm *SessionMgr) Add(client Client, s capture.Session, id session.ID) error
 		return session.ErrExistID(id)
 	}
 
-	session, err := newSession(client, id, s)
+	session, err := newSession(sm, client, id, s)
 	if err != nil {
 		return err
 	}
@@ -57,57 +65,10 @@ func (sm *SessionMgr) Get(id session.ID) (s *Session, err error) {
 	return s, err
 }
 
-func (sm *SessionMgr) Del(id session.ID, cause error) error {
-	if s, err := sm.Get(id); err != nil {
-		return err
-	} else {
-		return sm.del(s, cause)
+func (sm *SessionMgr) del(id session.ID) {
+	if s, err := sm.Get(id); err == nil {
+		sm.mu.Lock()
+		delete(sm.sessions, s.id)
+		sm.mu.Unlock()
 	}
-}
-
-func (sm *SessionMgr) del(s *Session, cause error) error {
-	sm.mu.Lock()
-	delete(sm.sessions, s.id)
-	sm.mu.Unlock()
-
-	return s.close(cause)
-}
-
-func (sm *SessionMgr) keepalive() {
-	var ss = make([]*Session, 0, 8)
-
-	for {
-		ss = ss[:0]
-
-		select {
-		case <-sm.ticker.C:
-			sm.mu.RLock()
-			for _, e := range sm.sessions {
-				if e.tick() {
-					ss = append(ss, e)
-				}
-			}
-			sm.mu.RUnlock()
-		case <-sm.closeCh:
-			return
-		}
-
-		for _, e := range ss {
-			sm.Del(e.id, itun.KeepaliveExceeded)
-		}
-	}
-}
-
-func (sm *SessionMgr) Close() error {
-	sm.mu.Lock()
-	defer sm.mu.Unlock()
-
-	sm.ticker.Stop()
-	close(sm.closeCh)
-
-	for _, e := range sm.sessions {
-		e.close(context.Canceled)
-	}
-	clear(sm.sessions)
-	return nil
 }

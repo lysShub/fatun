@@ -5,12 +5,13 @@ import (
 	"net/netip"
 
 	"github.com/lysShub/itun"
-	"github.com/lysShub/relraw"
+	"github.com/lysShub/sockit/packet"
+
 )
 
 type Sender interface {
-	Send(pkt *relraw.Packet) error
-	Recv(ctx context.Context, pkt *relraw.Packet) error
+	Send(pkt *packet.Packet) error
+	Recv(ctx context.Context, pkt *packet.Packet) error
 
 	Close() error
 }

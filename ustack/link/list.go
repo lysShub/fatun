@@ -4,12 +4,15 @@ import (
 	"context"
 	"net/netip"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/pkg/errors"
 
-	"github.com/lysShub/relraw"
-	"github.com/lysShub/relraw/test"
-	"github.com/lysShub/relraw/test/debug"
+	"github.com/lysShub/sockit/packet"
+
+	"github.com/lysShub/sockit/test"
+	"github.com/lysShub/sockit/test/debug"
 	"github.com/stretchr/testify/require"
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -18,6 +21,7 @@ import (
 )
 
 type List struct {
+	id   string
 	list listIface
 
 	dispatcher   stack.NetworkDispatcher
@@ -26,75 +30,83 @@ type List struct {
 	mtu                int
 	LinkEPCapabilities stack.LinkEndpointCapabilities
 	SupportedGSOKind   stack.SupportedGSO
+	closed             atomic.Bool
 }
 
 var _ Link = (*List)(nil)
 
-func NewList(size int, mtu int) *List {
-	size = max(size, 4)
+func NewList(buff, mtu int) *List {
+	buff = max(buff, 4)
 	return &List{
 		// list:         newHeap(size), // todo: heap can't pass ut, fix bug
-		list: newSlice(size),
+		list: newSlice(buff),
 		mtu:  mtu,
 	}
 }
 
+func NewListWithID(buff, mut int, id string) *List {
+	l := NewList(buff, mut)
+	l.id = id
+	return l
+}
+
 var _ stack.LinkEndpoint = (*List)(nil)
 
-func (l *List) Outbound(ctx context.Context, tcp *relraw.Packet) error {
-	pkb := l.list.Get(ctx)
-	if pkb.IsNil() {
-		return errors.WithStack(ctx.Err())
-	}
-	defer pkb.DecRef()
+func (l *List) SynClose(timeout time.Duration) error {
+	if l.closed.CompareAndSwap(false, true) {
+		l.closed.Store(true)
 
-	tcp.SetLen(pkb.Size())
-	data := tcp.Data()
+		if err := l.list.Close(); err != nil {
+			return err
+		}
 
-	n := 0
-	for _, e := range pkb.AsSlices() {
-		n += copy(data[n:], e)
-	}
+		dead := time.Now().Add(timeout)
+		for l.list.Size() > 0 || time.Now().Before(dead) {
+			time.Sleep(time.Millisecond * 10)
+		}
 
-	if debug.Debug() {
-		test.ValidIP(test.T(), tcp.Data())
-	}
-	switch pkb.NetworkProtocolNumber {
-	case header.IPv4ProtocolNumber:
-		hdrLen := header.IPv4(tcp.Data()).HeaderLength()
-		tcp.SetHead(int(hdrLen))
-	case header.IPv6ProtocolNumber:
-		tcp.SetHead(header.IPv6MinimumSize)
-	default:
-		panic("")
+		n := l.list.Size()
+		if n > 0 {
+			return errors.Errorf("SynClose timeout %s", timeout.String())
+		}
 	}
 	return nil
 }
 
-func (l *List) OutboundBy(ctx context.Context, dst netip.AddrPort, tcp *relraw.Packet) error {
-	pkb := l.list.GetBy(ctx, dst)
+func (l *List) Outbound(ctx context.Context, tcp *packet.Packet) error {
+	return l.outboundBy(ctx, netip.AddrPort{}, tcp)
+}
+
+func (l *List) OutboundBy(ctx context.Context, dst netip.AddrPort, tcp *packet.Packet) error {
+	return l.outboundBy(ctx, dst, tcp)
+}
+
+func (l *List) outboundBy(ctx context.Context, dst netip.AddrPort, tcp *packet.Packet) error {
+	var pkb *stack.PacketBuffer
+	if dst.IsValid() {
+		pkb = l.list.GetBy(ctx, dst)
+	} else {
+		pkb = l.list.Get(ctx)
+	}
 	if pkb.IsNil() {
 		return errors.WithStack(ctx.Err())
 	}
+
 	defer pkb.DecRef()
-
-	tcp.SetLen(pkb.Size())
-	data := tcp.Data()
-
-	n := 0
+	tcp.SetData(0)
 	for _, e := range pkb.AsSlices() {
-		n += copy(data[n:], e)
+		tcp.Append(e)
 	}
 
 	if debug.Debug() {
-		test.ValidIP(test.T(), tcp.Data())
+		test.ValidIP(test.T(), tcp.Bytes())
 	}
 	switch pkb.NetworkProtocolNumber {
 	case header.IPv4ProtocolNumber:
-		hdrLen := header.IPv4(tcp.Data()).HeaderLength()
-		tcp.SetHead(int(hdrLen))
+		hdrLen := header.IPv4(tcp.Bytes()).HeaderLength()
+		tcp.SetHead(tcp.Head() + int(hdrLen))
 	case header.IPv6ProtocolNumber:
-		tcp.SetHead(header.IPv6MinimumSize)
+		tcp.SetHead(tcp.Head() + header.IPv6MinimumSize)
 	default:
 		panic("")
 	}
@@ -102,9 +114,13 @@ func (l *List) OutboundBy(ctx context.Context, dst netip.AddrPort, tcp *relraw.P
 	return nil
 }
 
-func (l *List) Inbound(ip *relraw.Packet) {
+func (l *List) Inbound(ip *packet.Packet) {
+	if debug.Debug() {
+		test.ValidIP(test.T(), ip.Bytes())
+	}
+
 	pkb := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Payload: buffer.MakeWithData(ip.Data()),
+		Payload: buffer.MakeWithData(ip.Bytes()),
 	})
 
 	l.dispatcherMu.RLock()
@@ -116,6 +132,10 @@ func (l *List) Inbound(ip *relraw.Packet) {
 }
 
 func (l *List) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) {
+	if l.closed.Load() {
+		return 0, &tcpip.ErrClosedForSend{}
+	}
+
 	n := 0
 	for i, pkb := range pkts.AsSlice() {
 		if debug.Debug() {
@@ -161,19 +181,20 @@ type listIface interface {
 	Get(ctx context.Context) (pkb *stack.PacketBuffer)
 	GetBy(ctx context.Context, dst netip.AddrPort) (pkb *stack.PacketBuffer)
 	Size() int
+	Close() error
 }
 
 type slice struct {
 	s  []*stack.PacketBuffer
 	mu sync.RWMutex
 
-	writeCh chan struct{}
+	writeNotify chan struct{}
 }
 
 func newSlice(size int) *slice {
 	return &slice{
-		s:       make([]*stack.PacketBuffer, 0, size),
-		writeCh: make(chan struct{}, size),
+		s:           make([]*stack.PacketBuffer, 0, size),
+		writeNotify: make(chan struct{}, size),
 	}
 }
 
@@ -190,9 +211,10 @@ func (s *slice) Put(pkb *stack.PacketBuffer) (ok bool) {
 	if len(s.s) == cap(s.s) {
 		return false
 	} else {
+
 		s.s = append(s.s, pkb.IncRef())
 		select {
-		case s.writeCh <- struct{}{}:
+		case s.writeNotify <- struct{}{}:
 		default:
 		}
 		return true
@@ -209,8 +231,27 @@ func (s *slice) Get(ctx context.Context) (pkb *stack.PacketBuffer) {
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-s.writeCh:
+		case <-s.writeNotify:
 			pkb = s.get()
+			if !pkb.IsNil() {
+				return pkb
+			}
+		}
+	}
+}
+
+func (s *slice) GetBy(ctx context.Context, dst netip.AddrPort) (pkb *stack.PacketBuffer) {
+	pkb = s.getBy(dst)
+	if !pkb.IsNil() {
+		return pkb
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-s.writeNotify:
+			pkb = s.getBy(dst)
 			if !pkb.IsNil() {
 				return pkb
 			}
@@ -232,25 +273,6 @@ func (s *slice) get() (pkb *stack.PacketBuffer) {
 	}
 }
 
-func (s *slice) GetBy(ctx context.Context, dst netip.AddrPort) (pkb *stack.PacketBuffer) {
-	pkb = s.getBy(dst)
-	if !pkb.IsNil() {
-		return pkb
-	}
-
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		case <-s.writeCh:
-			pkb = s.getBy(dst)
-			if !pkb.IsNil() {
-				return pkb
-			}
-		}
-	}
-}
-
 func (s *slice) getBy(dst netip.AddrPort) (pkb *stack.PacketBuffer) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -269,4 +291,8 @@ func (s *slice) getBy(dst netip.AddrPort) (pkb *stack.PacketBuffer) {
 
 func (s *slice) Size() int {
 	return len(s.s)
+}
+
+func (s *slice) Close() error {
+	return nil // todo:
 }

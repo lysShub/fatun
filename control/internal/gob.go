@@ -18,8 +18,7 @@ func (c CtrType) Valid() error {
 const (
 	start CtrType = iota
 
-	IPv6
-	EndConfig
+	InitConfig
 	AddSession
 	DelSession
 	PackLoss

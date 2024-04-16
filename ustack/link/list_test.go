@@ -6,7 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lysShub/relraw"
+	"github.com/lysShub/sockit/packet"
+
 	"github.com/stretchr/testify/require"
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -42,13 +43,13 @@ func Test_Link(t *testing.T) {
 		}
 	}()
 
-	var p = relraw.ToPacket(0, make([]byte, 0xff+64))
+	var p = packet.Make(0, 0xff+64)
 
 	for _, e := range ss {
 		p.Sets(0, 0xff+64)
 
 		err := l.Outbound(context.Background(), p)
 		require.Nil(t, err)
-		require.Equal(t, e, p.Len())
+		require.Equal(t, e, p.Data())
 	}
 }

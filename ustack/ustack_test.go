@@ -13,8 +13,11 @@ import (
 	"github.com/lysShub/itun"
 	"github.com/lysShub/itun/ustack"
 	"github.com/lysShub/itun/ustack/gonet"
-	"github.com/lysShub/relraw"
-	"github.com/lysShub/relraw/test"
+	"github.com/lysShub/itun/ustack/link"
+
+	"github.com/lysShub/sockit/packet"
+	"github.com/lysShub/sockit/test"
+	"github.com/lysShub/sockit/test/debug"
 	"github.com/stretchr/testify/require"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -37,7 +40,7 @@ func Test_Conn(t *testing.T) {
 	var rets = make(chan string, 1)
 
 	go func() {
-		st, err := ustack.NewUstack(saddr, 1536)
+		st, err := ustack.NewUstack(link.NewList(16, 1536), saddr.Addr())
 		require.NoError(t, err)
 		UnicomStackAndRaw(t, st, itun.WrapRawConn(s, 1536))
 
@@ -57,7 +60,7 @@ func Test_Conn(t *testing.T) {
 	}()
 
 	go func() { // client
-		st, err := ustack.NewUstack(caddr, 1536)
+		st, err := ustack.NewUstack(link.NewList(16, 1536), caddr.Addr())
 		require.NoError(t, err)
 		UnicomStackAndRaw(t, st, itun.WrapRawConn(c, 1536))
 
@@ -92,7 +95,7 @@ func Test_Conn_Client(t *testing.T) {
 	var rets = make(chan string, 1)
 
 	go func() { // server
-		st, err := ustack.NewUstack(saddr, 1536)
+		st, err := ustack.NewUstack(link.NewList(16, 1536), saddr.Addr())
 		require.NoError(t, err)
 		UnicomStackAndRawBy(t, st, itun.WrapRawConn(s, 1536), caddr)
 
@@ -112,7 +115,7 @@ func Test_Conn_Client(t *testing.T) {
 	}()
 
 	go func() {
-		st, err := ustack.NewUstack(caddr, 1536)
+		st, err := ustack.NewUstack(link.NewList(16, 1536), caddr.Addr())
 		require.NoError(t, err)
 		UnicomStackAndRaw(t, st, itun.WrapRawConn(c, 1536))
 
@@ -153,7 +156,7 @@ func Test_Conn_Clients(t *testing.T) {
 
 	// server
 	go func() {
-		st, err := ustack.NewUstack(saddr, 1536)
+		st, err := ustack.NewUstack(link.NewList(16, 1536), saddr.Addr())
 		require.NoError(t, err)
 		UnicomStackAndRawBy(t, st, itun.WrapRawConn(s1, 1536), caddr1)
 		UnicomStackAndRawBy(t, st, itun.WrapRawConn(s2, 1536), caddr2)
@@ -179,7 +182,7 @@ func Test_Conn_Clients(t *testing.T) {
 
 	// client 1
 	go func() {
-		st, err := ustack.NewUstack(caddr1, 1536)
+		st, err := ustack.NewUstack(link.NewList(16, 1536), caddr1.Addr())
 		require.NoError(t, err)
 		UnicomStackAndRaw(t, st, itun.WrapRawConn(c1, 1536))
 
@@ -197,7 +200,7 @@ func Test_Conn_Clients(t *testing.T) {
 
 	// client 2
 	go func() {
-		st, err := ustack.NewUstack(caddr2, 1536)
+		st, err := ustack.NewUstack(link.NewList(16, 1536), caddr2.Addr())
 		require.NoError(t, err)
 		UnicomStackAndRaw(t, st, itun.WrapRawConn(c2, 1536))
 
@@ -219,32 +222,30 @@ func Test_Conn_Clients(t *testing.T) {
 
 func UnicomStackAndRaw(t *testing.T, s ustack.Ustack, raw *itun.RawConn) {
 	go func() {
-		mtu := raw.MTU()
-		var p = relraw.NewPacket(0, mtu)
+		var pkt = packet.Make(64, raw.MTU())
 
 		for {
-			p.Sets(0, mtu)
-			s.Outbound(context.Background(), p)
-			if p.Len() == 0 {
+			s.Outbound(context.Background(), pkt.SetHead(64))
+			if pkt.Data() == 0 {
 				return
 			}
 
 			// fmt.Println("inbound")
 
-			p.SetHead(0)
-			test.ValidIP(t, p.Data())
-
-			_, err := raw.Write(p.Data())
+			err := raw.Write(context.Background(), pkt)
 			require.NoError(t, err)
+
+			if debug.Debug() {
+				pkt.SetHead(64)
+				test.ValidIP(t, pkt.Bytes())
+			}
 		}
 	}()
 	go func() {
-		mtu := raw.MTU()
-		var p = relraw.NewPacket(0, mtu)
+		var pkt = packet.Make(64, raw.MTU())
 
 		for {
-			p.Sets(0, mtu)
-			err := raw.ReadCtx(context.Background(), p)
+			err := raw.Read(context.Background(), pkt.SetHead(64))
 			if errors.Is(err, io.EOF) {
 				return
 			}
@@ -252,46 +253,45 @@ func UnicomStackAndRaw(t *testing.T, s ustack.Ustack, raw *itun.RawConn) {
 
 			// fmt.Println("outbound")
 
-			p.SetHead(0)
-			test.ValidIP(t, p.Data())
+			pkt.SetHead(64)
+			test.ValidIP(t, pkt.Bytes())
 
-			s.Inbound(p)
+			s.Inbound(pkt)
 		}
 	}()
 }
 
 func UnicomStackAndRawBy(t *testing.T, s ustack.Ustack, raw *itun.RawConn, dst netip.AddrPort) {
 	go func() {
-		mtu := raw.MTU()
-		var p = relraw.NewPacket(0, mtu)
+		var p = packet.Make(64, raw.MTU())
 
 		for {
-			p.Sets(0, mtu)
-			s.OutboundBy(context.Background(), dst, p)
-			if p.Len() == 0 {
+			s.OutboundBy(context.Background(), dst, p.SetHead(64))
+			if p.Data() == 0 {
 				return
 			}
-			p.SetHead(0)
-			test.ValidIP(t, p.Data())
 
-			_, err := raw.Write(p.Data())
+			err := raw.Write(context.Background(), p)
 			require.NoError(t, err)
+
+			if debug.Debug() {
+				p.SetHead(64)
+				test.ValidIP(t, p.Bytes())
+			}
 		}
 	}()
 	go func() {
-		mtu := raw.MTU()
-		var p = relraw.NewPacket(0, mtu)
+		var p = packet.Make(64, raw.MTU())
 
 		for {
-			p.Sets(0, mtu)
-			err := raw.ReadCtx(context.Background(), p)
+			err := raw.Read(context.Background(), p.SetHead(64))
 			if errors.Is(err, io.EOF) {
 				return
 			}
 			require.NoError(t, err)
 
-			p.SetHead(0)
-			test.ValidIP(t, p.Data())
+			p.SetHead(64)
+			test.ValidIP(t, p.Bytes())
 
 			s.Inbound(p)
 		}

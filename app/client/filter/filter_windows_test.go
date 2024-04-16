@@ -1,21 +1,19 @@
 package filter
 
 import (
-	"context"
 	"fmt"
 	"testing"
 	"time"
 
 	"github.com/lysShub/divert-go"
 	"github.com/lysShub/itun"
-	"github.com/lysShub/itun/cctx"
 )
 
 func Test_Filter(t *testing.T) {
-	divert.Load(divert.Mem)
+	divert.Load(divert.DLL)
 	defer divert.Release()
 
-	f, _ := NewFilter(cctx.WithContext(context.Background()))
+	f, _ := NewFilter()
 
 	f.AddRule("chrome.exe", itun.TCP)
 
@@ -33,7 +31,7 @@ func Test_Filter(t *testing.T) {
 }
 
 func TestClient(t *testing.T) {
-	divert.MustLoad(divert.Mem)
+	divert.MustLoad(divert.DLL)
 	defer divert.Release()
 
 	var s = "udp and !ipv6 and event=CONNECT"

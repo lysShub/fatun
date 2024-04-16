@@ -6,105 +6,97 @@ package capture
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"net/netip"
 	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
 
-	"github.com/pkg/errors"
-	"github.com/stretchr/testify/require"
-
 	"github.com/lysShub/divert-go"
 	"github.com/lysShub/itun"
 	"github.com/lysShub/itun/app/client/filter"
-	"github.com/lysShub/itun/cctx"
-	"github.com/lysShub/itun/errorx"
 	sess "github.com/lysShub/itun/session"
-	"github.com/lysShub/relraw"
-	"github.com/lysShub/relraw/test"
-	"github.com/lysShub/relraw/test/debug"
+	"github.com/lysShub/sockit/errorx"
+	"github.com/lysShub/sockit/helper/ipstack"
+	"github.com/lysShub/sockit/packet"
+
+	"github.com/lysShub/sockit/test"
+	"github.com/lysShub/sockit/test/debug"
+	"github.com/pkg/errors"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
-type Option struct {
-	// NIC  int
-	// IPv6 bool
-
-	Prots []itun.Proto // default tcp
-
-	Logger slog.Handler
-}
-
 type capture struct {
-	ctx      cctx.CancelCtx
-	logger   *slog.Logger
-	mtu      int
-	closed   atomic.Bool
-	priority int16
+	opt *Option
 
 	hitter filter.Hitter
 
-	// hited connect captures packet, will captures
-	// connect serval start packet
 	captures   map[sess.Session]*session
 	capturesMu sync.RWMutex
 
-	ch chan *session
+	sessCh chan *session
+
+	closeErr  atomic.Pointer[error]
+	srvCtx    context.Context
+	srvCancel context.CancelFunc
 }
 
 var _ Capture = (*capture)(nil)
 
-func newCapture(ctx cctx.CancelCtx, hit filter.Hitter, opt *Option) *capture {
-	// todo:
-	opt = &Option{
-		Prots:  []itun.Proto{itun.TCP},
-		Logger: slog.NewJSONHandler(os.Stderr, nil),
-	}
-
+func newCapture(hit filter.Hitter, opt *Option) *capture {
 	var c = &capture{
-		ctx:      ctx,
-		hitter:   hit,
-		logger:   slog.New(opt.Logger).WithGroup("capture"),
-		mtu:      1536, // todo
-		priority: 99,
+		opt: opt,
+
+		hitter: hit,
 
 		captures: make(map[sess.Session]*session, 16),
-		ch:       make(chan *session, 16),
+		sessCh:   make(chan *session, 16),
 	}
+	c.srvCtx, c.srvCancel = context.WithCancel(context.Background())
 
 	go c.tcpService()
 	// go c.udpService()
 	return c
 }
 
-func (s *capture) Close(cause error) error {
-	if s.closed.CompareAndSwap(false, true) {
-		s.logger.Error(cause.Error())
-		s.ctx.Cancel(cause)
-		close(s.ch)
+func (s *capture) Close() error {
+	s.close(os.ErrClosed)
+	return nil
+}
+
+func (s *capture) close(cause error) error {
+	if s.closeErr.CompareAndSwap(nil, &os.ErrClosed) {
+		s.srvCancel()
+		close(s.sessCh)
 
 		var cs []*session
-		s.capturesMu.RLock()
+		s.capturesMu.Lock()
 		for _, e := range s.captures {
 			cs = append(cs, e)
 		}
-		s.capturesMu.RUnlock()
+		clear(s.captures)
+		s.capturesMu.Unlock()
 
 		for _, e := range cs {
-			s.Del(e.Session())
+			if err := e.Close(); err != nil {
+				cause = err
+			}
 		}
+
+		if cause != nil {
+			s.closeErr.Store(&cause)
+		}
+		return cause
 	}
-	return nil
+	return *s.closeErr.Load()
 }
 
 func (s *capture) Get(ctx context.Context) (Session, error) {
 	select {
-	case sess, ok := <-s.ch:
+	case sess, ok := <-s.sessCh:
 		if !ok {
-			return nil, errors.WithStack(s.ctx.Err())
+			return nil, *s.closeErr.Load()
 		}
 		return sess, nil
 	case <-ctx.Done():
@@ -112,70 +104,66 @@ func (s *capture) Get(ctx context.Context) (Session, error) {
 	}
 }
 
-func (s *capture) Del(sess sess.Session) {
+func (s *capture) del(sess sess.Session) {
 	s.capturesMu.Lock()
-	c, ok := s.captures[sess]
+	defer s.capturesMu.Unlock()
+
+	_, ok := s.captures[sess]
 	if ok {
 		delete(s.captures, sess)
-	}
-	s.capturesMu.Unlock()
-
-	if ok {
-		c.close()
 	}
 }
 
 func (s *capture) tcpService() error {
 	filter := "outbound and !loopback and ip and tcp.Syn"
-	d, err := divert.Open(filter, divert.Network, s.priority, 0)
+	d, err := divert.Open(filter, divert.Network, s.opt.Priority, 0)
 	if err != nil {
-		return s.Close(err)
+		return s.close(err)
 	}
 
 	var addr divert.Address
-	var p = make([]byte, s.mtu)
+	var p = make([]byte, s.opt.Mtu)
 	for {
-		n, err := d.RecvCtx(s.ctx, p, &addr)
+		n, err := d.RecvCtx(s.srvCtx, p, &addr)
 		if err != nil {
-			return s.Close(err)
+			return s.close(err)
 		}
 
 		ip := header.IPv4(p[:n])
-		udp := header.UDP(ip.Payload())
+		tcp := header.TCP(ip.Payload())
 		sess := sess.Session{
-			Src:   netip.AddrPortFrom(toAddr(ip.SourceAddress()), udp.SourcePort()),
+			Src:   netip.AddrPortFrom(toAddr(ip.SourceAddress()), tcp.SourcePort()),
 			Proto: itun.TCP,
-			Dst:   netip.AddrPortFrom(toAddr(ip.DestinationAddress()), udp.DestinationPort()),
+			Dst:   netip.AddrPortFrom(toAddr(ip.DestinationAddress()), tcp.DestinationPort()),
 		}
 
-		if !s.hitter.HitOnce(sess) { // pass
+		if !s.hitter.HitOnce(sess) {
 			if _, err = d.Send(p[:n], outbound); err != nil {
-				return s.Close(err)
+				return s.close(err)
 			}
 		} else {
 			s.capturesMu.RLock()
-			_, ok := s.captures[sess] // todo: HitOnce 不需要这个map
+			_, ok := s.captures[sess] // todo: HitOnce 不需要查询这个map
 			s.capturesMu.RUnlock()
 
 			if !ok {
-				c, err := newSession(sess, int(addr.Network().IfIdx), s.priority+1)
+				c, err := newSession(s, sess, int(addr.Network().IfIdx), s.opt.Priority+1)
 				if err != nil {
-					s.logger.Warn(err.Error(), errorx.TraceAttr(err))
+					s.opt.Logger.Warn(err.Error(), errorx.TraceAttr(err))
 					continue
 				}
-
-				s.capturesMu.Lock()
-				s.captures[sess] = c
-				s.capturesMu.Unlock()
 
 				// only buff tcp first syn packet
 				c.push(memcpy(p[:n]))
 
 				select {
-				case s.ch <- c:
+				case s.sessCh <- c:
+					s.capturesMu.Lock()
+					s.captures[sess] = c
+					s.capturesMu.Unlock()
 				default:
-					s.Del(sess)
-					s.logger.Warn("xxx")
+					c.Close()
+					s.opt.Logger.Warn("capture接收阻塞")
 				}
 			}
 		}
@@ -184,17 +172,17 @@ func (s *capture) tcpService() error {
 
 func (s *capture) udpService() error {
 	filter := "outbound and !loopback and ip and udp"
-	d, err := divert.Open(filter, divert.Network, s.priority, 0)
+	d, err := divert.Open(filter, divert.Network, s.opt.Priority, 0)
 	if err != nil {
-		return s.Close(err)
+		return s.close(err)
 	}
 
 	var addr divert.Address
-	var p = make([]byte, s.mtu)
+	var p = make([]byte, s.opt.Mtu)
 	for {
 		n, err := d.RecvCtx(context.Background(), p, &addr)
 		if err != nil {
-			return s.Close(err)
+			return s.close(err)
 		}
 
 		ip := header.IPv4(p[:n])
@@ -207,32 +195,32 @@ func (s *capture) udpService() error {
 
 		if !s.hitter.HitOnce(sess) { // pass
 			if _, err = d.Send(p[:n], outbound); err != nil {
-				return s.Close(err)
+				return s.close(err)
 			}
 		} else {
 			s.capturesMu.RLock()
 			c, ok := s.captures[sess]
 			s.capturesMu.RUnlock()
-
 			if !ok {
-				c, err = newSession(sess, int(addr.Network().IfIdx), s.priority+1)
+				c, err = newSession(s, sess, int(addr.Network().IfIdx), s.opt.Priority+1)
 				if err != nil {
-					s.logger.Warn(err.Error(), errorx.TraceAttr(err))
+					s.opt.Logger.Warn(err.Error(), errorx.TraceAttr(err))
 					continue
 				}
-
-				s.capturesMu.Lock()
-				s.captures[sess] = c
-				s.capturesMu.Lock()
 			}
 
 			c.push(memcpy(p[:n]))
 
-			select {
-			case s.ch <- c:
-			default:
-				s.Del(sess)
-				s.logger.Warn("xxx")
+			if !ok {
+				select {
+				case s.sessCh <- c:
+					s.capturesMu.Lock()
+					s.captures[sess] = c
+					s.capturesMu.Lock()
+				default:
+					c.Close()
+					s.opt.Logger.Warn("xxx")
+				}
 			}
 		}
 	}
@@ -259,23 +247,34 @@ func toAddr(a tcpip.Address) netip.Addr {
 }
 
 type session struct {
-	s sess.Session
-
-	buff chan []byte
-	d    *divert.Handle
-
-	inboundAddr *divert.Address
-	ipstack     *relraw.IPStack
+	capture *capture
+	s       sess.Session
 
 	closed atomic.Bool
+
+	// before session work, some packet maybe read by capture
+	prevIPsCh chan []byte
+
+	d *divert.Handle
+
+	inboundAddr *divert.Address
+	ipstack     *ipstack.IPStack
 }
 
+var _ Session = (*session)(nil)
+
+// todo: 要注意创建的session没被使用要自动close
 func newSession(
-	s sess.Session, injectIfIdx int, priority int16,
+	capture *capture, s sess.Session,
+	injectIfIdx int, priority int16,
 ) (*session, error) {
 	var err error
 	var c = &session{
-		s:           s,
+		capture: capture,
+		s:       s,
+
+		prevIPsCh: make(chan []byte, 4),
+
 		inboundAddr: &divert.Address{},
 	}
 	c.inboundAddr.Network().IfIdx = uint32(injectIfIdx)
@@ -289,7 +288,7 @@ func newSession(
 	if err != nil {
 		return nil, err
 	}
-	c.ipstack, err = relraw.NewIPStack(s.Src.Addr(), s.Dst.Addr(), tcpip.TransportProtocolNumber(s.Proto))
+	c.ipstack, err = ipstack.New(s.Src.Addr(), s.Dst.Addr(), tcpip.TransportProtocolNumber(s.Proto))
 	if err != nil {
 		return nil, err
 	}
@@ -297,62 +296,66 @@ func newSession(
 	return c, nil
 }
 
-func (c *session) push(b []byte) {
+func (c *session) push(ip []byte) {
 	select {
-	case c.buff <- b:
+	case c.prevIPsCh <- ip:
 	default:
 	}
 }
 
-var _ Session = (*session)(nil)
-
-func (c *session) Capture(ctx context.Context, pkt *relraw.Packet) (err error) {
-	b := pkt.Data()
+func (c *session) Capture(ctx context.Context, pkt *packet.Packet) (err error) {
+	b := pkt.Bytes()
 	b = b[:cap(b)]
 
 	select {
-	case tmp := <-c.buff:
-		n := copy(b, tmp)
-		pkt.SetLen(n)
+	case ip := <-c.prevIPsCh:
+		hdrn := uint8(0)
+		switch header.IPVersion(ip) {
+		case 4:
+			hdrn = header.IPv4(ip).HeaderLength()
+		case 6:
+			hdrn = header.IPv6MinimumSize
+		default:
+		}
+
+		n := copy(b, ip[hdrn:])
+		pkt.SetData(n)
 		return nil
 	default:
 	}
 
 	n, err := c.d.RecvCtx(ctx, b, nil)
 	if err != nil {
-		pkt.SetLen(0)
+		pkt.SetData(0)
 		return err
 	}
-	pkt.SetLen(n)
+	pkt.SetData(n)
 
-	if debug.Debug() {
-		require.Equal(test.T(), header.IPVersion(pkt.Data()), 4)
-	}
-	iphdrLen := header.IPv4(pkt.Data()).HeaderLength()
+	// todo: ipv6
+	iphdrLen := header.IPv4(pkt.Bytes()).HeaderLength()
 	pkt.SetHead(pkt.Head() + int(iphdrLen))
 
 	return nil
 }
 
-func (c *session) Inject(pkt *relraw.Packet) error {
+func (c *session) Inject(pkt *packet.Packet) error {
 	c.ipstack.AttachInbound(pkt)
 	if debug.Debug() {
-		test.ValidIP(test.T(), pkt.Data())
+		test.ValidIP(test.T(), pkt.Bytes())
 	}
 
-	_, err := c.d.Send(pkt.Data(), c.inboundAddr)
+	_, err := c.d.Send(pkt.Bytes(), c.inboundAddr)
 	return err
 }
 
-func (c *session) Session() sess.Session {
-	return c.s
-}
+func (c *session) Session() sess.Session { return c.s }
+func (s *session) String() string        { return s.s.String() }
 
-func (c *session) close() error {
+func (c *session) Close() error {
 	if c.closed.CompareAndSwap(false, true) {
-		return c.d.Close()
+		c.capture.del(c.s)
+		close(c.prevIPsCh)
+		return errors.WithStack(c.d.Close())
 	}
 	return nil
 }
-
-func (s *session) String() string { return s.s.String() }

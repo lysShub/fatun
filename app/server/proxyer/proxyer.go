@@ -2,282 +2,133 @@ package proxyer
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
-	"net"
-	"net/netip"
+	"os"
 	"sync/atomic"
 
-	"github.com/lysShub/itun"
+	"github.com/lysShub/itun/app"
 	"github.com/lysShub/itun/app/server/adapter"
 	ss "github.com/lysShub/itun/app/server/proxyer/session"
-	"github.com/lysShub/itun/cctx"
-	"github.com/lysShub/itun/config"
 	"github.com/lysShub/itun/control"
-	"github.com/lysShub/itun/crypto"
-	"github.com/lysShub/itun/errorx"
+	"github.com/lysShub/itun/sconn"
 	"github.com/lysShub/itun/session"
-	"github.com/lysShub/itun/ustack"
-	"github.com/lysShub/itun/ustack/faketcp"
-	"github.com/lysShub/relraw"
-	"github.com/lysShub/relraw/test"
-	"github.com/lysShub/relraw/test/debug"
-	"github.com/stretchr/testify/require"
-	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"github.com/lysShub/sockit/errorx"
+	"github.com/lysShub/sockit/packet"
 )
 
 type Server interface {
-	Config() config.Config
-	PortAdapter() *adapter.Ports
-
-	// accept control connect
-	AcceptBy(ctx context.Context, src netip.AddrPort) (net.Conn, error)
-	Stack() ustack.Ustack
-
-	Logger() *slog.Logger
+	Config() *app.Config
+	Adapter() *adapter.Ports
 }
 
-func Proxy(c context.Context, srv Server, raw *itun.RawConn) {
-	p, err := NewProxyer(c, srv, raw)
+func Proxy(ctx context.Context, srv Server, conn *sconn.Conn) {
+	p, err := NewProxyer(srv, conn)
 	if err != nil {
 		return
 	}
 
-	err = p.handShake()
+	err = p.Proxy(ctx)
 	if err != nil {
-		return
-	}
-
-	<-p.ctx.Done()
-
-	if err := p.ctx.Err(); err != nil {
 		p.logger.Error(err.Error(), errorx.TraceAttr(err))
 	} else {
-		p.logger.Info("exit")
+		p.logger.Info("close")
 	}
 }
 
 type Proxyer struct {
-	ctx    cctx.CancelCtx
+	conn   *sconn.Conn
 	srv    Server
-	raw    *itun.RawConn
+	cfg    *app.Config
 	logger *slog.Logger
 
 	sessionMgr *ss.SessionMgr
 
-	pseudoSum1 uint16
-	ipstack    *relraw.IPStack
-	seq, ack   uint32
+	ctr control.Server
 
-	prepareInit atomic.Bool
-	initNotify  chan struct{}
-	inited      atomic.Bool
-
-	fake   *faketcp.FakeTCP
-	crypto *crypto.TCP
-
-	ctr             control.Server
-	endConfigNotify chan struct{}
+	srvCtx    context.Context
+	srvCancel context.CancelFunc
+	closeErr  atomic.Pointer[error]
 }
 
-func NewProxyer(c context.Context, srv Server, raw *itun.RawConn) (*Proxyer, error) {
+func NewProxyer(srv Server, conn *sconn.Conn) (*Proxyer, error) {
+	cfg := srv.Config()
 	var p = &Proxyer{
-		ctx: cctx.WithContext(c),
-		srv: srv,
-		raw: raw,
-		logger: slog.New(srv.Logger().WithGroup("proxy").Handler().WithAttrs([]slog.Attr{
-			{Key: "src", Value: slog.StringValue(raw.RemoteAddrPort().String())},
+		conn: conn,
+		srv:  srv,
+		cfg:  cfg,
+		logger: slog.New(cfg.Logger.WithGroup("proxyer").WithAttrs([]slog.Attr{
+			{Key: "src", Value: slog.StringValue(conn.RemoteAddr().String())},
 		})),
-
-		sessionMgr: ss.NewSessionMgr(srv.PortAdapter(), raw.LocalAddrPort().Addr()),
-
-		pseudoSum1: header.PseudoHeaderChecksum(
-			header.TCPProtocolNumber,
-			raw.LocalAddr().Addr, raw.RemoteAddr().Addr,
-			0,
-		),
-
-		initNotify:      make(chan struct{}),
-		endConfigNotify: make(chan struct{}),
 	}
+	p.sessionMgr = ss.NewSessionMgr(proxyerImplPtr(p))
+	p.srvCtx, p.srvCancel = context.WithCancel(context.Background())
 
-	var err error
-	if p.ipstack, err = relraw.NewIPStack(
-		raw.LocalAddrPort().Addr(),
-		raw.RemoteAddrPort().Addr(),
-		header.TCPProtocolNumber,
-	); err != nil {
-		return nil, err
-	}
+	p.logger.Info("accept")
+	go p.uplinkService()
+	p.ctr = control.NewServer(conn.TCP(), controlImplPtr(p))
 
-	p.logger.Info("accepted")
 	return p, nil
 }
 
-func (p *Proxyer) handShake() (err error) {
-	go p.uplinkService()
-	go p.downlinkService()
-
-	tcp, err := p.srv.AcceptBy(p.ctx, p.raw.RemoteAddrPort())
-	if err != nil {
-		return err
-	}
-
-	cfg := p.srv.Config()
-
-	if err = cfg.PrevPackets.Server(p.ctx, tcp); err != nil {
-		p.logger.Error(err.Error(), errorx.TraceAttr(err))
-		return err
-	}
-	if key, err := cfg.SwapKey.SecretKey(p.ctx, tcp); err != nil {
-		p.logger.Error(err.Error(), errorx.TraceAttr(err))
-		return err
-	} else {
-		p.crypto, err = crypto.NewTCP(key, p.pseudoSum1)
-		if err != nil {
-			p.logger.Error(err.Error(), errorx.TraceAttr(err))
-			return err
-		}
-	}
-
-	// wait init: when recve first fakt tcp packet
-	p.prepareInit.CompareAndSwap(false, true)
-	<-p.initNotify
-
-	// todo: NewFakeTCP not need calc csum
-	p.fake = faketcp.NewFakeTCP(
-		p.raw.LocalAddr().Port, p.raw.RemoteAddr().Port,
-		faketcp.InitSeqAck(p.seq, p.ack), faketcp.PseudoSum1(p.pseudoSum1), faketcp.SeqOverhead(crypto.Bytes),
-	)
-
-	<-p.initNotify
-	p.inited.CompareAndSwap(false, true)
-
-	p.ctr = control.NewServer(tcp, controlImplPtr(p))
-
-	go p.controlService()
-	<-p.endConfigNotify
-
-	p.logger.Info("connected")
-	return nil
-}
-
-func (p *Proxyer) downlinkService() {
-	st := p.srv.Stack()
-	dst := p.raw.RemoteAddrPort()
-	mtu := p.raw.MTU()
-
-	var tcp = relraw.NewPacket(0, mtu)
-	for {
-		tcp.SetHead(0)
-		st.OutboundBy(p.ctx, dst, tcp)
-
-		if p.inited.Load() {
-			p.downlink(tcp, session.CtrSessID)
-		} else {
-			tcphdr := header.TCP(tcp.Data())
-			p.seq = max(p.seq, tcphdr.SequenceNumber()+uint32(len(tcphdr.Payload())))
-			// p.ack = max(p.ack, tcphdr.AckNumber())
-
-			// recover to ip packet
-			tcp.SetHead(0)
-			if debug.Debug() {
-				test.ValidIP(test.T(), tcp.Data())
-			}
-			_, err := p.raw.Write(tcp.Data())
-			if err != nil {
-				p.ctx.Cancel(err)
-				return
+func (p *Proxyer) close(cause error) error {
+	if p.closeErr.CompareAndSwap(nil, &os.ErrClosed) {
+		if p.ctr != nil {
+			if err := p.ctr.Close(); err != nil {
+				cause = err
+				p.logger.Error(err.Error(), errorx.TraceAttr(err))
 			}
 		}
+		p.srvCancel()
+
+		if cause != nil {
+			p.closeErr.Store(&cause)
+		}
+		return cause
 	}
+	return *p.closeErr.Load()
 }
 
-func (p *Proxyer) uplinkService() {
+func (p *Proxyer) Proxy(ctx context.Context) error {
+	err := p.ctr.Serve(ctx)
+	return p.close(err)
+}
+
+func (p *Proxyer) uplinkService() error {
 	var (
-		st      = p.srv.Stack()
-		mtu     = p.raw.MTU()
-		minSize = header.TCPMinimumSize + session.Size
-
-		seg = relraw.NewPacket(0, mtu)
+		tcp = packet.Make(64, p.cfg.MTU)
+		id  session.ID
+		s   *ss.Session
+		err error
 	)
 
 	for {
-		seg.Sets(0, mtu)
-
-		err := p.raw.ReadCtx(p.ctx, seg)
+		id, err = p.conn.Recv(p.srvCtx, tcp.SetHead(64))
 		if err != nil {
-			p.ctx.Cancel(err)
-			return
-		} else if seg.Len() < minSize {
+			if errorx.Temporary(err) {
+				p.logger.Warn(err.Error())
+				continue
+			} else {
+				return p.close(err)
+			}
+		}
+
+		s, err = p.sessionMgr.Get(id)
+		if err != nil {
+			p.logger.Warn(err.Error())
 			continue
 		}
 
-		if faketcp.IsFakeTCP(seg.Data()) {
-			if p.prepareInit.CompareAndSwap(true, false) {
-				p.initNotify <- struct{}{}
-				p.initNotify <- struct{}{}
-				// close(p.initNotify)
-			}
-
-			err = p.crypto.Decrypt(seg)
-			if err != nil {
-				p.ctx.Cancel(err)
-				return
-			}
-
-			p.fake.RecvStrip(seg)
-
-			id := session.GetID(seg)
-			if id == session.CtrSessID {
-				p.ipstack.AttachInbound(seg)
-				if debug.Debug() {
-					test.ValidIP(test.T(), seg.Data())
-				}
-
-				st.Inbound(seg)
-			} else {
-				s, err := p.sessionMgr.Get(id)
-				if err != nil {
-					fmt.Println(err)
-				} else {
-					s.Send(seg)
-				}
-			}
-		} else {
-			p.ack = max(p.ack, header.TCP(seg.Data()).SequenceNumber())
-
-			p.ipstack.AttachInbound(seg)
-			if debug.Debug() {
-				test.ValidIP(test.T(), seg.Data())
-			}
-			st.Inbound(seg)
+		err = s.Send(tcp)
+		if err != nil {
+			return p.close(err)
 		}
 	}
 }
 
-func (p *Proxyer) controlService() {
-	err := p.ctr.Serve(p.ctx)
+func (p *Proxyer) downlink(pkt *packet.Packet, id session.ID) error {
+	err := p.conn.Send(p.srvCtx, pkt, id)
 	if err != nil {
-		p.ctx.Cancel(err)
+		p.close(err)
 	}
-}
-
-func (p *Proxyer) downlink(pkt *relraw.Packet, id session.ID) error {
-	if debug.Debug() {
-		require.True(test.T(), p.inited.Load())
-	}
-
-	session.SetID(pkt, id)
-
-	p.fake.SendAttach(pkt)
-
-	p.crypto.Encrypt(pkt)
-	if debug.Debug() {
-		test.ValidTCP(test.T(), pkt.Data(), p.pseudoSum1)
-		require.True(test.T(), faketcp.IsFakeTCP(pkt.Data()))
-	}
-
-	err := p.raw.WriteCtx(p.ctx, pkt)
 	return err
 }

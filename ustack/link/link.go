@@ -3,8 +3,10 @@ package link
 import (
 	"context"
 	"net/netip"
+	"time"
 
-	"github.com/lysShub/relraw"
+	"github.com/lysShub/sockit/packet"
+
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
@@ -12,14 +14,15 @@ import (
 type Link interface {
 	stack.LinkEndpoint
 
-	Inbound(ip *relraw.Packet)
+	// SynClose close util buffed packets be consumed.
+	SynClose(timeout time.Duration) error
+
+	Inbound(ip *packet.Packet)
 
 	// OutboundBy
-	OutboundBy(ctx context.Context, dst netip.AddrPort, ip *relraw.Packet) error
-	Outbound(ctx context.Context, ip *relraw.Packet) error
+	OutboundBy(ctx context.Context, dst netip.AddrPort, tcp *packet.Packet) error
+	Outbound(ctx context.Context, tcp *packet.Packet) error
 }
-
-var invalidAddr = netip.AddrPort{}
 
 func match(pkb *stack.PacketBuffer, dst netip.AddrPort) (match bool) {
 	if pkb.IsNil() {

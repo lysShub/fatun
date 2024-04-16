@@ -4,28 +4,21 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/lysShub/itun/app/client/capture"
 	cs "github.com/lysShub/itun/app/client/session"
 	"github.com/lysShub/itun/session"
-	"github.com/lysShub/relraw"
+	"github.com/lysShub/sockit/packet"
 )
 
-type sessionIpml Client
+type sessionImpl Client
 
-type sessionIpmlPtr = *sessionIpml
+type sessionImplPtr = *sessionImpl
 
-var _ cs.Client = sessionIpmlPtr(nil)
+var _ cs.Client = (sessionImplPtr)(nil)
 
-func (s *sessionIpml) Uplink(pkt *relraw.Packet, id session.ID) error {
-	return (*Client)(s).uplink(pkt, id)
+func (s *sessionImpl) Logger() *slog.Logger {
+	return s.logger
 }
-func (s *sessionIpml) MTU() int                 { return s.raw.MTU() }
-func (s *sessionIpml) Context() context.Context { return s.ctx }
-func (s *sessionIpml) Del(id session.ID, cause error) error {
-	return s.sessionMgr.Del(id, cause)
+func (s *sessionImpl) Uplink(pkt *packet.Packet, id session.ID) error {
+	return (*Client)(s).uplink(context.Background(), pkt, id)
 }
-func (s *sessionIpml) Logger() *slog.Logger { return s.logger }
-
-func (s *sessionIpml) DelSession(sess capture.Session) {
-	s.capture.Del(sess.Session())
-}
+func (s *sessionImpl) MTU() int { return s.cfg.MTU }

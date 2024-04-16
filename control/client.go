@@ -36,27 +36,14 @@ func (c *gobClient) nextType(t internal.CtrType) error {
 	return c.enc.Encode(t)
 }
 
-func (c *gobClient) IPv6(ctx context.Context) (bool, error) {
-	if err := c.nextType(internal.IPv6); err != nil {
-		return false, err
-	}
-	if err := c.enc.Encode(internal.IPv6Req{}); err != nil {
-		return false, err
-	}
-
-	var resp internal.IPv6Resp
-	err := c.dec.Decode(&resp)
-	return bool(resp), err
-}
-
-func (c *gobClient) EndConfig(ctx context.Context) error {
-	if err := c.nextType(internal.EndConfig); err != nil {
+func (c *gobClient) InitConfig(ctx context.Context, cfg *Config) error {
+	if err := c.nextType(internal.InitConfig); err != nil {
 		return err
 	}
-	if err := c.enc.Encode(internal.EndConfigReq{}); err != nil {
+	if err := c.enc.Encode(*cfg); err != nil {
 		return err
 	}
-	return c.dec.Decode(&internal.EndConfigResp{})
+	return c.dec.Decode(cfg)
 }
 
 type AddSession internal.AddSessionResp

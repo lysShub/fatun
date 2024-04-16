@@ -3,110 +3,120 @@ package session
 import (
 	"context"
 	"log/slog"
+	"os"
 	"sync/atomic"
+	"time"
 
+	"github.com/lysShub/itun"
 	"github.com/lysShub/itun/app/client/capture"
-	"github.com/lysShub/itun/cctx"
-	"github.com/lysShub/itun/errorx"
 	"github.com/lysShub/itun/session"
-	"github.com/lysShub/relraw"
+	"github.com/lysShub/sockit/errorx"
+	"github.com/lysShub/sockit/packet"
+	"github.com/pkg/errors"
 )
 
 type Client interface {
-	Context() context.Context
-	Del(id session.ID, cause error) error
 	Logger() *slog.Logger
-	DelSession(s capture.Session)
 
-	Uplink(pkt *relraw.Packet, id session.ID) error
+	Uplink(pkt *packet.Packet, id session.ID) error
 	MTU() int
 }
 
 type Session struct {
-	ctx    cctx.CancelCtx
+	mgr    *SessionMgr
 	client Client
 	id     session.ID
-	closed atomic.Bool
 
-	capture capture.Session
+	srvCtx    context.Context
+	srvCancel context.CancelFunc
+	capture   capture.Session
 
-	cnt atomic.Uint32
+	closeErr atomic.Pointer[error]
+	cnt      atomic.Uint32
 }
 
 func newSession(
-	client Client, id session.ID,
-	session capture.Session,
+	mgr *SessionMgr, client Client,
+	id session.ID, session capture.Session,
 ) (s *Session, err error) {
 	s = &Session{
-		ctx:    cctx.WithContext(client.Context()),
+		mgr:    mgr,
 		client: client,
+		id:     id,
 
 		capture: session,
-		id:      id,
 	}
+	s.srvCtx, s.srvCancel = context.WithCancel(context.Background())
 
 	go s.uplinkService()
+	s.keepalive()
 	return s, nil
 }
 
-func (s *Session) uplinkService() {
-	var mtu = s.client.MTU()
-	pkt := relraw.NewPacket(0, mtu)
+func (s *Session) close(cause error) error {
+	if s.closeErr.CompareAndSwap(nil, &os.ErrClosed) {
+		if s.mgr != nil {
+			s.mgr.del(s.id)
+		}
+
+		s.srvCancel()
+
+		if s.capture != nil {
+			if err := s.capture.Close(); err != nil {
+				cause = err
+			}
+		}
+
+		if cause != nil {
+			s.closeErr.Store(&cause)
+			s.client.Logger().Warn("session close", cause.Error(), errorx.TraceAttr(cause))
+		} else {
+			s.client.Logger().Info("session close")
+		}
+		return cause
+	}
+	return *s.closeErr.Load()
+}
+
+func (s *Session) uplinkService() error {
+	var (
+		pkt = packet.Make(64, s.client.MTU())
+	)
 
 	for {
-		pkt.Sets(0, mtu)
 		s.cnt.Add(1)
 
-		err := s.capture.Capture(s.ctx, pkt)
+		err := s.capture.Capture(s.srvCtx, pkt.SetHead(64))
 		if err != nil {
-			s.client.Del(s.id, err)
-			return
+			return s.close(err)
 		}
 
 		// todo: reset tcp mss
 
 		err = s.client.Uplink(pkt, session.ID(s.id))
 		if err != nil {
-			s.client.Del(s.id, err)
-			return
+			return s.close(err)
 		}
 	}
 }
 
-func (s *Session) Inject(pkt *relraw.Packet) {
+func (s *Session) Inject(pkt *packet.Packet) error {
 	err := s.capture.Inject(pkt)
 	if err != nil {
-		s.client.Del(s.id, err)
+		return s.close(err)
 	}
 
 	s.cnt.Add(1)
-}
-
-func (s *Session) tick() bool {
-	const magic uint32 = 0x23df83a0
-	if s.cnt.Load() == magic {
-		return true
-	} else {
-		s.cnt.Store(magic)
-		return false
-	}
-}
-
-func (s *Session) close(cause error) error {
-	if s.closed.CompareAndSwap(false, true) {
-		s.ctx.Cancel(cause)
-
-		s.client.DelSession(s.capture)
-
-		if errorx.Temporary(cause) {
-			s.client.Logger().LogAttrs(
-				context.Background(), slog.LevelWarn, cause.Error(),
-				slog.Attr{Key: "session", Value: slog.StringValue(s.capture.String())},
-			)
-		} else {
-			s.client.Logger().Error(cause.Error(), errorx.TraceAttr(cause))
-		}
-		return cause
-	}
 	return nil
+}
+
+func (s *Session) keepalive() {
+	const magic uint32 = 0x23df83a0
+	switch s.cnt.Load() {
+	case magic:
+		s.close(errors.WithStack(itun.KeepaliveExceeded))
+	default:
+		s.cnt.Store(magic)
+		time.AfterFunc(time.Minute, s.keepalive) // todo: from config
+	}
 }

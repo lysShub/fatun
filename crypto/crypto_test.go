@@ -10,8 +10,9 @@ import (
 	"github.com/lysShub/itun"
 	"github.com/lysShub/itun/crypto"
 	"github.com/lysShub/itun/ustack"
-	"github.com/lysShub/relraw"
-	"github.com/lysShub/relraw/test"
+
+	"github.com/lysShub/sockit/packet"
+	"github.com/lysShub/sockit/test"
 	"github.com/stretchr/testify/require"
 )
 
@@ -21,45 +22,45 @@ func UnicomStackAndRaw(t *testing.T, s ustack.Ustack, raw *itun.RawConn, pseudoS
 
 	go func() {
 		mtu := raw.MTU()
-		var ip = relraw.NewPacket(0, mtu)
+		var ip = packet.Make(0, mtu)
 
 		for {
-			ip.Sets(0, mtu)
+			ip.Sets(64, mtu)
 			s.Outbound(context.Background(), ip)
-			if ip.Len() == 0 {
+			if ip.Data() == 0 {
 				return
 			}
 
-			ip.SetHead(0)
-			test.ValidIP(t, ip.Data())
+			ip.SetHead(64)
+			test.ValidIP(t, ip.Bytes())
 
 			c.EncryptRaw(ip)
 
-			test.ValidIP(t, ip.Data())
+			test.ValidIP(t, ip.Bytes())
 
-			_, err := raw.Write(ip.Data())
+			err := raw.Write(context.Background(), ip)
 			require.NoError(t, err)
 		}
 	}()
 	go func() {
 		mtu := raw.MTU()
-		var tcp = relraw.NewPacket(0, mtu)
+		var tcp = packet.Make(0, mtu)
 
 		for {
-			tcp.Sets(0, mtu)
-			err := raw.ReadCtx(context.Background(), tcp)
+			tcp.Sets(64, mtu)
+			err := raw.Read(context.Background(), tcp)
 			if errors.Is(err, io.EOF) {
 				return
 			}
 			require.NoError(t, err)
 
-			tcp.SetHead(0)
-			test.ValidIP(t, tcp.Data())
+			tcp.SetHead(64)
+			test.ValidIP(t, tcp.Bytes())
 
 			err = c.DecryptRaw(tcp)
 			require.NoError(t, err)
 
-			test.ValidIP(t, tcp.Data())
+			test.ValidIP(t, tcp.Bytes())
 
 			s.Inbound(tcp)
 		}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/gob"
 	"net"
+	"time"
 
 	"github.com/lysShub/itun/control/internal"
 	"github.com/pkg/errors"
@@ -27,20 +28,27 @@ func newGobServer(tcp net.Conn, hdr Handler) *gobServer {
 	return s
 }
 
+func (s *gobServer) Close() error {
+	return s.conn.Close()
+}
+
 func (s *gobServer) Serve(ctx context.Context) error {
-	defer s.conn.Close()
+	stop := context.AfterFunc(ctx, func() {
+		s.conn.SetDeadline(time.Now())
+	})
+	defer stop()
 
 	var t internal.CtrType
 	var err error
 	for {
 		t, err = s.nextType()
 		if err != nil {
+			return errors.WithStack(err)
 		} else if err = t.Valid(); err != nil {
+			return err
 		} else {
 			switch t {
-			case internal.IPv6:
-				err = s.handleIPv6()
-			case internal.EndConfig:
+			case internal.InitConfig:
 				err = s.handleEndConfig()
 			case internal.AddSession:
 				err = s.handleAddSession()
@@ -53,14 +61,9 @@ func (s *gobServer) Serve(ctx context.Context) error {
 			default:
 				err = errors.Errorf("not support control type %d", int(t))
 			}
-		}
 
-		if err != nil {
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			default:
-				return err
+			if err != nil {
+				return errors.WithStack(err)
 			}
 		}
 	}
@@ -70,28 +73,14 @@ func (s *gobServer) nextType() (t internal.CtrType, err error) {
 	return t, s.dec.Decode(&t)
 }
 
-func (s *gobServer) handleIPv6() error {
-	var req internal.IPv6Req
-	if err := s.dec.Decode(&req); err != nil {
-		return err
-	}
-
-	ipv6 := s.hdr.IPv6()
-
-	var resp internal.IPv6Resp = internal.IPv6Resp(ipv6)
-	return s.enc.Encode(resp)
-}
-
 func (s *gobServer) handleEndConfig() error {
-	var req internal.EndConfigReq
+	var req Config
 	if err := s.dec.Decode(&req); err != nil {
 		return err
 	}
 
-	s.hdr.EndConfig()
-
-	var resp internal.EndConfigResp
-	return s.enc.Encode(resp)
+	s.hdr.InitConfig(&req)
+	return s.enc.Encode(req)
 }
 
 func (s *gobServer) handleAddSession() error {

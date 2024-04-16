@@ -9,18 +9,17 @@ func _() {
 	// Re-run the stringer command to generate them again.
 	var x [1]struct{}
 	_ = x[start-0]
-	_ = x[IPv6-1]
-	_ = x[EndConfig-2]
-	_ = x[AddSession-3]
-	_ = x[DelSession-4]
-	_ = x[PackLoss-5]
-	_ = x[Ping-6]
-	_ = x[end-7]
+	_ = x[InitConfig-1]
+	_ = x[AddSession-2]
+	_ = x[DelSession-3]
+	_ = x[PackLoss-4]
+	_ = x[Ping-5]
+	_ = x[end-6]
 }
 
-const _CtrType_name = "startIPv6EndConfigAddSessionDelSessionPackLossPingend"
+const _CtrType_name = "startInitConfigAddSessionDelSessionPackLossPingend"
 
-var _CtrType_index = [...]uint8{0, 5, 9, 18, 28, 38, 46, 50, 53}
+var _CtrType_index = [...]uint8{0, 5, 15, 25, 35, 43, 47, 50}
 
 func (i CtrType) String() string {
 	if i >= CtrType(len(_CtrType_index)-1) {

@@ -1,53 +1,66 @@
+//go:build windows
+// +build windows
+
 package app_test
 
 import (
 	"context"
 	"fmt"
-	"io"
-	"net"
+	"log/slog"
+	"os"
 	"testing"
-	"time"
 
-	gdivert "github.com/lysShub/divert-go"
+	_ "net/http/pprof"
+
+	"github.com/lysShub/divert-go"
+	"github.com/lysShub/itun/app"
 	"github.com/lysShub/itun/app/client"
 	"github.com/lysShub/itun/app/client/capture"
 	"github.com/lysShub/itun/app/client/filter"
-	"github.com/lysShub/itun/cctx"
-	"github.com/lysShub/itun/config"
-	"github.com/lysShub/itun/crypto"
-	"github.com/lysShub/relraw/tcp/divert"
-	"github.com/lysShub/relraw/test"
+	"github.com/lysShub/itun/sconn"
+	"github.com/lysShub/sockit/conn/tcp"
+	sd "github.com/lysShub/sockit/conn/tcp/divert"
+	"github.com/lysShub/sockit/packet"
 	"github.com/stretchr/testify/require"
 )
 
 func TestXxxx(t *testing.T) {
-	gdivert.Load(gdivert.Mem)
-	defer gdivert.Release()
+	divert.Load(divert.DLL)
+	defer divert.Release()
 	ctx := context.Background()
+	fmt.Println("启动")
 
-	f := filter.NewMock("curl.exe")
-	capture, err := capture.NewCapture(cctx.WithContext(ctx), f)
+	f := filter.NewMock("chrome.exe")
+	// f := filter.NewMock("curl.exe")
+	capture, err := capture.NewCapture(f)
 	require.NoError(t, err)
+	defer capture.Close()
 
 	var c *client.Client
 	if true {
-		cfg := &client.Config{
-			Config: config.Config{
-				PrevPackets:      pps,
-				HandShakeTimeout: time.Second * 5,
-				SwapKey:          &crypto.TokenClient{Tokener: &tkClient{}},
+		cfg := &app.Config{
+			Config: sconn.Config{
+				PrevPackets:  pps,
+				SwapKey:      sign,
+				HandshakeMTU: 1460,
 			},
-			MTU: 1536,
+			MTU:    1536,
+			Logger: slog.NewJSONHandler(os.Stdout, nil),
 		}
 
-		raw, err := divert.Connect(caddr, saddr)
+		raw, err := tcp.Connect(caddr, saddr, sd.Priority(1))
+		require.NoError(t, err)
+		// wraw, err := test.WrapPcap(raw, "raw.pcap")
+		// require.NoError(t, err)
+		conn, err := sconn.Dial(raw, &cfg.Config)
 		require.NoError(t, err)
 
-		c, err = client.NewClient(ctx, raw, capture, cfg)
-		require.NoError(t, err)
-		defer c.Close(nil)
+		fmt.Println("connect")
 
-		fmt.Println("connected")
+		c, err = client.NewClient(ctx, conn, cfg)
+		require.NoError(t, err)
+		defer c.Close()
+
 	}
 
 	fmt.Println("prepared")
@@ -60,52 +73,40 @@ func TestXxxx(t *testing.T) {
 		// capture.Del(s.Session())
 		// return
 
-		err = c.AddProxy(s)
-		require.NoError(t, err)
+		err = c.AddSession(ctx, s)
+		// require.NoError(t, err)
 
-		fmt.Println("AddProxy", s.String())
-
+		if err != nil {
+			fmt.Println("add fail", err.Error())
+		} else {
+			fmt.Println("AddProxy", s.String())
+		}
 	}
 }
 
 func Test_Capture(t *testing.T) {
-	gdivert.Load(gdivert.Mem)
-	defer gdivert.Release()
-
-	ctx := cctx.WithContext(context.Background())
+	divert.Load(divert.DLL)
+	defer divert.Release()
 
 	f := filter.NewMock("curl.exe")
 
-	c, err := capture.NewCapture(ctx, f)
+	capture, err := capture.NewCapture(f)
 	require.NoError(t, err)
+	defer capture.Close()
 
 	for {
-		s, err := c.Get(context.Background())
+		s, err := capture.Get(context.Background())
 		require.NoError(t, err)
+		fmt.Println(s.Session().String())
 
-		fmt.Println(s.String())
+		go func() {
+			var b = packet.Make(0, 1536)
+			var ctx = context.Background()
 
-		c.Del(s.Session())
-
-		return
+			for {
+				err := s.Capture(ctx, b.SetHead(0))
+				require.NoError(t, err)
+			}
+		}()
 	}
-
-}
-
-func Test_TCP(t *testing.T) {
-	conn, err := net.DialTCP("tcp", test.TCPAddr(caddr), test.TCPAddr(saddr))
-	require.NoError(t, err)
-
-	_, err = conn.Write([]byte("hello"))
-	require.NoError(t, err)
-
-	_, err = conn.Write([]byte("world"))
-	require.NoError(t, err)
-
-	var b = make([]byte, 10)
-
-	_, err = io.ReadFull(conn, b)
-	require.NoError(t, err)
-
-	fmt.Println(len(b))
 }
