@@ -16,7 +16,7 @@ import (
 type capture struct {
 }
 
-func newCapture(hit filter.Hitter, opt *Option) (Capture, error) {
+func newCapture(hit filter.Hitter, opt *Config) (Capture, error) {
 	// return nil, errors.New("implement")
 	panic(errors.New("todo implement"))
 }

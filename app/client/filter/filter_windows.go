@@ -1,90 +1,58 @@
 package filter
 
 import (
-	"net/netip"
+	"encoding/hex"
 	"slices"
 	"sync"
 	"sync/atomic"
-	"syscall"
 
+	"github.com/lysShub/itun"
+	"github.com/lysShub/itun/session"
 	"github.com/pkg/errors"
-	"github.com/shirou/gopsutil/v3/net"
-	"github.com/shirou/gopsutil/v3/process"
-	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
 type filter struct {
 	count atomic.Int32
 
-	// default
+	// default rule
 	defaultEnable atomic.Bool
-	syncMap       map[[2]addr]uint8 // record tcp conn sync count
+	syncMap       map[session.Session]uint8 // record tcp conn sync count
 	defaultMu     sync.RWMutex
 
-	// process
-	processMap    map[addr]bool // hited
-	processes     []string
+	// process rule
 	processEnable atomic.Bool
+	processes     []string
 	processMu     sync.RWMutex
 }
 
 func newFilter() *filter {
 	return &filter{
-		syncMap:    map[[2]addr]uint8{},
-		processMap: map[addr]bool{},
+		syncMap: map[session.Session]uint8{},
 	}
-}
-
-type addr struct {
-	proto tcpip.TransportProtocolNumber
-	addr  tcpip.Address
-	port  uint16
 }
 
 func (f *filter) Hit(ip []byte) (bool, error) {
 	f.count.Add(1)
-	var (
-		proto tcpip.TransportProtocolNumber
-		iphdr header.Network
-		hdr   header.Transport
-	)
-	switch header.IPVersion(ip) {
-	case 4:
-		iphdr = header.IPv4(ip)
-	case 6:
-		iphdr = header.IPv6(ip)
-	default:
-		return false, errors.WithStack(ErrNotRecord{})
-	}
-	proto = iphdr.TransportProtocol()
-	switch proto {
-	case header.TCPProtocolNumber:
-		hdr = header.TCP(iphdr.Payload())
-	case header.UDPProtocolNumber:
-		hdr = header.UDP(iphdr.Payload())
-	default:
-		return false, errors.WithStack(ErrNotRecord{}) // todo: support icmp
+	s := session.FromIP(ip)
+	if !s.IsValid() {
+		session.FromIP(ip)
+		return false, errors.Errorf("capture invalid ip packet: %s", hex.EncodeToString(ip))
 	}
 
-	if f.defaultEnable.Load() { // default
+	if f.defaultEnable.Load() {
 		const count = 3
-		if iphdr.TransportProtocol() == header.TCPProtocolNumber {
-			key := [2]addr{
-				{addr: iphdr.SourceAddress(), port: hdr.SourcePort()},
-				{addr: iphdr.SourceAddress(), port: hdr.SourcePort()},
-			}
+		if s.Proto == itun.TCP {
 			f.defaultMu.Lock()
-			old := f.syncMap[key]
-			f.syncMap[key] = old + 1
+			// todo: require filter is capture-operate(not sniff-operate)
+			// todo：should add SEQ identify tcp connection
+			old := f.syncMap[s]
+			f.syncMap[s] = old + 1
 			n := len(f.syncMap)
 			f.defaultMu.Unlock()
 
 			// delete syncMap closed tcp connect
 			if n > 128 && f.count.Load()%128 == 0 {
-				if err := f.updateConnectionMap(); err != nil {
-					return false, err
-				}
+				f.cleanMap()
 			}
 			if old+1 >= count {
 				return true, nil
@@ -92,107 +60,32 @@ func (f *filter) Hit(ip []byte) (bool, error) {
 		}
 	}
 
-	if f.processEnable.Load() { // process
-		addr := addr{
-			proto: iphdr.TransportProtocol(),
-			addr:  iphdr.SourceAddress(),
-			port:  hdr.SourcePort(),
-		}
-		f.processMu.RLock()
-		// 问题： 使用GetExtendedXxxTable中的local有可能是为指定地址，纵使实际进程的socket已经bind了。
-		hited, has := f.processMap[addr]
-		f.processMu.RUnlock()
-		if has {
-			if hited {
-				return true, nil
-			}
-			return false, nil
+	if f.processEnable.Load() {
+		name, err := Global.Name(s)
+		if err != nil {
+			return false, err
+		} else if name == "" {
+			return false, errors.WithStack(ErrNotRecord{})
 		}
 
-		// validate new connection establish
-		if err := f.updateConnectionMap(); err != nil {
-			return false, err
-		} else {
-			f.processMu.RLock()
-			hited, has := f.processMap[addr]
-			f.processMu.RUnlock()
-			if has {
-				if hited {
-					return true, nil
-				}
-				return false, nil
-			} else {
-				return false, errors.WithStack(ErrNotRecord{})
-			}
-		}
+		f.processMu.RLock()
+		defer f.processMu.RUnlock()
+		return slices.Contains(f.processes, name), nil
 	}
 
 	return false, nil
 }
 
-func (f *filter) updateConnectionMap() error {
-	cs, err := net.Connections("all")
-	if err != nil {
-		return errors.WithStack(err)
-	}
+func (f *filter) cleanMap() {
+	f.defaultMu.Lock()
+	defer f.defaultMu.Unlock()
 
-	if f.processEnable.Load() {
-		ps, err := process.Processes()
-		if err != nil {
-			return err
+	for s := range f.syncMap {
+		if pid, err := Global.Pid(s); err != nil {
+			return
+		} else if pid == 0 {
+			delete(f.syncMap, s)
 		}
-
-		var pids = map[int32]bool{}
-		for _, e := range ps {
-			if n, _ := e.Name(); slices.Contains(f.processes, n) {
-				pids[e.Pid] = true
-			}
-		}
-
-		f.processMu.Lock()
-		clear(f.processMap)
-		for _, e := range cs {
-			addr := addr{
-				proto: protoType(e.Type),
-				addr:  tcpip.AddrFromSlice(netip.MustParseAddr(e.Laddr.IP).AsSlice()),
-				port:  uint16(e.Laddr.Port),
-			}
-			f.processMap[addr] = pids[e.Pid]
-		}
-		f.processMu.Unlock()
-	}
-
-	if f.defaultEnable.Load() {
-		var addrs = map[addr]struct{}{}
-		for _, e := range cs {
-			if protoType(e.Type) == header.TCPProtocolNumber {
-				addrs[addr{
-					proto: header.TCPProtocolNumber,
-					addr:  tcpip.AddrFromSlice(netip.MustParseAddr(e.Laddr.IP).AsSlice()),
-					port:  uint16(e.Laddr.Port),
-				}] = struct{}{}
-			}
-		}
-
-		f.defaultMu.Lock()
-		for k := range f.syncMap {
-			if _, has := addrs[k[0]]; !has {
-				delete(f.syncMap, k)
-			}
-		}
-		f.defaultMu.Unlock()
-	}
-	return nil
-}
-
-func protoType(typ uint32) tcpip.TransportProtocolNumber {
-	switch typ {
-	case syscall.SOCK_STREAM:
-		return header.TCPProtocolNumber
-	case syscall.SOCK_DGRAM:
-		return header.UDPProtocolNumber
-	default:
-		return 0
 	}
 }
 

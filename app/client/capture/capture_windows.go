@@ -5,16 +5,13 @@ package capture
 
 import (
 	"context"
-	"encoding/hex"
 	"fmt"
 	"net"
-	"net/netip"
 	"os"
 	"strings"
 	"sync/atomic"
 
 	"github.com/lysShub/divert-go"
-	"github.com/lysShub/itun"
 	"github.com/lysShub/itun/app/client/filter"
 	sess "github.com/lysShub/itun/session"
 	"github.com/lysShub/sockit/helper/ipstack"
@@ -84,31 +81,22 @@ func (s *capture) Capture(ctx context.Context) (Session, error) {
 		}
 		ip = ip[:n]
 
-		if getsession(ip).Src.Port() == 12345 {
-			print()
-		}
-
 		if hit, err := s.hitter.Hit(ip); err != nil {
 			if !errors.Is(err, filter.ErrNotRecord{}) {
 				return nil, s.close(err)
 			}
-			// s.opt.Logger.LogAttrs(ctx, slog.LevelWarn, err.Error(), slog.String("session", getsession(ip).String()))
+			// s.opt.Logger.LogAttrs(ctx, slog.LevelWarn, err.Error(), slog.String("session", sess.FromIP(ip).String()))
 			// s.opt.Logger.Warn(err.Error(), errorx.TraceAttr(err))
+			fmt.Println("filter not record", sess.FromIP(ip).String())
 		} else {
-			if s := getsession(ip); s.Proto == itun.UDP {
-				fmt.Println("有有有有有有有有有有有有有有有有有有有有", s.String())
-			}
+			fmt.Println("filter has record", sess.FromIP(ip).String())
 
 			if !hit {
 				if _, err = s.handle.Send(ip[:n], &s.addr); err != nil {
 					return nil, s.close(err)
 				}
 			} else {
-				sess := getsession(ip)
-				if sess.IsValid() {
-					return nil, errors.Errorf("capture invalid ip packet: %s", hex.EncodeToString(ip))
-				}
-
+				sess := sess.FromIP(ip)
 				c, err := newSession(sess, ip, int(s.addr.Network().IfIdx), s.opt.Priority+1)
 				return c, err
 			}
@@ -117,39 +105,6 @@ func (s *capture) Capture(ctx context.Context) (Session, error) {
 }
 
 func (s *capture) Close() error { return s.close(os.ErrClosed) }
-
-func getsession(ip []byte) sess.Session {
-	var (
-		s     sess.Session
-		iphdr header.Network
-		hdr   header.Transport
-	)
-	switch header.IPVersion(ip) {
-	case 4:
-		iphdr = header.IPv4(ip)
-		s.Src = netip.AddrPortFrom(netip.AddrFrom4(iphdr.SourceAddress().As4()), 0)
-		s.Dst = netip.AddrPortFrom(netip.AddrFrom4(iphdr.DestinationAddress().As4()), 0)
-	case 6:
-		iphdr = header.IPv6(ip)
-		s.Src = netip.AddrPortFrom(netip.AddrFrom16(iphdr.SourceAddress().As16()), 0)
-		s.Dst = netip.AddrPortFrom(netip.AddrFrom16(iphdr.DestinationAddress().As16()), 0)
-	default:
-		return sess.Session{}
-	}
-	switch iphdr.TransportProtocol() {
-	case header.TCPProtocolNumber:
-		s.Proto = itun.TCP
-		hdr = header.TCP(iphdr.Payload())
-	case header.UDPProtocolNumber:
-		s.Proto = itun.UDP
-		hdr = header.UDP(iphdr.Payload())
-	default:
-		return sess.Session{}
-	}
-	s.Src = netip.AddrPortFrom(s.Src.Addr(), hdr.SourcePort())
-	s.Dst = netip.AddrPortFrom(s.Dst.Addr(), hdr.SourcePort())
-	return s
-}
 
 type session struct {
 	s sess.Session
@@ -179,14 +134,14 @@ func newSession(
 
 	filter := fmt.Sprintf(
 		"%s and localAddr=%s and localPort=%d and remoteAddr=%s and remotePort=%d",
-		strings.ToLower(s.Proto.String()), s.Src.Addr(), s.Src.Port(), s.Dst.Addr(), s.Dst.Port(),
+		strings.ToLower(s.Proto.String()), s.SrcAddr, s.SrcPort, s.DstAddr, s.DstPort,
 	)
 
 	c.d, err = divert.Open(filter, divert.Network, priority, 0)
 	if err != nil {
 		return nil, err
 	}
-	c.ipstack, err = ipstack.New(s.Src.Addr(), s.Dst.Addr(), tcpip.TransportProtocolNumber(s.Proto))
+	c.ipstack, err = ipstack.New(s.SrcAddr, s.DstAddr, tcpip.TransportProtocolNumber(s.Proto))
 	if err != nil {
 		return nil, err
 	}

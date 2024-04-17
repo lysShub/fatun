@@ -6,13 +6,15 @@ import (
 	"time"
 
 	"github.com/lysShub/divert-go"
+	"github.com/stretchr/testify/require"
 )
 
 func Test_Filter(t *testing.T) {
 	divert.Load(divert.DLL)
 	defer divert.Release()
 
-	f := New()
+	f, err := New()
+	require.NoError(t, err)
 
 	f.AddProcess("chrome.exe")
 

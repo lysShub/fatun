@@ -19,9 +19,9 @@ const (
 
 func (p Proto) IsValid() bool {
 	switch p {
-	case TCP:
+	case TCP, UDP:
 		return true
-	// case ICMP, UDP: // todo: support
+	// case ICMP: // todo: support
 	// 	return true
 	default:
 		return false

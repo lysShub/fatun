@@ -21,7 +21,6 @@ import (
 	"github.com/lysShub/sockit/conn/tcp"
 	dconn "github.com/lysShub/sockit/conn/tcp/divert"
 	"github.com/lysShub/sockit/packet"
-	"github.com/lysShub/sockit/test"
 	"github.com/stretchr/testify/require"
 )
 
@@ -45,9 +44,9 @@ func TestXxxx(t *testing.T) {
 			MTU:    1536,
 			Logger: slog.NewJSONHandler(os.Stdout, nil),
 		}
-		wraw, err := test.WrapPcap(raw, "raw.pcap")
-		require.NoError(t, err)
-		conn, err := sconn.Dial(wraw, &cfg.Config)
+		// wraw, err := test.WrapPcap(raw, "raw.pcap")
+		// require.NoError(t, err)
+		conn, err := sconn.Dial(raw, &cfg.Config)
 		require.NoError(t, err)
 
 		fmt.Println("connect")
@@ -57,7 +56,8 @@ func TestXxxx(t *testing.T) {
 		defer c.Close()
 	}
 
-	f := filter.New()
+	f, err := filter.New()
+	require.NoError(t, err)
 	capture, err := capture.NewCapture(f, &capture.Config{
 		Logger:   slog.New(slog.NewJSONHandler(os.Stderr, nil)),
 		Priority: 1,
@@ -94,8 +94,9 @@ func Test_Capture(t *testing.T) {
 	divert.Load(divert.DLL)
 	defer divert.Release()
 
-	f := filter.New()
-	err := f.AddProcess("curl.exe")
+	f, err := filter.New()
+	require.NoError(t, err)
+	err = f.AddProcess("curl.exe")
 	require.NoError(t, err)
 
 	capture, err := capture.NewCapture(f, nil)

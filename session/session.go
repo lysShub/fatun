@@ -45,23 +45,66 @@ const (
 )
 
 type Session struct {
-	Src   netip.AddrPort
-	Proto itun.Proto
-	Dst   netip.AddrPort
+	SrcAddr netip.Addr
+	SrcPort uint16
+	Proto   itun.Proto
+	DstAddr netip.Addr
+	DstPort uint16
+}
+
+func FromIP(ip []byte) Session {
+	var (
+		s     Session
+		iphdr header.Network
+		hdr   header.Transport
+	)
+	switch header.IPVersion(ip) {
+	case 4:
+		iphdr = header.IPv4(ip)
+		s.SrcAddr = netip.AddrFrom4(iphdr.SourceAddress().As4())
+		s.DstAddr = netip.AddrFrom4(iphdr.DestinationAddress().As4())
+	case 6:
+		iphdr = header.IPv6(ip)
+		s.SrcAddr = netip.AddrFrom16(iphdr.SourceAddress().As16())
+		s.DstAddr = netip.AddrFrom16(iphdr.DestinationAddress().As16())
+	default:
+		return Session{}
+	}
+	switch iphdr.TransportProtocol() {
+	case header.TCPProtocolNumber:
+		s.Proto = itun.TCP
+		hdr = header.TCP(iphdr.Payload())
+	case header.UDPProtocolNumber:
+		s.Proto = itun.UDP
+		hdr = header.UDP(iphdr.Payload())
+	default:
+		return Session{}
+	}
+	s.SrcPort = hdr.SourcePort()
+	s.DstPort = hdr.DestinationPort()
+	return s
 }
 
 func (s Session) IsValid() bool {
-	return s.Src.IsValid() &&
+	return s.SrcAddr.IsValid() &&
 		s.Proto.IsValid() &&
-		s.Dst.IsValid()
+		s.DstAddr.IsValid()
+}
+
+func (s Session) Src() netip.AddrPort {
+	return netip.AddrPortFrom(s.SrcAddr, s.SrcPort)
+}
+
+func (s Session) Dst() netip.AddrPort {
+	return netip.AddrPortFrom(s.DstAddr, s.DstPort)
 }
 
 func (s Session) String() string {
-	return fmt.Sprintf("%s:%s->%s", s.Proto, s.Src, s.Dst)
+	return fmt.Sprintf("%s:%s->%s", s.Proto, s.Src(), s.Dst())
 }
 
 func (s Session) IPVersion() int {
-	if s.Src.Addr().Is4() {
+	if s.SrcAddr.Is4() {
 		return 4
 	}
 	return 6
@@ -82,7 +125,7 @@ func (s *Session) MinPacketSize() int {
 		panic("")
 	}
 
-	if s.Src.Addr().Is4() {
+	if s.SrcAddr.Is4() {
 		minSize += header.IPv4MinimumSize
 	} else {
 		minSize += header.IPv6MinimumSize
