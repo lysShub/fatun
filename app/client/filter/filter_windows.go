@@ -99,7 +99,7 @@ func (f *filter) Hit(ip []byte) (bool, error) {
 			port:  hdr.SourcePort(),
 		}
 		f.processMu.RLock()
-		// 问题： 使用GetXxxExtenTable中的local有可能是为指定地址，纵使实际进程的socket已经bind了。
+		// 问题： 使用GetExtendedXxxTable中的local有可能是为指定地址，纵使实际进程的socket已经bind了。
 		hited, has := f.processMap[addr]
 		f.processMu.RUnlock()
 		if has {
