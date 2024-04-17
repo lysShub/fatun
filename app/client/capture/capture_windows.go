@@ -5,18 +5,18 @@ package capture
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
+	"net"
 	"net/netip"
 	"os"
 	"strings"
-	"sync"
 	"sync/atomic"
 
 	"github.com/lysShub/divert-go"
 	"github.com/lysShub/itun"
 	"github.com/lysShub/itun/app/client/filter"
 	sess "github.com/lysShub/itun/session"
-	"github.com/lysShub/sockit/errorx"
 	"github.com/lysShub/sockit/helper/ipstack"
 	"github.com/lysShub/sockit/packet"
 
@@ -28,58 +28,41 @@ import (
 )
 
 type capture struct {
-	opt *Option
+	opt *Config
+
+	handle *divert.Handle
+	addr   divert.Address
 
 	hitter filter.Hitter
 
-	captures   map[sess.Session]*session
-	capturesMu sync.RWMutex
-
-	sessCh chan *session
-
-	closeErr  atomic.Pointer[error]
-	srvCtx    context.Context
-	srvCancel context.CancelFunc
+	closeErr atomic.Pointer[error]
 }
 
 var _ Capture = (*capture)(nil)
 
-func newCapture(hit filter.Hitter, opt *Option) *capture {
+func newCapture(hit filter.Hitter, opt *Config) (*capture, error) {
 	var c = &capture{
-		opt: opt,
-
+		opt:    opt,
 		hitter: hit,
-
-		captures: make(map[sess.Session]*session, 16),
-		sessCh:   make(chan *session, 16),
 	}
-	c.srvCtx, c.srvCancel = context.WithCancel(context.Background())
 
-	go c.tcpService()
-	// go c.udpService()
-	return c
-}
+	// for performance, only capture tcp.Syn packet
+	// todo: support icmp
+	var filter = "outbound and !loopback and ip and (tcp.Syn or udp)"
 
-func (s *capture) Close() error {
-	s.close(os.ErrClosed)
-	return nil
+	var err error
+	c.handle, err = divert.Open(filter, divert.Network, opt.Priority, 0)
+	if err != nil {
+		return nil, c.close(err)
+	}
+
+	return c, nil
 }
 
 func (s *capture) close(cause error) error {
 	if s.closeErr.CompareAndSwap(nil, &os.ErrClosed) {
-		s.srvCancel()
-		close(s.sessCh)
-
-		var cs []*session
-		s.capturesMu.Lock()
-		for _, e := range s.captures {
-			cs = append(cs, e)
-		}
-		clear(s.captures)
-		s.capturesMu.Unlock()
-
-		for _, e := range cs {
-			if err := e.Close(); err != nil {
+		if s.handle != nil {
+			if err := s.handle.Close(); err != nil {
 				cause = err
 			}
 		}
@@ -92,189 +75,104 @@ func (s *capture) close(cause error) error {
 	return *s.closeErr.Load()
 }
 
-func (s *capture) Get(ctx context.Context) (Session, error) {
-	select {
-	case sess, ok := <-s.sessCh:
-		if !ok {
-			return nil, *s.closeErr.Load()
-		}
-		return sess, nil
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	}
-}
-
-func (s *capture) del(sess sess.Session) {
-	s.capturesMu.Lock()
-	defer s.capturesMu.Unlock()
-
-	_, ok := s.captures[sess]
-	if ok {
-		delete(s.captures, sess)
-	}
-}
-
-func (s *capture) tcpService() error {
-	filter := "outbound and !loopback and ip and tcp.Syn"
-	d, err := divert.Open(filter, divert.Network, s.opt.Priority, 0)
-	if err != nil {
-		return s.close(err)
-	}
-
-	var addr divert.Address
-	var p = make([]byte, s.opt.Mtu)
+func (s *capture) Capture(ctx context.Context) (Session, error) {
+	var ip = make([]byte, s.opt.Mtu)
 	for {
-		n, err := d.RecvCtx(s.srvCtx, p, &addr)
+		n, err := s.handle.RecvCtx(ctx, ip[:cap(ip)], &s.addr)
 		if err != nil {
-			return s.close(err)
+			return nil, s.close(err)
+		}
+		ip = ip[:n]
+
+		if getsession(ip).Src.Port() == 12345 {
+			print()
 		}
 
-		ip := header.IPv4(p[:n])
-		tcp := header.TCP(ip.Payload())
-		sess := sess.Session{
-			Src:   netip.AddrPortFrom(toAddr(ip.SourceAddress()), tcp.SourcePort()),
-			Proto: itun.TCP,
-			Dst:   netip.AddrPortFrom(toAddr(ip.DestinationAddress()), tcp.DestinationPort()),
-		}
-
-		if !s.hitter.HitOnce(sess) {
-			if _, err = d.Send(p[:n], outbound); err != nil {
-				return s.close(err)
+		if hit, err := s.hitter.Hit(ip); err != nil {
+			if !errors.Is(err, filter.ErrNotRecord{}) {
+				return nil, s.close(err)
 			}
+			// s.opt.Logger.LogAttrs(ctx, slog.LevelWarn, err.Error(), slog.String("session", getsession(ip).String()))
+			// s.opt.Logger.Warn(err.Error(), errorx.TraceAttr(err))
 		} else {
-			s.capturesMu.RLock()
-			_, ok := s.captures[sess] // todo: HitOnce 不需要查询这个map
-			s.capturesMu.RUnlock()
+			if s := getsession(ip); s.Proto == itun.UDP {
+				fmt.Println("有有有有有有有有有有有有有有有有有有有有", s.String())
+			}
 
-			if !ok {
-				c, err := newSession(s, sess, int(addr.Network().IfIdx), s.opt.Priority+1)
-				if err != nil {
-					s.opt.Logger.Warn(err.Error(), errorx.TraceAttr(err))
-					continue
+			if !hit {
+				if _, err = s.handle.Send(ip[:n], &s.addr); err != nil {
+					return nil, s.close(err)
+				}
+			} else {
+				sess := getsession(ip)
+				if sess.IsValid() {
+					return nil, errors.Errorf("capture invalid ip packet: %s", hex.EncodeToString(ip))
 				}
 
-				// only buff tcp first syn packet
-				c.push(memcpy(p[:n]))
-
-				select {
-				case s.sessCh <- c:
-					s.capturesMu.Lock()
-					s.captures[sess] = c
-					s.capturesMu.Unlock()
-				default:
-					c.Close()
-					s.opt.Logger.Warn("capture接收阻塞")
-				}
+				c, err := newSession(sess, ip, int(s.addr.Network().IfIdx), s.opt.Priority+1)
+				return c, err
 			}
 		}
 	}
 }
 
-func (s *capture) udpService() error {
-	filter := "outbound and !loopback and ip and udp"
-	d, err := divert.Open(filter, divert.Network, s.opt.Priority, 0)
-	if err != nil {
-		return s.close(err)
+func (s *capture) Close() error { return s.close(os.ErrClosed) }
+
+func getsession(ip []byte) sess.Session {
+	var (
+		s     sess.Session
+		iphdr header.Network
+		hdr   header.Transport
+	)
+	switch header.IPVersion(ip) {
+	case 4:
+		iphdr = header.IPv4(ip)
+		s.Src = netip.AddrPortFrom(netip.AddrFrom4(iphdr.SourceAddress().As4()), 0)
+		s.Dst = netip.AddrPortFrom(netip.AddrFrom4(iphdr.DestinationAddress().As4()), 0)
+	case 6:
+		iphdr = header.IPv6(ip)
+		s.Src = netip.AddrPortFrom(netip.AddrFrom16(iphdr.SourceAddress().As16()), 0)
+		s.Dst = netip.AddrPortFrom(netip.AddrFrom16(iphdr.DestinationAddress().As16()), 0)
+	default:
+		return sess.Session{}
 	}
-
-	var addr divert.Address
-	var p = make([]byte, s.opt.Mtu)
-	for {
-		n, err := d.RecvCtx(context.Background(), p, &addr)
-		if err != nil {
-			return s.close(err)
-		}
-
-		ip := header.IPv4(p[:n])
-		udp := header.UDP(ip.Payload())
-		sess := sess.Session{
-			Src:   netip.AddrPortFrom(toAddr(ip.SourceAddress()), udp.SourcePort()),
-			Proto: itun.UDP,
-			Dst:   netip.AddrPortFrom(toAddr(ip.DestinationAddress()), udp.DestinationPort()),
-		}
-
-		if !s.hitter.HitOnce(sess) { // pass
-			if _, err = d.Send(p[:n], outbound); err != nil {
-				return s.close(err)
-			}
-		} else {
-			s.capturesMu.RLock()
-			c, ok := s.captures[sess]
-			s.capturesMu.RUnlock()
-			if !ok {
-				c, err = newSession(s, sess, int(addr.Network().IfIdx), s.opt.Priority+1)
-				if err != nil {
-					s.opt.Logger.Warn(err.Error(), errorx.TraceAttr(err))
-					continue
-				}
-			}
-
-			c.push(memcpy(p[:n]))
-
-			if !ok {
-				select {
-				case s.sessCh <- c:
-					s.capturesMu.Lock()
-					s.captures[sess] = c
-					s.capturesMu.Lock()
-				default:
-					c.Close()
-					s.opt.Logger.Warn("xxx")
-				}
-			}
-		}
+	switch iphdr.TransportProtocol() {
+	case header.TCPProtocolNumber:
+		s.Proto = itun.TCP
+		hdr = header.TCP(iphdr.Payload())
+	case header.UDPProtocolNumber:
+		s.Proto = itun.UDP
+		hdr = header.UDP(iphdr.Payload())
+	default:
+		return sess.Session{}
 	}
-}
-
-func memcpy(src []byte) []byte {
-	tmp := make([]byte, len(src))
-	copy(tmp, src)
-	return tmp
-}
-
-var outbound = &divert.Address{}
-
-func init() {
-	outbound.SetOutbound(true)
-}
-
-func toAddr(a tcpip.Address) netip.Addr {
-	if a.Len() == 4 {
-		return netip.AddrFrom4(a.As4())
-	} else {
-		return netip.AddrFrom16(a.As16())
-	}
+	s.Src = netip.AddrPortFrom(s.Src.Addr(), hdr.SourcePort())
+	s.Dst = netip.AddrPortFrom(s.Dst.Addr(), hdr.SourcePort())
+	return s
 }
 
 type session struct {
-	capture *capture
-	s       sess.Session
-
-	closed atomic.Bool
-
-	// before session work, some packet maybe read by capture
-	prevIPsCh chan []byte
-
+	s sess.Session
 	d *divert.Handle
 
+	initPack    []byte
 	inboundAddr *divert.Address
 	ipstack     *ipstack.IPStack
+
+	closeErr atomic.Pointer[error]
 }
 
 var _ Session = (*session)(nil)
 
-// todo: 要注意创建的session没被使用要自动close
 func newSession(
-	capture *capture, s sess.Session,
+	s sess.Session, initPacket []byte,
 	injectIfIdx int, priority int16,
 ) (*session, error) {
 	var err error
 	var c = &session{
-		capture: capture,
-		s:       s,
+		s: s,
 
-		prevIPsCh: make(chan []byte, 4),
-
+		initPack:    initPacket,
 		inboundAddr: &divert.Address{},
 	}
 	c.inboundAddr.Network().IfIdx = uint32(injectIfIdx)
@@ -296,35 +194,15 @@ func newSession(
 	return c, nil
 }
 
-func (c *session) push(ip []byte) {
-	select {
-	case c.prevIPsCh <- ip:
-	default:
-	}
-}
-
 func (c *session) Capture(ctx context.Context, pkt *packet.Packet) (err error) {
-	b := pkt.Bytes()
-	b = b[:cap(b)]
-
-	select {
-	case ip := <-c.prevIPsCh:
-		hdrn := uint8(0)
-		switch header.IPVersion(ip) {
-		case 4:
-			hdrn = header.IPv4(ip).HeaderLength()
-		case 6:
-			hdrn = header.IPv6MinimumSize
-		default:
-		}
-
-		n := copy(b, ip[hdrn:])
-		pkt.SetData(n)
+	if len(c.initPack) > 0 {
+		pkt.SetData(0).Append(c.initPack)
+		c.initPack = nil
 		return nil
-	default:
 	}
 
-	n, err := c.d.RecvCtx(ctx, b, nil)
+	b := pkt.Bytes()
+	n, err := c.d.RecvCtx(ctx, b[:cap(b)], nil)
 	if err != nil {
 		pkt.SetData(0)
 		return err
@@ -334,7 +212,6 @@ func (c *session) Capture(ctx context.Context, pkt *packet.Packet) (err error) {
 	// todo: ipv6
 	iphdrLen := header.IPv4(pkt.Bytes()).HeaderLength()
 	pkt.SetHead(pkt.Head() + int(iphdrLen))
-
 	return nil
 }
 
@@ -351,11 +228,20 @@ func (c *session) Inject(pkt *packet.Packet) error {
 func (c *session) Session() sess.Session { return c.s }
 func (s *session) String() string        { return s.s.String() }
 
-func (c *session) Close() error {
-	if c.closed.CompareAndSwap(false, true) {
-		c.capture.del(c.s)
-		close(c.prevIPsCh)
-		return errors.WithStack(c.d.Close())
+func (c *session) Close() error { return c.close(nil) }
+
+func (c *session) close(cause error) error {
+	if c.closeErr.CompareAndSwap(nil, &net.ErrClosed) {
+		if c.d != nil {
+			if err := c.d.Close(); cause != nil {
+				cause = err
+			}
+		}
+
+		if cause != nil {
+			c.closeErr.Store(&cause)
+		}
+		return cause
 	}
-	return nil
+	return *c.closeErr.Load()
 }

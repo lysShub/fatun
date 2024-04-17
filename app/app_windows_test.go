@@ -19,8 +19,9 @@ import (
 	"github.com/lysShub/itun/app/client/filter"
 	"github.com/lysShub/itun/sconn"
 	"github.com/lysShub/sockit/conn/tcp"
-	sd "github.com/lysShub/sockit/conn/tcp/divert"
+	dconn "github.com/lysShub/sockit/conn/tcp/divert"
 	"github.com/lysShub/sockit/packet"
+	"github.com/lysShub/sockit/test"
 	"github.com/stretchr/testify/require"
 )
 
@@ -30,14 +31,11 @@ func TestXxxx(t *testing.T) {
 	ctx := context.Background()
 	fmt.Println("启动")
 
-	f := filter.NewMock("chrome.exe")
-	// f := filter.NewMock("curl.exe")
-	capture, err := capture.NewCapture(f)
-	require.NoError(t, err)
-	defer capture.Close()
-
 	var c *client.Client
-	if true {
+	{
+		raw, err := tcp.Connect(caddr, saddr, dconn.Priority(1))
+		require.NoError(t, err)
+
 		cfg := &app.Config{
 			Config: sconn.Config{
 				PrevPackets:  pps,
@@ -47,25 +45,33 @@ func TestXxxx(t *testing.T) {
 			MTU:    1536,
 			Logger: slog.NewJSONHandler(os.Stdout, nil),
 		}
-
-		raw, err := tcp.Connect(caddr, saddr, sd.Priority(1))
+		wraw, err := test.WrapPcap(raw, "raw.pcap")
 		require.NoError(t, err)
-		// wraw, err := test.WrapPcap(raw, "raw.pcap")
-		// require.NoError(t, err)
-		conn, err := sconn.Dial(raw, &cfg.Config)
+		conn, err := sconn.Dial(wraw, &cfg.Config)
 		require.NoError(t, err)
 
 		fmt.Println("connect")
 
-		c, err = client.NewClient(ctx, conn, cfg)
+		c, err := client.NewClient(ctx, conn, cfg)
 		require.NoError(t, err)
 		defer c.Close()
-
 	}
+
+	f := filter.New()
+	capture, err := capture.NewCapture(f, &capture.Config{
+		Logger:   slog.New(slog.NewJSONHandler(os.Stderr, nil)),
+		Priority: 1,
+		Mtu:      1536,
+	})
+	require.NoError(t, err)
+	defer capture.Close()
+	// err = f.AddProcess("chrome.exe")
+	err = f.AddProcess("curl.exe")
+	require.NoError(t, err)
 
 	fmt.Println("prepared")
 	for {
-		s, err := capture.Get(ctx)
+		s, err := capture.Capture(ctx)
 		require.NoError(t, err)
 
 		fmt.Println("Capture Session", s.String())
@@ -88,14 +94,16 @@ func Test_Capture(t *testing.T) {
 	divert.Load(divert.DLL)
 	defer divert.Release()
 
-	f := filter.NewMock("curl.exe")
+	f := filter.New()
+	err := f.AddProcess("curl.exe")
+	require.NoError(t, err)
 
-	capture, err := capture.NewCapture(f)
+	capture, err := capture.NewCapture(f, nil)
 	require.NoError(t, err)
 	defer capture.Close()
 
 	for {
-		s, err := capture.Get(context.Background())
+		s, err := capture.Capture(context.Background())
 		require.NoError(t, err)
 		fmt.Println(s.Session().String())
 

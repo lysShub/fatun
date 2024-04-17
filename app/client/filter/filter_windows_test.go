@@ -6,16 +6,15 @@ import (
 	"time"
 
 	"github.com/lysShub/divert-go"
-	"github.com/lysShub/itun"
 )
 
 func Test_Filter(t *testing.T) {
 	divert.Load(divert.DLL)
 	defer divert.Release()
 
-	f, _ := NewFilter()
+	f := New()
 
-	f.AddRule("chrome.exe", itun.TCP)
+	f.AddProcess("chrome.exe")
 
 	time.Sleep(time.Hour)
 
