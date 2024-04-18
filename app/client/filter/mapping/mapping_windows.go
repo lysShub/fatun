@@ -8,6 +8,7 @@ import (
 	"os"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/lysShub/divert-go"
 	"github.com/lysShub/itun"
@@ -19,8 +20,9 @@ import (
 type mapping struct {
 	handle *divert.Handle
 
-	addrs   map[session.Session]elem
-	addrsMu sync.RWMutex
+	addrs      map[session.Session]elem
+	addrsMu    sync.RWMutex
+	addTrigger *sync.Cond
 
 	closeErr atomic.Pointer[error]
 }
@@ -34,14 +36,16 @@ var _ Mapping = (*mapping)(nil)
 
 func newMapping() (*mapping, error) {
 	var m = &mapping{addrs: map[session.Session]elem{}}
+	m.addTrigger = sync.NewCond(&m.addrsMu)
 
 	var err error
-	m.handle, err = divert.Open("true", divert.Flow, 0, divert.Sniff|divert.ReadOnly)
+	m.handle, err = divert.Open("true", divert.Socket, 0, divert.Sniff|divert.ReadOnly)
 	if err != nil {
 		return nil, err
 	}
 
 	go m.service()
+	go m.trigger()
 	return m, nil
 }
 
@@ -61,7 +65,35 @@ func (m *mapping) close(cause error) error {
 	return *m.closeErr.Load()
 }
 
+func (m *mapping) trigger() {
+	for m.closeErr.Load() == nil {
+		m.addTrigger.Broadcast()
+		time.Sleep(time.Millisecond * 250)
+	}
+}
+
 func (m *mapping) service() error {
+	go func() {
+		for i := 0; ; i++ {
+			time.Sleep(time.Minute)
+
+			fh, err := os.Create(fmt.Sprintf("mapping%02d.txt", i))
+			if err != nil {
+				panic(err)
+			}
+
+			m.addrsMu.Lock()
+			for s, e := range m.addrs {
+				v := fmt.Sprintln(s.String(), "		", e.name)
+				fh.WriteString(v)
+			}
+			m.addrsMu.Unlock()
+			fh.Close()
+
+			os.Exit(0)
+		}
+	}()
+
 	var addr = &divert.Address{}
 	var err error
 	for {
@@ -75,19 +107,12 @@ func (m *mapping) service() error {
 		}
 
 		switch addr.Event {
-		case divert.FlowEstablishd:
-			pid := addr.Flow().ProcessId
-
+		case divert.SocketBind, divert.SocketConnect, divert.SocketListen, divert.SocketAccept:
+			pid := addr.Socket().ProcessId
 			name, err := (&process.Process{Pid: int32(pid)}).Name()
 			if err != nil {
 				return m.close(errors.WithStack(err))
 			}
-			fmt.Println("add", name, func() string {
-				if addr.Outbound() {
-					return "outbound"
-				}
-				return "inbound"
-			}())
 
 			m.addrsMu.Lock()
 			m.addrs[getsession(addr)] = elem{
@@ -95,7 +120,8 @@ func (m *mapping) service() error {
 				name: name,
 			}
 			m.addrsMu.Unlock()
-		case divert.FlowDeleted:
+			m.addTrigger.Broadcast()
+		case divert.SocketClose:
 			m.addrsMu.Lock()
 			delete(m.addrs, getsession(addr))
 			m.addrsMu.Unlock()
@@ -103,13 +129,13 @@ func (m *mapping) service() error {
 			if addr.Timestamp == 0 && addr.Event == 0 {
 				continue // todo: divert can't return null result
 			}
-			return m.close(errors.Errorf("divert flow event %d", addr.Event))
+			return m.close(errors.Errorf("divert Socket event %d", addr.Event))
 		}
 	}
 }
 
 func getsession(addr *divert.Address) session.Session {
-	f := addr.Flow()
+	f := addr.Socket()
 	return session.Session{
 		SrcAddr: f.LocalAddr(), SrcPort: f.LocalPort,
 		Proto:   itun.Proto(f.Protocol),
@@ -117,14 +143,31 @@ func getsession(addr *divert.Address) session.Session {
 	}
 }
 
+// todo: 需要处理未指定IP等问题
+func (m *mapping) get(s session.Session) elem {
+	m.addrsMu.RLock()
+	defer m.addrsMu.RUnlock()
+	return m.addrs[s]
+}
+
 func (m *mapping) Name(s session.Session) (string, error) {
 	if e := m.closeErr.Load(); e != nil {
 		return "", *e
 	}
-	m.addrsMu.RLock()
-	defer m.addrsMu.RUnlock()
+	if name := m.get(s).name; name != "" {
+		return name, nil
+	}
 
-	return m.addrs[s].name, nil
+	// wait period
+	for i := 0; i < 4; i++ {
+		m.addrsMu.Lock()
+		m.addTrigger.Wait()
+		m.addrsMu.Unlock()
+		if name := m.get(s).name; name != "" {
+			return name, nil
+		}
+	}
+	return "", nil
 }
 
 func (m *mapping) Pid(s session.Session) (uint32, error) {
