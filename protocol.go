@@ -29,7 +29,7 @@ func (p Proto) Valid() bool {
 }
 
 func (p Proto) IsICMP() bool {
-	return p == ICMP || p == 58
+	return p == ICMP || p == ICMPV6
 }
 
 type ErrInvalidProto Proto

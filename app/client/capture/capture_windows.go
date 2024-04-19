@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"strings"
 	"sync/atomic"
 
 	"github.com/lysShub/divert-go"
@@ -135,14 +134,14 @@ func newSession(
 
 	filter := fmt.Sprintf(
 		"%s and localAddr=%s and localPort=%d and remoteAddr=%s and remotePort=%d",
-		strings.ToLower(s.Proto.String()), s.SrcAddr, s.SrcPort, s.DstAddr, s.DstPort,
+		s.Proto.String(), s.Src.Addr().String(), s.Src.Port(), s.Dst.Addr().String(), s.Dst.Port(),
 	)
 
 	c.d, err = divert.Open(filter, divert.Network, priority, 0)
 	if err != nil {
 		return nil, err
 	}
-	c.ipstack, err = ipstack.New(s.SrcAddr, s.DstAddr, tcpip.TransportProtocolNumber(s.Proto))
+	c.ipstack, err = ipstack.New(s.Src.Addr(), s.Dst.Addr(), tcpip.TransportProtocolNumber(s.Proto))
 	if err != nil {
 		return nil, err
 	}

@@ -47,7 +47,7 @@ func newSession(
 		session: sess,
 	}
 
-	locPort, err := proxyer.Adapter().GetPort(sess.Proto, sess.Dst())
+	locPort, err := proxyer.Adapter().GetPort(sess.Proto, sess.Dst)
 	if err != nil {
 		return nil, err
 	} else {
@@ -55,9 +55,9 @@ func newSession(
 	}
 
 	s.srvCtx, s.srvCancel = context.WithCancel(context.Background())
-	s.sender, err = sender.NewSender(s.locAddr, sess.Proto, sess.Dst())
+	s.sender, err = sender.NewSender(s.locAddr, sess.Proto, sess.Dst)
 	if err != nil {
-		proxyer.Adapter().DelPort(sess.Proto, locPort, sess.Dst())
+		proxyer.Adapter().DelPort(sess.Proto, locPort, sess.Dst)
 		return nil, err
 	}
 
@@ -82,7 +82,7 @@ func (s *Session) close(cause error) error {
 		sess := s.session
 		if s.proxyer != nil {
 			if err := s.proxyer.Adapter().DelPort(
-				sess.Proto, s.locAddr.Port(), sess.Dst(),
+				sess.Proto, s.locAddr.Port(), sess.Dst,
 			); err != nil {
 				cause = err
 			}
@@ -117,9 +117,9 @@ func (s *Session) downlinkService() error {
 
 		switch s.session.Proto {
 		case itun.TCP:
-			header.TCP(seg.Bytes()).SetDestinationPortWithChecksumUpdate(s.session.SrcPort)
+			header.TCP(seg.Bytes()).SetDestinationPortWithChecksumUpdate(s.session.Src.Port())
 		case itun.UDP:
-			header.UDP(seg.Bytes()).SetDestinationPortWithChecksumUpdate(s.session.SrcPort)
+			header.UDP(seg.Bytes()).SetDestinationPortWithChecksumUpdate(s.session.Src.Port())
 		default:
 		}
 
@@ -164,4 +164,4 @@ func (s *Session) keepalive() {
 }
 
 func (s *Session) LocalAddr() netip.AddrPort  { return s.locAddr }
-func (s *Session) RemoteAddr() netip.AddrPort { return s.session.Dst() }
+func (s *Session) RemoteAddr() netip.AddrPort { return s.session.Dst }

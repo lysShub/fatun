@@ -1,3 +1,6 @@
+//go:build windows
+// +build windows
+
 package main
 
 import (
@@ -49,6 +52,7 @@ func main() {
 	divert.Load(divert.DLL)
 	defer divert.Release()
 
+	var _ = header.TCPProtocolNumber
 	var t = test.T()
 
 	ctx := context.Background()
