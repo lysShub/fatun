@@ -1,30 +1,46 @@
 package filter
 
 import (
-	"github.com/lysShub/itun"
-	"github.com/lysShub/itun/session"
+	"sync"
+
+	"github.com/lysShub/itun/app/client/filter/mapping"
 )
 
-// Hitter validate the session is hit rule.
 type Hitter interface {
-
-	// todo: hit的传入参数应该是ip包本身
-	// todo: hit应该返回三种状态：1.命中  2. 未命中  3. 未查询到（capture应该直接丢弃此数据包）
-
-	//
-	Hit(s session.Session) bool
-
-	// ？忘了这个和hit有啥区别？
-	HitOnce(s session.Session) bool
+	// Hit filter outbound ip packet
+	Hit(ip []byte) (bool, error)
 }
+
+type ErrNotRecord struct{}
+
+func (ErrNotRecord) Error() string { return "filter not record" }
+
+func (ErrNotRecord) Temporary() bool { return true }
 
 type Filter interface {
 	Hitter
 
-	AddDefaultRule() error
-	DelDefaultRule() error
+	// default filter rule, will hit tcp connection when send secondary  SYN
+	EnableDefault() error
+	DisableDefault() error
 
-	// todo: simple
-	AddRule(process string, proto itun.Proto) error
-	DelRule(process string, proto itun.Proto) error
+	AddProcess(process string) error
+	DelProcess(process string) error
 }
+
+func New() (Filter, error) {
+	var err error
+	GlobalOnce.Do(func() {
+		Global, err = mapping.New()
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return newFilter(), nil
+}
+
+var (
+	Global     mapping.Mapping
+	GlobalOnce sync.Once
+)

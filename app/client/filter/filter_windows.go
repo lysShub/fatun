@@ -1,120 +1,195 @@
 package filter
 
 import (
-	"fmt"
+	"encoding/hex"
 	"net/netip"
+	"slices"
 	"sync"
-	"syscall"
+	"sync/atomic"
+	"time"
 
-	"github.com/lysShub/itun"
+	"github.com/lysShub/itun/app/client/filter/mapping"
 	"github.com/lysShub/itun/session"
+	"github.com/lysShub/sockit/test"
+	"github.com/lysShub/sockit/test/debug"
 	"github.com/pkg/errors"
-	"github.com/shirou/gopsutil/v3/net"
-	"github.com/shirou/gopsutil/v3/process"
+	"github.com/stretchr/testify/require"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
 type filter struct {
-	// tood: delete
-	conns   map[session.Session]bool // hited
-	connsMu sync.RWMutex
+	// default rule
+	defaultEnable atomic.Bool
+	tcps          *tcpSyn
+
+	// process rule
+	processEnable atomic.Bool
+	processes     []string
+	processMu     sync.RWMutex
 }
 
-func NewFilter() (*filter, error) {
-	f := &filter{
-		conns: make(map[session.Session]bool, 16),
+func newFilter() *filter {
+	return &filter{
+		tcps: newAddrSyn(time.Second * 15),
 	}
-	return f, nil
 }
 
-func (f *filter) Hit(s session.Session) bool {
-	f.connsMu.RLock()
-	_, ok := f.conns[s]
-	f.connsMu.RUnlock()
-	return ok
-}
-
-func (f *filter) HitOnce(s session.Session) bool {
-	f.connsMu.RLock()
-	hited, ok := f.conns[s]
-	f.connsMu.RUnlock()
-	if ok {
-		return !hited
+func (f *filter) Hit(ip []byte) (bool, error) {
+	ep := mapping.FromIP(ip)
+	if !ep.Valid() {
+		session.FromIP(ip)
+		return false, errors.Errorf("capture invalid ip packet: %s", hex.EncodeToString(ip))
+	}
+	if debug.Debug() {
+		require.True(test.T(), ep.Addr.Addr().IsPrivate() || ep.Addr.Addr().IsUnspecified() || ep.Addr.Addr().IsLoopback())
 	}
 
-	return false
+	if f.defaultEnable.Load() {
+		// // todo: from config
+		// notice: require filter is capture-read(not sniff-read) tcp SYN packet
+		const maxsyn = 3
+
+		if ep.Proto == header.TCPProtocolNumber {
+			n := f.tcps.Upgrade(ep.Addr)
+			if n >= maxsyn {
+				return true, nil
+			}
+		}
+	}
+
+	if f.processEnable.Load() {
+		name, err := Global.Name(ep)
+		if err != nil {
+			return false, err
+		} else if name == "" {
+			return false, errors.WithStack(ErrNotRecord{})
+		}
+
+		f.processMu.RLock()
+		defer f.processMu.RUnlock()
+		return slices.Contains(f.processes, name), nil
+	}
+
+	return false, nil
 }
 
-func (f *filter) AddDefaultRule() error {
-	return errors.New("not implement")
+func (f *filter) EnableDefault() error {
+	f.defaultEnable.Store(true)
+	return nil
 }
-
-func (f *filter) DelDefaultRule() error {
-	return errors.New("not implement")
+func (f *filter) DisableDefault() error {
+	f.defaultEnable.Store(false)
+	return nil
 }
+func (f *filter) AddProcess(process string) error {
+	f.processMu.Lock()
+	defer f.processMu.Unlock()
 
-func (f *filter) AddRule(process string, proto itun.Proto) error {
-	go f.processService(process, proto)
+	if !slices.Contains(f.processes, process) {
+		f.processes = append(f.processes, process)
+		f.processEnable.Store(true)
+	}
+	return nil
+}
+func (f *filter) DelProcess(process string) error {
+	f.processMu.Lock()
+	defer f.processMu.Unlock()
+
+	f.processes = slices.DeleteFunc(f.processes,
+		func(s string) bool { return s == process },
+	)
+	if len(f.processes) == 0 {
+		f.processEnable.Store(false)
+	}
 	return nil
 }
 
-func (f *filter) DelRule(process string, proto itun.Proto) error {
-	return errors.New("not implement")
+type tcpSyn struct {
+	mu        sync.RWMutex
+	addrs     map[netip.AddrPort]uint8
+	times     *heap[info]
+	keepalive time.Duration
 }
 
-func (f *filter) Close() error {
-	return errors.New("not implement")
-}
-
-func (f *filter) processService(name string, proto itun.Proto) {
-
-	ps, err := process.Processes()
-	if err != nil {
-		panic(err)
-	}
-
-	var pids []int32
-	for _, e := range ps {
-		if n, _ := e.Name(); n == name {
-			pids = append(pids, e.Pid)
-		}
-	}
-
-	if len(pids) == 0 {
-		// todo: wait process start
-		panic("wait process start")
-	}
-
-	fmt.Println(pids)
-
-	for _, e := range pids {
-		ns, err := net.ConnectionsPid("tcp4", e) // strings.ToLower(proto.String())
-		if err != nil {
-			continue
-		}
-		for _, n := range ns {
-			s := toSession(n)
-
-			f.connsMu.Lock()
-			f.conns[s] = false // todo: validate
-			f.connsMu.Unlock()
-		}
+func newAddrSyn(keepalive time.Duration) *tcpSyn {
+	return &tcpSyn{
+		addrs:     map[netip.AddrPort]uint8{},
+		times:     NewHeap[info](),
+		keepalive: keepalive,
 	}
 }
 
-func toSession(stat net.ConnectionStat) session.Session {
-	var p itun.Proto
-	switch stat.Type {
-	case syscall.SOCK_STREAM:
-		p = itun.TCP
-	case syscall.SOCK_DGRAM:
-		p = itun.UDP
-	default:
-		panic("")
+func (f *tcpSyn) Upgrade(addr netip.AddrPort) uint8 {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	// clear expired addr
+	i := f.times.Peek()
+	for i.valid() && time.Since(i.Time) > f.keepalive {
+		delete(f.addrs, f.times.Pop().AddrPort)
+		i = f.times.Peek()
 	}
 
-	return session.Session{
-		Src:   netip.AddrPortFrom(netip.MustParseAddr(stat.Laddr.IP), uint16(stat.Laddr.Port)),
-		Proto: p,
-		Dst:   netip.AddrPortFrom(netip.MustParseAddr(stat.Raddr.IP), uint16(stat.Raddr.Port)),
+	n, has := f.addrs[addr]
+	f.addrs[addr] = n + 1
+	if !has {
+		f.times.Put(info{addr, time.Now()})
 	}
+	return n + 1
+}
+
+type info struct {
+	netip.AddrPort
+	time.Time
+}
+
+func (i info) valid() bool {
+	return i.Time != time.Time{} && i.AddrPort.IsValid()
+}
+
+type heap[T info | int] struct {
+	vals []T
+	s, n int // start-idx, heap-size
+}
+
+func NewHeap[T info | int]() *heap[T] {
+	return &heap[T]{
+		vals: make([]T, initHeapCap),
+	}
+}
+
+const initHeapCap = 16
+
+func (h *heap[T]) Put(t T) {
+	i := (h.s + h.n) % len(h.vals)
+	h.vals[i] = t
+	h.n += 1
+
+	if len(h.vals) == h.n {
+		h.grow()
+	}
+}
+
+func (h *heap[T]) Pop() T {
+	if h.n == 0 {
+		return *new(T)
+	}
+
+	defer func() { h.s = (h.s + 1) % len(h.vals) }()
+	h.n -= 1
+	return h.vals[h.s]
+}
+
+func (h *heap[T]) Peek() T {
+	return h.vals[h.s]
+}
+
+func (h *heap[T]) grow() {
+	tmp := make([]T, len(h.vals)*2)
+
+	n1 := copy(tmp, h.vals[h.s:])
+	copy(tmp[n1:h.n], h.vals[0:])
+
+	h.vals = tmp
+	h.s = 0
 }

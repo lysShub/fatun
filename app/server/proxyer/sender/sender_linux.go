@@ -10,7 +10,6 @@ import (
 
 	"github.com/pkg/errors"
 
-	"github.com/lysShub/itun"
 	"github.com/lysShub/sockit/conn"
 	"github.com/lysShub/sockit/helper/ipstack"
 	"github.com/lysShub/sockit/packet"
@@ -30,7 +29,7 @@ type sender struct {
 	pseudoSum1 uint16
 }
 
-func newSender(loc netip.AddrPort, proto itun.Proto, dst netip.AddrPort) (*sender, error) {
+func newSender(loc netip.AddrPort, proto tcpip.TransportProtocolNumber, dst netip.AddrPort) (*sender, error) {
 	ipstack, err := ipstack.New(
 		loc.Addr(), dst.Addr(),
 		tcpip.TransportProtocolNumber(proto),
@@ -40,7 +39,7 @@ func newSender(loc netip.AddrPort, proto itun.Proto, dst netip.AddrPort) (*sende
 	}
 
 	switch proto {
-	case itun.TCP:
+	case header.TCPProtocolNumber:
 		tcp, err := tcp.Connect(
 			loc, dst,
 			conn.UsedPort(), // PortAdapter bind the port
@@ -49,10 +48,10 @@ func newSender(loc netip.AddrPort, proto itun.Proto, dst netip.AddrPort) (*sende
 			return nil, err
 		}
 
-		tcp, err = test.WrapPcap(tcp, "sender.pcap")
-		if err != nil {
-			panic(err)
-		}
+		// tcp, err = test.WrapPcap(tcp, "sender.pcap")
+		// if err != nil {
+		// 	panic(err)
+		// }
 
 		pseudoSum1 := header.PseudoHeaderChecksum(
 			header.TCPProtocolNumber,

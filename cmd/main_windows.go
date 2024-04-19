@@ -1,32 +1,60 @@
 //go:build windows
 // +build windows
 
-package app_test
+package main
 
 import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/netip"
 	"os"
-	"testing"
-
-	_ "net/http/pprof"
 
 	"github.com/lysShub/divert-go"
 	"github.com/lysShub/itun/app"
 	"github.com/lysShub/itun/app/client"
 	"github.com/lysShub/itun/app/client/capture"
 	"github.com/lysShub/itun/app/client/filter"
+	"github.com/lysShub/itun/crypto"
 	"github.com/lysShub/itun/sconn"
 	"github.com/lysShub/sockit/conn/tcp"
 	dconn "github.com/lysShub/sockit/conn/tcp/divert"
-	"github.com/lysShub/sockit/packet"
+	"github.com/lysShub/sockit/test"
 	"github.com/stretchr/testify/require"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
-func TestXxxx(t *testing.T) {
+var (
+	caddr = netip.AddrPortFrom(netip.AddrFrom4([4]byte{
+		// 172, 25, 32, 1,
+		172, 24, 128, 1,
+	}), 19986)
+
+	saddr = netip.AddrPortFrom(netip.AddrFrom4([4]byte{
+		// 172, 25, 38, 4,
+		172, 24, 131, 26,
+	}), 8080)
+)
+
+var sign = &sconn.Sign{
+	Sign: []byte("0123456789abcdef"),
+	Parser: func(sign []byte) (crypto.Key, error) {
+		return crypto.Key{9: 1}, nil
+	},
+}
+
+var pps = sconn.PrevPackets{
+	header.TCP("hello"),
+	header.TCP("world"),
+}
+
+func main() {
 	divert.Load(divert.DLL)
 	defer divert.Release()
+
+	var _ = header.TCPProtocolNumber
+	var t = test.T()
+
 	ctx := context.Background()
 	fmt.Println("启动")
 
@@ -87,35 +115,5 @@ func TestXxxx(t *testing.T) {
 		} else {
 			fmt.Println("AddProxy", s.String())
 		}
-	}
-}
-
-func Test_Capture(t *testing.T) {
-	divert.Load(divert.DLL)
-	defer divert.Release()
-
-	f, err := filter.New()
-	require.NoError(t, err)
-	err = f.AddProcess("curl.exe")
-	require.NoError(t, err)
-
-	capture, err := capture.NewCapture(f, nil)
-	require.NoError(t, err)
-	defer capture.Close()
-
-	for {
-		s, err := capture.Capture(context.Background())
-		require.NoError(t, err)
-		fmt.Println(s.Session().String())
-
-		go func() {
-			var b = packet.Make(0, 1536)
-			var ctx = context.Background()
-
-			for {
-				err := s.Capture(ctx, b.SetHead(0))
-				require.NoError(t, err)
-			}
-		}()
 	}
 }

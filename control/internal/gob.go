@@ -36,7 +36,7 @@ type EndConfigResp struct{}
 type AddSessionReq = session.Session
 type AddSessionResp struct {
 	ID  session.ID
-	Err error
+	Err string
 }
 
 type DelSessionReq = session.ID

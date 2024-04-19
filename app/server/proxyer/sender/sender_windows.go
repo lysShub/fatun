@@ -7,10 +7,9 @@ import (
 	"net/netip"
 
 	"github.com/pkg/errors"
-
-	"github.com/lysShub/itun"
+	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
-func newSender(loc netip.AddrPort, proto itun.Proto, dst netip.AddrPort) (Sender, error) {
+func newSender(loc netip.AddrPort, proto tcpip.TransportProtocolNumber, dst netip.AddrPort) (Sender, error) {
 	return nil, errors.New("not support")
 }

@@ -7,7 +7,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/lysShub/itun"
 	"github.com/lysShub/itun/app"
 	"github.com/lysShub/itun/app/client/capture"
 	cs "github.com/lysShub/itun/app/client/session"
@@ -16,6 +15,7 @@ import (
 	"github.com/lysShub/itun/session"
 	"github.com/lysShub/sockit/errorx"
 	"github.com/lysShub/sockit/packet"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 
 	"github.com/pkg/errors"
 )
@@ -23,6 +23,7 @@ import (
 type Client struct {
 	cfg    *app.Config
 	logger *slog.Logger
+	self   session.Session
 
 	conn *sconn.Conn
 
@@ -42,6 +43,11 @@ func NewClient(ctx context.Context, conn *sconn.Conn, cfg *app.Config) (*Client,
 			{Key: "local", Value: slog.StringValue(conn.LocalAddr().String())},
 			{Key: "proxyer", Value: slog.StringValue(conn.RemoteAddr().String())},
 		})),
+		self: session.Session{
+			Src:   conn.LocalAddr(),
+			Proto: header.TCPProtocolNumber,
+			Dst:   conn.RemoteAddr(),
+		},
 		conn:    conn,
 		sessMgr: cs.NewSessionMgr(),
 	}
@@ -124,13 +130,8 @@ func (c *Client) AddSession(ctx context.Context, s capture.Session) error {
 	ctx, cancel := context.WithTimeout(ctx, time.Second*3)
 	defer cancel()
 
-	self := session.Session{
-		Src:   c.conn.LocalAddr(),
-		Proto: itun.TCP,
-		Dst:   c.conn.RemoteAddr(),
-	}
-	if s.Session() == self {
-		return errors.Errorf("can't proxy self %s", self.String())
+	if s.Session() == c.self {
+		return errors.Errorf("can't proxy self %s", c.self.String())
 	}
 
 	resp, err := c.ctr.AddSession(ctx, s.Session())
@@ -139,8 +140,8 @@ func (c *Client) AddSession(ctx context.Context, s capture.Session) error {
 			return *c.closeErr.Load()
 		}
 		return err
-	} else if resp.Err != nil {
-		return resp.Err
+	} else if resp.Err != "" {
+		return errors.New(resp.Err)
 	} else {
 		return c.sessMgr.Add(sessionImplPtr(c), s, resp.ID)
 	}

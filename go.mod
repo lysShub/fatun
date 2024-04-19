@@ -2,12 +2,13 @@ module github.com/lysShub/itun
 
 go 1.21
 
-require golang.org/x/sys v0.16.0
+require golang.org/x/sys v0.18.0
 
 require (
 	github.com/lysShub/divert-go v0.0.0-20240415114628-03a432d8c814
-	github.com/lysShub/sockit v0.0.0-20240414130457-339c3aea1cd2
-	github.com/stretchr/testify v1.8.4
+	github.com/lysShub/sockit v0.0.0-20240419043520-05f1850172bb
+	github.com/shoenig/test v0.6.4
+	github.com/stretchr/testify v1.9.0
 	golang.org/x/net v0.20.0
 	golang.org/x/sync v0.5.0
 	gvisor.dev/gvisor v0.0.0-20230916030846-1d82564559db
@@ -16,6 +17,7 @@ require (
 require (
 	github.com/go-ole/go-ole v1.2.6 // indirect
 	github.com/go-ping/ping v1.1.0 // indirect
+	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/google/gopacket v1.1.19 // indirect
 	github.com/google/uuid v1.4.0 // indirect
 	github.com/josharian/native v1.0.0 // indirect
@@ -29,7 +31,7 @@ require (
 	github.com/shoenig/go-m1cpu v0.1.6 // indirect
 	github.com/tklauser/go-sysconf v0.3.12 // indirect
 	github.com/tklauser/numcpus v0.6.1 // indirect
-	github.com/yusufpapurcu/wmi v1.2.3 // indirect
+	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 )
 
 require (
@@ -38,7 +40,7 @@ require (
 	github.com/lysShub/wintun-go v0.0.0-20240410130619-383598c11ea1 // indirect
 	github.com/pkg/errors v0.9.1
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	github.com/shirou/gopsutil/v3 v3.24.1
+	github.com/shirou/gopsutil/v3 v3.24.3
 	golang.org/x/time v0.5.0 // indirect
 	golang.zx2c4.com/wireguard/windows v0.5.3 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect

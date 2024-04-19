@@ -91,9 +91,9 @@ func (s *gobServer) handleAddSession() error {
 
 	id, err := s.hdr.AddSession(req)
 
-	var resp = internal.AddSessionResp{
-		ID:  id,
-		Err: err,
+	var resp = internal.AddSessionResp{ID: id}
+	if err != nil {
+		resp.Err = err.Error()
 	}
 	return s.enc.Encode(resp)
 }
