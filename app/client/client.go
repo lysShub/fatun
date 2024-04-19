@@ -140,8 +140,8 @@ func (c *Client) AddSession(ctx context.Context, s capture.Session) error {
 			return *c.closeErr.Load()
 		}
 		return err
-	} else if resp.Err != nil {
-		return resp.Err
+	} else if resp.Err != "" {
+		return errors.New(resp.Err)
 	} else {
 		return c.sessMgr.Add(sessionImplPtr(c), s, resp.ID)
 	}

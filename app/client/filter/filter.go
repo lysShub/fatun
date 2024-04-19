@@ -6,14 +6,16 @@ import (
 	"github.com/lysShub/itun/app/client/filter/mapping"
 )
 
-// Hitter validate the session is hit rule.
 type Hitter interface {
+	// Hit filter outbound ip packet
 	Hit(ip []byte) (bool, error)
 }
 
 type ErrNotRecord struct{}
 
 func (ErrNotRecord) Error() string { return "filter not record" }
+
+func (ErrNotRecord) Temporary() bool { return true }
 
 type Filter interface {
 	Hitter

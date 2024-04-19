@@ -7,17 +7,17 @@ import (
 
 const DefaultPort = 19986
 
-//go:generate stringer -output protocol_gen.go -trimprefix=Proto -type=Proto
+//go:generate stringer -linecomment -output protocol_gen.go -trimprefix=Proto -type=Proto
 type Proto uint8
 
 const (
-	ICMP   Proto = 1
-	TCP    Proto = 6
-	UDP    Proto = 17
-	ICMPV6 Proto = 58
+	TCP    Proto = 6  // tcp
+	ICMP   Proto = 1  // icmp
+	UDP    Proto = 17 // udp
+	ICMPV6 Proto = 58 // icmp6
 )
 
-func (p Proto) IsValid() bool {
+func (p Proto) Valid() bool {
 	switch p {
 	case TCP, UDP:
 		return true

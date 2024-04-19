@@ -83,7 +83,7 @@ type portKey struct {
 
 // GetPort get a local machine port
 func (a *Ports) GetPort(proto itun.Proto, dst netip.AddrPort) (port uint16, err error) {
-	if !proto.IsValid() {
+	if !proto.Valid() {
 		return 0, itun.ErrInvalidProto(proto)
 	} else if !dst.IsValid() {
 		return 0, itun.ErrInvalidAddr(dst.Addr())

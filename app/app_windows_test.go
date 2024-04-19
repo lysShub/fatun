@@ -51,7 +51,7 @@ func TestXxxx(t *testing.T) {
 
 		fmt.Println("connect")
 
-		c, err := client.NewClient(ctx, conn, cfg)
+		c, err = client.NewClient(ctx, conn, cfg)
 		require.NoError(t, err)
 		defer c.Close()
 	}
@@ -65,8 +65,8 @@ func TestXxxx(t *testing.T) {
 	})
 	require.NoError(t, err)
 	defer capture.Close()
-	// err = f.AddProcess("chrome.exe")
-	err = f.AddProcess("curl.exe")
+	err = f.AddProcess("chrome.exe")
+	// err = f.AddProcess("curl.exe")
 	require.NoError(t, err)
 
 	fmt.Println("prepared")

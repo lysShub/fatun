@@ -6,7 +6,8 @@ require golang.org/x/sys v0.18.0
 
 require (
 	github.com/lysShub/divert-go v0.0.0-20240415114628-03a432d8c814
-	github.com/lysShub/sockit v0.0.0-20240414130457-339c3aea1cd2
+	github.com/lysShub/sockit v0.0.0-20240419043520-05f1850172bb
+	github.com/shoenig/test v0.6.4
 	github.com/stretchr/testify v1.9.0
 	golang.org/x/net v0.20.0
 	golang.org/x/sync v0.5.0
@@ -16,6 +17,7 @@ require (
 require (
 	github.com/go-ole/go-ole v1.2.6 // indirect
 	github.com/go-ping/ping v1.1.0 // indirect
+	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/google/gopacket v1.1.19 // indirect
 	github.com/google/uuid v1.4.0 // indirect
 	github.com/josharian/native v1.0.0 // indirect

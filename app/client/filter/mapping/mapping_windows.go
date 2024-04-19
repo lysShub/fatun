@@ -4,58 +4,41 @@
 package mapping
 
 import (
-	"fmt"
+	"cmp"
+	"net/netip"
 	"os"
+	"slices"
+	"sort"
 	"sync"
 	"sync/atomic"
-	"time"
 
-	"github.com/lysShub/divert-go"
 	"github.com/lysShub/itun"
-	"github.com/lysShub/itun/session"
 	"github.com/pkg/errors"
+	"github.com/shirou/gopsutil/v3/net"
 	"github.com/shirou/gopsutil/v3/process"
 )
 
 type mapping struct {
-	handle *divert.Handle
-
-	addrs      map[session.Session]elem
-	addrsMu    sync.RWMutex
-	addTrigger *sync.Cond
+	tcp *table
+	udp *table
 
 	closeErr atomic.Pointer[error]
-}
-
-type elem struct {
-	pid  uint32
-	name string
 }
 
 var _ Mapping = (*mapping)(nil)
 
 func newMapping() (*mapping, error) {
-	var m = &mapping{addrs: map[session.Session]elem{}}
-	m.addTrigger = sync.NewCond(&m.addrsMu)
-
-	var err error
-	m.handle, err = divert.Open("true", divert.Socket, 0, divert.Sniff|divert.ReadOnly)
-	if err != nil {
-		return nil, err
+	var m = &mapping{
+		tcp: newTable(itun.TCP),
+		udp: newTable(itun.UDP),
 	}
-
-	go m.service()
-	go m.trigger()
+	// m.query(Endpoint{Proto: itun.UDP})
+	// m.query(Endpoint{Proto: itun.TCP})
 	return m, nil
 }
 
 func (m *mapping) close(cause error) error {
 	if m.closeErr.CompareAndSwap(nil, &os.ErrClosed) {
-		if m.handle != nil {
-			if err := m.handle.Close(); err != nil {
-				cause = err
-			}
-		}
 
 		if cause != nil {
 			m.closeErr.Store(&cause)
@@ -65,119 +48,169 @@ func (m *mapping) close(cause error) error {
 	return *m.closeErr.Load()
 }
 
-func (m *mapping) trigger() {
-	for m.closeErr.Load() == nil {
-		m.addTrigger.Broadcast()
-		time.Sleep(time.Millisecond * 250)
-	}
-}
-
-func (m *mapping) service() error {
-	go func() {
-		for i := 0; ; i++ {
-			time.Sleep(time.Minute)
-
-			fh, err := os.Create(fmt.Sprintf("mapping%02d.txt", i))
-			if err != nil {
-				panic(err)
-			}
-
-			m.addrsMu.Lock()
-			for s, e := range m.addrs {
-				v := fmt.Sprintln(s.String(), "		", e.name)
-				fh.WriteString(v)
-			}
-			m.addrsMu.Unlock()
-			fh.Close()
-
-			os.Exit(0)
-		}
-	}()
-
-	var addr = &divert.Address{}
-	var err error
-	for {
-		addr.Timestamp = 0
-		_, err = m.handle.Recv(nil, addr)
-		if err != nil {
-			if errors.Is(err, divert.ErrClosed{}) || errors.Is(err, divert.ErrShutdown{}) {
-				return m.close(nil)
-			}
-			return m.close(err)
+func (m *mapping) query(ep Endpoint) (elem, error) {
+	switch ep.Proto {
+	case itun.TCP:
+		e := m.tcp.Query(ep.Addr)
+		if e.valid() {
+			return e, nil
 		}
 
-		switch addr.Event {
-		case divert.SocketBind, divert.SocketConnect, divert.SocketListen, divert.SocketAccept:
-			pid := addr.Socket().ProcessId
-			name, err := (&process.Process{Pid: int32(pid)}).Name()
-			if err != nil {
-				return m.close(errors.WithStack(err))
-			}
-
-			m.addrsMu.Lock()
-			m.addrs[getsession(addr)] = elem{
-				pid:  pid,
-				name: name,
-			}
-			m.addrsMu.Unlock()
-			m.addTrigger.Broadcast()
-		case divert.SocketClose:
-			m.addrsMu.Lock()
-			delete(m.addrs, getsession(addr))
-			m.addrsMu.Unlock()
-		default:
-			if addr.Timestamp == 0 && addr.Event == 0 {
-				continue // todo: divert can't return null result
-			}
-			return m.close(errors.Errorf("divert Socket event %d", addr.Event))
+		if err := m.tcp.Upgrade(); err != nil {
+			return elem{}, err
 		}
-	}
-}
 
-func getsession(addr *divert.Address) session.Session {
-	f := addr.Socket()
-	return session.Session{
-		SrcAddr: f.LocalAddr(), SrcPort: f.LocalPort,
-		Proto:   itun.Proto(f.Protocol),
-		DstAddr: f.RemoteAddr(), DstPort: f.RemotePort,
-	}
-}
-
-// todo: 需要处理未指定IP等问题
-func (m *mapping) get(s session.Session) elem {
-	m.addrsMu.RLock()
-	defer m.addrsMu.RUnlock()
-	return m.addrs[s]
-}
-
-func (m *mapping) Name(s session.Session) (string, error) {
-	if e := m.closeErr.Load(); e != nil {
-		return "", *e
-	}
-	if name := m.get(s).name; name != "" {
-		return name, nil
-	}
-
-	// wait period
-	for i := 0; i < 4; i++ {
-		m.addrsMu.Lock()
-		m.addTrigger.Wait()
-		m.addrsMu.Unlock()
-		if name := m.get(s).name; name != "" {
-			return name, nil
+		e = m.tcp.Query(ep.Addr)
+		if e.valid() {
+			return e, nil
 		}
+		return elem{}, nil // not record
+	case itun.UDP:
+		e := m.udp.Query(ep.Addr)
+		if e.valid() {
+			return e, nil
+		}
+
+		if err := m.udp.Upgrade(); err != nil {
+			return elem{}, err
+		}
+
+		e = m.udp.Query(ep.Addr)
+		if e.valid() {
+			return e, nil
+		}
+		return elem{}, nil // not record
+	default:
+		return elem{}, errors.Errorf("not support protocol %s", ep.Proto.String())
 	}
-	return "", nil
+
 }
 
-func (m *mapping) Pid(s session.Session) (uint32, error) {
-	if e := m.closeErr.Load(); e != nil {
-		return 0, *e
+func (m *mapping) Name(ep Endpoint) (string, error) {
+	if e, err := m.query(ep); err != nil {
+		return "", err
+	} else {
+		return e.name, nil
 	}
-	m.addrsMu.RLock()
-	defer m.addrsMu.RUnlock()
-
-	return m.addrs[s].pid, nil
 }
 
+func (m *mapping) Pid(ep Endpoint) (uint32, error) {
+	if e, err := m.query(ep); err != nil {
+		return 0, err
+	} else {
+		return e.pid, nil
+	}
+}
+
+func (m *mapping) Pids() []uint32 {
+	var pids = make([]uint32, 0, m.tcp.size()+m.udp.size())
+	pids = m.tcp.Pids(pids)
+	pids = m.udp.Pids(pids)
+	slices.Sort(pids)
+	return slices.Compact(pids)
+}
+
+func (m *mapping) Names() []string {
+	var names = make([]string, 0, m.tcp.size()+m.udp.size())
+	names = m.tcp.Names(names)
+	names = m.udp.Names(names)
+	slices.Sort(names)
+	return slices.Compact(names)
+}
 func (m *mapping) Close() error { return m.close(nil) }
+
+type table struct {
+	mu    sync.RWMutex
+	proto itun.Proto
+	elems []elem // asc by port
+}
+
+func newTable(proto itun.Proto) *table {
+	return &table{
+		proto: proto,
+		elems: make([]elem, 0, 16),
+	}
+}
+
+func (t *table) Query(addr netip.AddrPort) elem {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+
+	port := addr.Port()
+	n := len(t.elems)
+	i := sort.Search(n, func(i int) bool {
+		return t.elems[i].port >= port
+	})
+	for ; i < n; i++ {
+		if t.elems[i].port == port {
+			if t.elems[i].addr == addr.Addr() || t.elems[i].addr.IsUnspecified() {
+				return t.elems[i]
+			}
+		} else {
+			break
+		}
+	}
+	return elem{}
+}
+
+func (t *table) Upgrade() error {
+	ss, err := net.Connections(t.proto.String())
+	if err != nil {
+		return errors.WithStack(err)
+	}
+
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.elems = t.elems[:0]
+
+	for _, e := range ss {
+		name, err := (&process.Process{Pid: e.Pid}).Name()
+		if err != nil {
+			continue
+		}
+		t.elems = append(t.elems, elem{
+			port: uint16(e.Laddr.Port),
+			pid:  uint32(e.Pid),
+			addr: netip.MustParseAddr(e.Laddr.IP),
+			name: name,
+		})
+	}
+
+	slices.SortFunc(t.elems, func(a, b elem) int {
+		return cmp.Compare(a.port, b.port)
+	})
+
+	return nil
+}
+
+func (t *table) Pids(pids []uint32) []uint32 {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	for _, e := range t.elems {
+		pids = append(pids, e.pid)
+	}
+	return pids
+}
+func (t *table) Names(names []string) []string {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	for _, e := range t.elems {
+		names = append(names, e.name)
+	}
+	return names
+}
+func (t *table) size() int {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+
+	return len(t.elems)
+}
+
+type elem struct {
+	port uint16
+	pid  uint32
+	addr netip.Addr
+	name string
+}
+
+func (e elem) valid() bool { return e.pid != 0 }

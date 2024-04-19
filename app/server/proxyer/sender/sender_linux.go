@@ -49,10 +49,10 @@ func newSender(loc netip.AddrPort, proto itun.Proto, dst netip.AddrPort) (*sende
 			return nil, err
 		}
 
-		tcp, err = test.WrapPcap(tcp, "sender.pcap")
-		if err != nil {
-			panic(err)
-		}
+		// tcp, err = test.WrapPcap(tcp, "sender.pcap")
+		// if err != nil {
+		// 	panic(err)
+		// }
 
 		pseudoSum1 := header.PseudoHeaderChecksum(
 			header.TCPProtocolNumber,

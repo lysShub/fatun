@@ -1,58 +1,50 @@
 package filter
 
 import (
-	"fmt"
+	"net/netip"
 	"testing"
 	"time"
 
-	"github.com/lysShub/divert-go"
 	"github.com/stretchr/testify/require"
 )
 
-func Test_Filter(t *testing.T) {
-	divert.Load(divert.DLL)
-	defer divert.Release()
+func Test_newAddrSyn(t *testing.T) {
+	var (
+		addr = netip.AddrPortFrom(netip.IPv4Unspecified(), 1)
+	)
 
-	f, err := New()
-	require.NoError(t, err)
-
-	f.AddProcess("chrome.exe")
-
-	time.Sleep(time.Hour)
-
-	// err := f.AddRule("curl.exe", itun.TCP)
-	// require.NoError(t, err)
-
-	// ch := f.ProxyCh()
-
-	// for {
-	// 	s := <-ch
-	// 	fmt.Println(s.String())
-	// }
+	as := newAddrSyn(time.Second * 4)
+	for i := 0; i < 3; i++ {
+		require.Equal(t, uint8(i+1), as.Upgrade(addr))
+		time.Sleep(time.Second)
+	}
+	time.Sleep(time.Second * 2)
+	require.Equal(t, uint8(1), as.Upgrade(addr))
 }
 
-func TestClient(t *testing.T) {
-	divert.MustLoad(divert.DLL)
-	defer divert.Release()
+func Test_Heap(t *testing.T) {
+	t.Run("empt", func(t *testing.T) {
+		var h = NewHeap[int]()
 
-	var s = "udp and !ipv6 and event=CONNECT"
-	d, err := divert.Open(s, divert.Socket, 0, divert.ReadOnly|divert.Sniff)
-	if err != nil {
-		panic(err)
-	}
+		require.Zero(t, h.Peek())
+		require.Zero(t, h.Pop())
+		h.Put(1)
+		require.Equal(t, 1, h.Peek())
+		require.Equal(t, 1, h.Pop())
+		require.Zero(t, h.Peek())
+	})
 
-	var addr divert.Address
-
-	for {
-
-		_, err := d.Recv(nil, &addr)
-		if err != nil {
-			panic(err)
+	t.Run("grow", func(t *testing.T) {
+		var h = NewHeap[int]()
+		for i := 0; i < initHeapCap; i++ {
+			h.Put(i)
 		}
 
-		s := addr.Socket()
+		h.Put(1234)
 
-		fmt.Printf("%d %s %s --> %s \n", s.ProcessId, addr.Event.Op(), s.LocalAddr(), s.RemoteAddr())
-	}
-
+		for i := 0; i < initHeapCap; i++ {
+			require.Equal(t, i, h.Pop())
+		}
+		require.Equal(t, 1234, h.Pop())
+	})
 }

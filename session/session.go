@@ -87,7 +87,7 @@ func FromIP(ip []byte) Session {
 
 func (s Session) IsValid() bool {
 	return s.SrcAddr.IsValid() &&
-		s.Proto.IsValid() &&
+		s.Proto.Valid() &&
 		s.DstAddr.IsValid()
 }
 

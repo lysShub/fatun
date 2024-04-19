@@ -10,17 +10,16 @@ import (
 	"os"
 	"strings"
 	"sync/atomic"
-	"time"
 
 	"github.com/lysShub/divert-go"
 	"github.com/lysShub/itun/app/client/filter"
 	sess "github.com/lysShub/itun/session"
+	"github.com/lysShub/sockit/errorx"
 	"github.com/lysShub/sockit/helper/ipstack"
 	"github.com/lysShub/sockit/packet"
 
 	"github.com/lysShub/sockit/test"
 	"github.com/lysShub/sockit/test/debug"
-	"github.com/pkg/errors"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
@@ -82,16 +81,16 @@ func (s *capture) Capture(ctx context.Context) (Session, error) {
 		}
 		ip = ip[:n]
 
-		ss := time.Now()
+		// ss := time.Now()
 		if hit, err := s.hitter.Hit(ip); err != nil {
-			if !errors.Is(err, filter.ErrNotRecord{}) {
+			if !errorx.Temporary(err) {
 				return nil, s.close(err)
 			}
-			// s.opt.Logger.LogAttrs(ctx, slog.LevelWarn, err.Error(), slog.String("session", sess.FromIP(ip).String()))
-			// s.opt.Logger.Warn(err.Error(), errorx.TraceAttr(err))
-			fmt.Println("filter not record", time.Since(ss), sess.FromIP(ip).String())
+			s.opt.Logger.Warn(err.Error(), errorx.TraceAttr(err))
+
+			// fmt.Println("filter not record", time.Since(ss), sess.FromIP(ip).String())
 		} else {
-			fmt.Println("filter has record", time.Since(ss), sess.FromIP(ip).String())
+			// fmt.Println("filter has record", time.Since(ss), sess.FromIP(ip).String())
 
 			if !hit {
 				if _, err = s.handle.Send(ip[:n], &s.addr); err != nil {

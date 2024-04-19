@@ -2,22 +2,25 @@ package filter
 
 import (
 	"encoding/hex"
+	"net/netip"
 	"slices"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/lysShub/itun"
+	"github.com/lysShub/itun/app/client/filter/mapping"
 	"github.com/lysShub/itun/session"
+	"github.com/lysShub/sockit/test"
+	"github.com/lysShub/sockit/test/debug"
 	"github.com/pkg/errors"
+	"github.com/stretchr/testify/require"
 )
 
 type filter struct {
-	count atomic.Int32
-
 	// default rule
 	defaultEnable atomic.Bool
-	syncMap       map[session.Session]uint8 // record tcp conn sync count
-	defaultMu     sync.RWMutex
+	tcps          *tcpSyn
 
 	// process rule
 	processEnable atomic.Bool
@@ -27,41 +30,35 @@ type filter struct {
 
 func newFilter() *filter {
 	return &filter{
-		syncMap: map[session.Session]uint8{},
+		tcps: newAddrSyn(time.Second * 15),
 	}
 }
 
 func (f *filter) Hit(ip []byte) (bool, error) {
-	f.count.Add(1)
-	s := session.FromIP(ip)
-	if !s.IsValid() {
+	ep := mapping.FromIP(ip)
+	if !ep.Valid() {
 		session.FromIP(ip)
 		return false, errors.Errorf("capture invalid ip packet: %s", hex.EncodeToString(ip))
 	}
+	if debug.Debug() {
+		require.True(test.T(), ep.Addr.Addr().IsPrivate() || ep.Addr.Addr().IsUnspecified() || ep.Addr.Addr().IsLoopback())
+	}
 
 	if f.defaultEnable.Load() {
-		const count = 3
-		if s.Proto == itun.TCP {
-			f.defaultMu.Lock()
-			// todo: require filter is capture-operate(not sniff-operate)
-			// todo：should add SEQ identify tcp connection
-			old := f.syncMap[s]
-			f.syncMap[s] = old + 1
-			n := len(f.syncMap)
-			f.defaultMu.Unlock()
+		// // todo: from config
+		// notice: require filter is capture-read(not sniff-read) tcp SYN packet
+		const maxsyn = 3
 
-			// delete syncMap closed tcp connect
-			if n > 128 && f.count.Load()%128 == 0 {
-				f.cleanMap()
-			}
-			if old+1 >= count {
+		if ep.Proto == itun.TCP {
+			n := f.tcps.Upgrade(ep.Addr)
+			if n >= maxsyn {
 				return true, nil
 			}
 		}
 	}
 
 	if f.processEnable.Load() {
-		name, err := Global.Name(s)
+		name, err := Global.Name(ep)
 		if err != nil {
 			return false, err
 		} else if name == "" {
@@ -74,19 +71,6 @@ func (f *filter) Hit(ip []byte) (bool, error) {
 	}
 
 	return false, nil
-}
-
-func (f *filter) cleanMap() {
-	f.defaultMu.Lock()
-	defer f.defaultMu.Unlock()
-
-	for s := range f.syncMap {
-		if pid, err := Global.Pid(s); err != nil {
-			return
-		} else if pid == 0 {
-			delete(f.syncMap, s)
-		}
-	}
 }
 
 func (f *filter) EnableDefault() error {
@@ -118,4 +102,94 @@ func (f *filter) DelProcess(process string) error {
 		f.processEnable.Store(false)
 	}
 	return nil
+}
+
+type tcpSyn struct {
+	mu        sync.RWMutex
+	addrs     map[netip.AddrPort]uint8
+	times     *heap[info]
+	keepalive time.Duration
+}
+
+func newAddrSyn(keepalive time.Duration) *tcpSyn {
+	return &tcpSyn{
+		addrs:     map[netip.AddrPort]uint8{},
+		times:     NewHeap[info](),
+		keepalive: keepalive,
+	}
+}
+
+func (f *tcpSyn) Upgrade(addr netip.AddrPort) uint8 {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	// clear expired addr
+	i := f.times.Peek()
+	for i.valid() && time.Since(i.Time) > f.keepalive {
+		delete(f.addrs, f.times.Pop().AddrPort)
+		i = f.times.Peek()
+	}
+
+	n, has := f.addrs[addr]
+	f.addrs[addr] = n + 1
+	if !has {
+		f.times.Put(info{addr, time.Now()})
+	}
+	return n + 1
+}
+
+type info struct {
+	netip.AddrPort
+	time.Time
+}
+
+func (i info) valid() bool {
+	return i.Time != time.Time{} && i.AddrPort.IsValid()
+}
+
+type heap[T info | int] struct {
+	vals []T
+	s, n int // start-idx, heap-size
+}
+
+func NewHeap[T info | int]() *heap[T] {
+	return &heap[T]{
+		vals: make([]T, initHeapCap),
+	}
+}
+
+const initHeapCap = 16
+
+func (h *heap[T]) Put(t T) {
+	i := (h.s + h.n) % len(h.vals)
+	h.vals[i] = t
+	h.n += 1
+
+	if len(h.vals) == h.n {
+		h.grow()
+	}
+}
+
+func (h *heap[T]) Pop() T {
+	if h.n == 0 {
+		return *new(T)
+	}
+
+	defer func() { h.s = (h.s + 1) % len(h.vals) }()
+	h.n -= 1
+	return h.vals[h.s]
+}
+
+func (h *heap[T]) Peek() T {
+	return h.vals[h.s]
+}
+
+func (h *heap[T]) grow() {
+	tmp := make([]T, len(h.vals)*2)
+
+	n1 := copy(tmp, h.vals[h.s:])
+	copy(tmp[n1:h.n], h.vals[0:])
+
+	h.vals = tmp
+	h.s = 0
 }
