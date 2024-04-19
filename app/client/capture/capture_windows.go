@@ -134,7 +134,7 @@ func newSession(
 
 	filter := fmt.Sprintf(
 		"%s and localAddr=%s and localPort=%d and remoteAddr=%s and remotePort=%d",
-		s.Proto.String(), s.Src.Addr().String(), s.Src.Port(), s.Dst.Addr().String(), s.Dst.Port(),
+		sess.ProtoStr(s.Proto), s.Src.Addr().String(), s.Src.Port(), s.Dst.Addr().String(), s.Dst.Port(),
 	)
 
 	c.d, err = divert.Open(filter, divert.Network, priority, 0)

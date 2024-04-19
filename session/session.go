@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/netip"
 
-	"github.com/lysShub/itun"
 	"github.com/lysShub/sockit/packet"
 	"github.com/pkg/errors"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -45,9 +44,10 @@ const (
 	Size      = idOffset2
 )
 
+// Session on clinet, corresponding a transport connect
 type Session struct {
 	Src   netip.AddrPort
-	Proto itun.Proto
+	Proto tcpip.TransportProtocolNumber
 	Dst   netip.AddrPort
 }
 
@@ -78,14 +78,14 @@ func FromIP(ip []byte) Session {
 		tcp := header.TCP(hdr)
 		return Session{
 			Src:   netip.AddrPortFrom(src, tcp.SourcePort()),
-			Proto: itun.TCP,
+			Proto: proto,
 			Dst:   netip.AddrPortFrom(dst, tcp.DestinationPort()),
 		}
 	case header.UDPProtocolNumber:
 		udp := header.UDP(hdr)
 		return Session{
 			Src:   netip.AddrPortFrom(src, udp.SourcePort()),
-			Proto: itun.UDP,
+			Proto: proto,
 			Dst:   netip.AddrPortFrom(dst, udp.DestinationPort()),
 		}
 	default:
@@ -94,11 +94,26 @@ func FromIP(ip []byte) Session {
 }
 
 func (s Session) IsValid() bool {
-	return s.Src.IsValid() && s.Proto.Valid() && s.Dst.IsValid()
+	return s.Src.IsValid() && s.Proto != 0 && s.Dst.IsValid()
 }
 
 func (s Session) String() string {
-	return fmt.Sprintf("%s:%s->%s", s.Proto, s.Src.String(), s.Dst.String())
+	return fmt.Sprintf("%s:%s->%s", ProtoStr(s.Proto), s.Src.String(), s.Dst.String())
+}
+
+func ProtoStr(num tcpip.TransportProtocolNumber) string {
+	switch num {
+	case header.TCPProtocolNumber:
+		return "tcp"
+	case header.UDPProtocolNumber:
+		return "udp"
+	case header.ICMPv4ProtocolNumber:
+		return "icmp"
+	case header.ICMPv6ProtocolNumber:
+		return "icmp6"
+	default:
+		return "unknown"
+	}
 }
 
 func ErrInvalidSession(s Session) error {

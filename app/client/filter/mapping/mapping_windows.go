@@ -12,10 +12,12 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/lysShub/itun"
+	"github.com/lysShub/itun/session"
 	"github.com/pkg/errors"
 	"github.com/shirou/gopsutil/v3/net"
 	"github.com/shirou/gopsutil/v3/process"
+	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
 type mapping struct {
@@ -29,11 +31,11 @@ var _ Mapping = (*mapping)(nil)
 
 func newMapping() (*mapping, error) {
 	var m = &mapping{
-		tcp: newTable(itun.TCP),
-		udp: newTable(itun.UDP),
+		tcp: newTable(header.TCPProtocolNumber),
+		udp: newTable(header.UDPProtocolNumber),
 	}
-	// m.query(Endpoint{Proto: itun.UDP})
-	// m.query(Endpoint{Proto: itun.TCP})
+	// m.query(Endpoint{Proto: header.UDPProtocolNumber})
+	// m.query(Endpoint{Proto: header.TCPProtocolNumber})
 	return m, nil
 }
 
@@ -50,7 +52,7 @@ func (m *mapping) close(cause error) error {
 
 func (m *mapping) query(ep Endpoint) (elem, error) {
 	switch ep.Proto {
-	case itun.TCP:
+	case header.TCPProtocolNumber:
 		e := m.tcp.Query(ep.Addr)
 		if e.valid() {
 			return e, nil
@@ -65,7 +67,7 @@ func (m *mapping) query(ep Endpoint) (elem, error) {
 			return e, nil
 		}
 		return elem{}, nil // not record
-	case itun.UDP:
+	case header.UDPProtocolNumber:
 		e := m.udp.Query(ep.Addr)
 		if e.valid() {
 			return e, nil
@@ -81,7 +83,7 @@ func (m *mapping) query(ep Endpoint) (elem, error) {
 		}
 		return elem{}, nil // not record
 	default:
-		return elem{}, errors.Errorf("not support protocol %s", ep.Proto.String())
+		return elem{}, errors.Errorf("not support protocol %s", session.ProtoStr(ep.Proto))
 	}
 
 }
@@ -121,11 +123,11 @@ func (m *mapping) Close() error { return m.close(nil) }
 
 type table struct {
 	mu    sync.RWMutex
-	proto itun.Proto
+	proto tcpip.TransportProtocolNumber
 	elems []elem // asc by port
 }
 
-func newTable(proto itun.Proto) *table {
+func newTable(proto tcpip.TransportProtocolNumber) *table {
 	return &table{
 		proto: proto,
 		elems: make([]elem, 0, 16),
@@ -154,7 +156,7 @@ func (t *table) Query(addr netip.AddrPort) elem {
 }
 
 func (t *table) Upgrade() error {
-	ss, err := net.Connections(t.proto.String())
+	ss, err := net.Connections(session.ProtoStr(t.proto))
 	if err != nil {
 		return errors.WithStack(err)
 	}

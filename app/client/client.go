@@ -7,7 +7,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/lysShub/itun"
 	"github.com/lysShub/itun/app"
 	"github.com/lysShub/itun/app/client/capture"
 	cs "github.com/lysShub/itun/app/client/session"
@@ -16,6 +15,7 @@ import (
 	"github.com/lysShub/itun/session"
 	"github.com/lysShub/sockit/errorx"
 	"github.com/lysShub/sockit/packet"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 
 	"github.com/pkg/errors"
 )
@@ -45,7 +45,7 @@ func NewClient(ctx context.Context, conn *sconn.Conn, cfg *app.Config) (*Client,
 		})),
 		self: session.Session{
 			Src:   conn.LocalAddr(),
-			Proto: itun.TCP,
+			Proto: header.TCPProtocolNumber,
 			Dst:   conn.RemoteAddr(),
 		},
 		conn:    conn,

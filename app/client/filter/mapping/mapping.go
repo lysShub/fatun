@@ -3,7 +3,6 @@ package mapping
 import (
 	"net/netip"
 
-	"github.com/lysShub/itun"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
@@ -30,11 +29,11 @@ func New() (Mapping, error) {
 
 type Endpoint struct {
 	Addr  netip.AddrPort
-	Proto itun.Proto
+	Proto tcpip.TransportProtocolNumber
 }
 
 func (e Endpoint) Valid() bool {
-	return e.Proto.Valid() && e.Addr.IsValid()
+	return e.Proto != 0 && e.Addr.IsValid()
 }
 
 func FromIP(ip []byte) Endpoint {
@@ -54,12 +53,12 @@ func FromIP(ip []byte) Endpoint {
 	switch iphdr.TransportProtocol() {
 	case header.TCPProtocolNumber:
 		return Endpoint{
-			Proto: itun.TCP,
+			Proto: header.TCPProtocolNumber,
 			Addr:  netip.AddrPortFrom(addr, header.TCP(iphdr.Payload()).SourcePort()),
 		}
 	case header.UDPProtocolNumber:
 		return Endpoint{
-			Proto: itun.UDP,
+			Proto: header.UDPProtocolNumber,
 			Addr:  netip.AddrPortFrom(addr, header.UDP(iphdr.Payload()).SourcePort()),
 		}
 	default:

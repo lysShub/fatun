@@ -4,9 +4,8 @@ import (
 	"context"
 	"net/netip"
 
-	"github.com/lysShub/itun"
 	"github.com/lysShub/sockit/packet"
-
+	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
 type Sender interface {
@@ -16,6 +15,6 @@ type Sender interface {
 	Close() error
 }
 
-func NewSender(loc netip.AddrPort, proto itun.Proto, dst netip.AddrPort) (Sender, error) {
+func NewSender(loc netip.AddrPort, proto tcpip.TransportProtocolNumber, dst netip.AddrPort) (Sender, error) {
 	return newSender(loc, proto, dst)
 }

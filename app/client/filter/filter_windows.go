@@ -8,13 +8,13 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/lysShub/itun"
 	"github.com/lysShub/itun/app/client/filter/mapping"
 	"github.com/lysShub/itun/session"
 	"github.com/lysShub/sockit/test"
 	"github.com/lysShub/sockit/test/debug"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
 type filter struct {
@@ -49,7 +49,7 @@ func (f *filter) Hit(ip []byte) (bool, error) {
 		// notice: require filter is capture-read(not sniff-read) tcp SYN packet
 		const maxsyn = 3
 
-		if ep.Proto == itun.TCP {
+		if ep.Proto == header.TCPProtocolNumber {
 			n := f.tcps.Upgrade(ep.Addr)
 			if n >= maxsyn {
 				return true, nil

@@ -116,9 +116,9 @@ func (s *Session) downlinkService() error {
 		}
 
 		switch s.session.Proto {
-		case itun.TCP:
+		case header.TCPProtocolNumber:
 			header.TCP(seg.Bytes()).SetDestinationPortWithChecksumUpdate(s.session.Src.Port())
-		case itun.UDP:
+		case header.UDPProtocolNumber:
 			header.UDP(seg.Bytes()).SetDestinationPortWithChecksumUpdate(s.session.Src.Port())
 		default:
 		}
@@ -136,9 +136,9 @@ func (s *Session) Send(pkt *packet.Packet) error {
 	}
 
 	switch s.session.Proto {
-	case itun.TCP:
+	case header.TCPProtocolNumber:
 		header.TCP(pkt.Bytes()).SetSourcePortWithChecksumUpdate(s.locAddr.Port())
-	case itun.UDP:
+	case header.UDPProtocolNumber:
 		header.UDP(pkt.Bytes()).SetSourcePortWithChecksumUpdate(s.locAddr.Port())
 	default:
 	}
