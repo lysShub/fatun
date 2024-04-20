@@ -7,10 +7,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	itun "github.com/lysShub/fatun"
+	"github.com/lysShub/fatun/app"
 	"github.com/lysShub/fatun/app/server/proxyer/sender"
 	"github.com/lysShub/fatun/session"
 	"github.com/lysShub/sockit/packet"
+	"github.com/pkg/errors"
 
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
@@ -156,7 +157,7 @@ func (s *Session) keepalive() {
 	const magic uint32 = 0x45a2319f
 	switch s.cnt.Load() {
 	case magic:
-		s.close(itun.KeepaliveExceeded)
+		s.close(errors.WithStack(app.KeepaliveExceeded))
 	default:
 		s.cnt.Store(magic)
 		time.AfterFunc(s.proxyer.Keepalive(), s.keepalive)

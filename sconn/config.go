@@ -11,7 +11,7 @@ import (
 
 	"github.com/pkg/errors"
 
-	"github.com/lysShub/fatun/crypto"
+	"github.com/lysShub/fatun/sconn/crypto"
 )
 
 type Config struct {

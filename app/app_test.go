@@ -3,8 +3,8 @@ package app_test
 import (
 	"net/netip"
 
-	"github.com/lysShub/fatun/crypto"
 	"github.com/lysShub/fatun/sconn"
+	"github.com/lysShub/fatun/sconn/crypto"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 

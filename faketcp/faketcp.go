@@ -4,7 +4,7 @@ import (
 	"math/rand"
 	"sync/atomic"
 
-	"github.com/lysShub/fatun/crypto"
+	"github.com/lysShub/fatun/sconn/crypto"
 	"github.com/lysShub/sockit/errorx"
 	"github.com/lysShub/sockit/packet"
 	"github.com/stretchr/testify/require"
