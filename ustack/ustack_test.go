@@ -10,11 +10,11 @@ import (
 
 	"github.com/pkg/errors"
 
-	itun "github.com/lysShub/fatun"
 	"github.com/lysShub/fatun/ustack"
 	"github.com/lysShub/fatun/ustack/gonet"
 	"github.com/lysShub/fatun/ustack/link"
 
+	"github.com/lysShub/sockit/conn"
 	"github.com/lysShub/sockit/packet"
 	"github.com/lysShub/sockit/test"
 	"github.com/lysShub/sockit/test/debug"
@@ -42,7 +42,7 @@ func Test_Conn(t *testing.T) {
 	go func() {
 		st, err := ustack.NewUstack(link.NewList(16, 1536), saddr.Addr())
 		require.NoError(t, err)
-		UnicomStackAndRaw(t, st, itun.WrapRawConn(s, 1536))
+		UnicomStackAndRaw(t, st, s)
 
 		l, err := gonet.ListenTCP(st, saddr, header.IPv4ProtocolNumber)
 		require.NoError(t, err)
@@ -62,7 +62,7 @@ func Test_Conn(t *testing.T) {
 	go func() { // client
 		st, err := ustack.NewUstack(link.NewList(16, 1536), caddr.Addr())
 		require.NoError(t, err)
-		UnicomStackAndRaw(t, st, itun.WrapRawConn(c, 1536))
+		UnicomStackAndRaw(t, st, c)
 
 		conn, err := gonet.DialTCPWithBind(
 			context.Background(), st,
@@ -97,7 +97,7 @@ func Test_Conn_Client(t *testing.T) {
 	go func() { // server
 		st, err := ustack.NewUstack(link.NewList(16, 1536), saddr.Addr())
 		require.NoError(t, err)
-		UnicomStackAndRawBy(t, st, itun.WrapRawConn(s, 1536), caddr)
+		UnicomStackAndRawBy(t, st, s, caddr)
 
 		l, err := gonet.ListenTCP(st, saddr, header.IPv4ProtocolNumber)
 		require.NoError(t, err)
@@ -117,7 +117,7 @@ func Test_Conn_Client(t *testing.T) {
 	go func() {
 		st, err := ustack.NewUstack(link.NewList(16, 1536), caddr.Addr())
 		require.NoError(t, err)
-		UnicomStackAndRaw(t, st, itun.WrapRawConn(c, 1536))
+		UnicomStackAndRaw(t, st, c)
 
 		conn, err := gonet.DialTCPWithBind(
 			context.Background(), st,
@@ -158,8 +158,8 @@ func Test_Conn_Clients(t *testing.T) {
 	go func() {
 		st, err := ustack.NewUstack(link.NewList(16, 1536), saddr.Addr())
 		require.NoError(t, err)
-		UnicomStackAndRawBy(t, st, itun.WrapRawConn(s1, 1536), caddr1)
-		UnicomStackAndRawBy(t, st, itun.WrapRawConn(s2, 1536), caddr2)
+		UnicomStackAndRawBy(t, st, s1, caddr1)
+		UnicomStackAndRawBy(t, st, s2, caddr2)
 
 		l, err := gonet.ListenTCP(st, saddr, header.IPv4ProtocolNumber)
 		require.NoError(t, err)
@@ -184,7 +184,7 @@ func Test_Conn_Clients(t *testing.T) {
 	go func() {
 		st, err := ustack.NewUstack(link.NewList(16, 1536), caddr1.Addr())
 		require.NoError(t, err)
-		UnicomStackAndRaw(t, st, itun.WrapRawConn(c1, 1536))
+		UnicomStackAndRaw(t, st, c1)
 
 		conn, err := gonet.DialTCPWithBind(
 			context.Background(), st,
@@ -202,7 +202,7 @@ func Test_Conn_Clients(t *testing.T) {
 	go func() {
 		st, err := ustack.NewUstack(link.NewList(16, 1536), caddr2.Addr())
 		require.NoError(t, err)
-		UnicomStackAndRaw(t, st, itun.WrapRawConn(c2, 1536))
+		UnicomStackAndRaw(t, st, c2)
 
 		conn, err := gonet.DialTCPWithBind(
 			context.Background(), st,
@@ -220,9 +220,9 @@ func Test_Conn_Clients(t *testing.T) {
 	t.Log(<-rets, "retrun")
 }
 
-func UnicomStackAndRaw(t *testing.T, s ustack.Ustack, raw *itun.RawConn) {
+func UnicomStackAndRaw(t *testing.T, s ustack.Ustack, raw conn.RawConn) {
 	go func() {
-		var pkt = packet.Make(64, raw.MTU())
+		var pkt = packet.Make(64, s.MTU())
 
 		for {
 			s.Outbound(context.Background(), pkt.SetHead(64))
@@ -242,7 +242,7 @@ func UnicomStackAndRaw(t *testing.T, s ustack.Ustack, raw *itun.RawConn) {
 		}
 	}()
 	go func() {
-		var pkt = packet.Make(64, raw.MTU())
+		var pkt = packet.Make(64, s.MTU())
 
 		for {
 			err := raw.Read(context.Background(), pkt.SetHead(64))
@@ -261,9 +261,9 @@ func UnicomStackAndRaw(t *testing.T, s ustack.Ustack, raw *itun.RawConn) {
 	}()
 }
 
-func UnicomStackAndRawBy(t *testing.T, s ustack.Ustack, raw *itun.RawConn, dst netip.AddrPort) {
+func UnicomStackAndRawBy(t *testing.T, s ustack.Ustack, raw conn.RawConn, dst netip.AddrPort) {
 	go func() {
-		var p = packet.Make(64, raw.MTU())
+		var p = packet.Make(64, s.MTU())
 
 		for {
 			s.OutboundBy(context.Background(), dst, p.SetHead(64))
@@ -281,7 +281,7 @@ func UnicomStackAndRawBy(t *testing.T, s ustack.Ustack, raw *itun.RawConn, dst n
 		}
 	}()
 	go func() {
-		var p = packet.Make(64, raw.MTU())
+		var p = packet.Make(64, s.MTU())
 
 		for {
 			err := raw.Read(context.Background(), p.SetHead(64))

@@ -5,14 +5,14 @@ import (
 	"sort"
 	"sync"
 
-	itun "github.com/lysShub/fatun"
+	"github.com/lysShub/fatun/ports"
 	"github.com/pkg/errors"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
 type Ports struct {
-	mgr *itun.PortMgr
+	mgr *ports.PortMgr
 
 	mu sync.RWMutex
 
@@ -26,7 +26,7 @@ type Ports struct {
 // destination address
 func NewPorts(addr netip.Addr) *Ports {
 	return &Ports{
-		mgr: itun.NewPortMgr(addr),
+		mgr: ports.NewPortMgr(addr),
 		// sess:  make(map[Session]uint16, 16),
 		ports: make(map[portKey]*AddrSet, 16),
 	}

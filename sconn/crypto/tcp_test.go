@@ -8,8 +8,7 @@ import (
 	"testing"
 	"time"
 
-	itun "github.com/lysShub/fatun"
-	"github.com/lysShub/fatun/crypto"
+	"github.com/lysShub/fatun/sconn/crypto"
 	"github.com/lysShub/fatun/ustack"
 	"github.com/lysShub/fatun/ustack/gonet"
 	"github.com/lysShub/fatun/ustack/link"
@@ -110,7 +109,7 @@ func Test_Conn(t *testing.T) {
 	go func() {
 		st, err := ustack.NewUstack(link.NewList(16, 1536), saddr.Addr())
 		require.NoError(t, err)
-		UnicomStackAndRaw(t, st, itun.WrapRawConn(s, 1536), pseudoSum1)
+		UnicomStackAndRaw(t, st, s, pseudoSum1)
 
 		l, err := gonet.ListenTCP(st, saddr, header.IPv4ProtocolNumber)
 		require.NoError(t, err)
@@ -127,7 +126,7 @@ func Test_Conn(t *testing.T) {
 	{ // client
 		st, err := ustack.NewUstack(link.NewList(16, 1536), saddr.Addr())
 		require.NoError(t, err)
-		UnicomStackAndRaw(t, st, itun.WrapRawConn(c, 1536), pseudoSum1)
+		UnicomStackAndRaw(t, st, c, pseudoSum1)
 
 		conn, err := gonet.DialTCPWithBind(
 			context.Background(), st,

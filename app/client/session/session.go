@@ -7,7 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	itun "github.com/lysShub/fatun"
+	"github.com/lysShub/fatun/app"
 	"github.com/lysShub/fatun/app/client/capture"
 	"github.com/lysShub/fatun/session"
 	"github.com/lysShub/sockit/errorx"
@@ -114,7 +114,7 @@ func (s *Session) keepalive() {
 	const magic uint32 = 0x23df83a0
 	switch s.cnt.Load() {
 	case magic:
-		s.close(errors.WithStack(itun.KeepaliveExceeded))
+		s.close(errors.WithStack(app.KeepaliveExceeded))
 	default:
 		s.cnt.Store(magic)
 		time.AfterFunc(time.Minute, s.keepalive) // todo: from config

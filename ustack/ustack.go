@@ -26,6 +26,7 @@ type Ustack interface {
 	Close() error
 	Stack() *stack.Stack
 	Addr() netip.Addr
+	MTU() int
 	LinkEndpoint(localPort uint16, remoteAddr netip.AddrPort) (*LinkEndpoint, error)
 
 	Inbound(ip *packet.Packet)
@@ -92,6 +93,7 @@ func (u *ustack) Close() error {
 
 func (u *ustack) Stack() *stack.Stack { return u.stack }
 func (u *ustack) Addr() netip.Addr    { return u.addr }
+func (u *ustack) MTU() int            { return int(u.link.MTU()) }
 func (u *ustack) LinkEndpoint(localPort uint16, remoteAddr netip.AddrPort) (*LinkEndpoint, error) {
 	return NewLinkEndpoint(u, localPort, remoteAddr)
 }

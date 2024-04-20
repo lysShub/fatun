@@ -7,48 +7,44 @@ import (
 
 	"github.com/pkg/errors"
 
-	itun "github.com/lysShub/fatun"
-	"github.com/lysShub/fatun/crypto"
+	"github.com/lysShub/fatun/sconn/crypto"
 	"github.com/lysShub/fatun/ustack"
 
+	"github.com/lysShub/sockit/conn"
 	"github.com/lysShub/sockit/packet"
 	"github.com/lysShub/sockit/test"
 	"github.com/stretchr/testify/require"
 )
 
-func UnicomStackAndRaw(t *testing.T, s ustack.Ustack, raw *itun.RawConn, pseudoSum1 uint16) {
+func UnicomStackAndRaw(t *testing.T, s ustack.Ustack, raw conn.RawConn, pseudoSum1 uint16) {
 	c, err := crypto.NewTCP(crypto.Key{0: 1}, pseudoSum1)
 	require.NoError(t, err)
 
 	go func() {
-		mtu := raw.MTU()
-		var ip = packet.Make(0, mtu)
+		var pkt = packet.Make(0, s.MTU())
 
 		for {
-			ip.Sets(64, mtu)
-			s.Outbound(context.Background(), ip)
-			if ip.Data() == 0 {
+			s.Outbound(context.Background(), pkt.SetHead(0))
+			if pkt.Data() == 0 {
 				return
 			}
 
-			ip.SetHead(64)
-			test.ValidIP(t, ip.Bytes())
+			pkt.SetHead(64)
+			test.ValidIP(t, pkt.Bytes())
 
-			c.EncryptRaw(ip)
+			c.EncryptRaw(pkt)
 
-			test.ValidIP(t, ip.Bytes())
+			test.ValidIP(t, pkt.Bytes())
 
-			err := raw.Write(context.Background(), ip)
+			err := raw.Write(context.Background(), pkt)
 			require.NoError(t, err)
 		}
 	}()
 	go func() {
-		mtu := raw.MTU()
-		var tcp = packet.Make(0, mtu)
+		var tcp = packet.Make(0, s.MTU())
 
 		for {
-			tcp.Sets(64, mtu)
-			err := raw.Read(context.Background(), tcp)
+			err := raw.Read(context.Background(), tcp.SetHead(0))
 			if errors.Is(err, io.EOF) {
 				return
 			}
