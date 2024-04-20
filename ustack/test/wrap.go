@@ -4,7 +4,7 @@ import (
 	"context"
 	"net/netip"
 
-	"github.com/lysShub/itun/ustack"
+	"github.com/lysShub/fatun/ustack"
 	"github.com/lysShub/sockit/packet"
 	"github.com/lysShub/sockit/test"
 )

@@ -1,7 +1,7 @@
 package internal
 
 import (
-	"github.com/lysShub/itun/session"
+	"github.com/lysShub/fatun/session"
 	"github.com/pkg/errors"
 )
 

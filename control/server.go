@@ -6,7 +6,7 @@ import (
 	"net"
 	"time"
 
-	"github.com/lysShub/itun/control/internal"
+	"github.com/lysShub/fatun/control/internal"
 	"github.com/pkg/errors"
 )
 

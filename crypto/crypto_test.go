@@ -7,9 +7,9 @@ import (
 
 	"github.com/pkg/errors"
 
-	"github.com/lysShub/itun"
-	"github.com/lysShub/itun/crypto"
-	"github.com/lysShub/itun/ustack"
+	itun "github.com/lysShub/fatun"
+	"github.com/lysShub/fatun/crypto"
+	"github.com/lysShub/fatun/ustack"
 
 	"github.com/lysShub/sockit/packet"
 	"github.com/lysShub/sockit/test"

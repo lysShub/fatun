@@ -7,9 +7,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/lysShub/itun"
-	"github.com/lysShub/itun/app/server/proxyer/sender"
-	"github.com/lysShub/itun/session"
+	itun "github.com/lysShub/fatun"
+	"github.com/lysShub/fatun/app/server/proxyer/sender"
+	"github.com/lysShub/fatun/session"
 	"github.com/lysShub/sockit/packet"
 
 	"gvisor.dev/gvisor/pkg/tcpip/header"

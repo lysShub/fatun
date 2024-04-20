@@ -12,7 +12,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/lysShub/itun/session"
+	"github.com/lysShub/fatun/session"
 	"github.com/pkg/errors"
 	"github.com/shirou/gopsutil/v3/net"
 	"github.com/shirou/gopsutil/v3/process"

@@ -6,7 +6,7 @@ import (
 	"go/token"
 	"time"
 
-	"github.com/lysShub/itun/sconn"
+	"github.com/lysShub/fatun/sconn"
 )
 
 // var _ = (&printer.Config{}).Fprint(nil, nil, *ast.File)

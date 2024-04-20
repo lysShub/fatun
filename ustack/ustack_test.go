@@ -10,10 +10,10 @@ import (
 
 	"github.com/pkg/errors"
 
-	"github.com/lysShub/itun"
-	"github.com/lysShub/itun/ustack"
-	"github.com/lysShub/itun/ustack/gonet"
-	"github.com/lysShub/itun/ustack/link"
+	itun "github.com/lysShub/fatun"
+	"github.com/lysShub/fatun/ustack"
+	"github.com/lysShub/fatun/ustack/gonet"
+	"github.com/lysShub/fatun/ustack/link"
 
 	"github.com/lysShub/sockit/packet"
 	"github.com/lysShub/sockit/test"

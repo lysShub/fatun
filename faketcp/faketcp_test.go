@@ -3,7 +3,7 @@ package faketcp_test
 import (
 	"testing"
 
-	"github.com/lysShub/itun/faketcp"
+	"github.com/lysShub/fatun/faketcp"
 	"github.com/lysShub/sockit/packet"
 
 	"github.com/lysShub/sockit/test"

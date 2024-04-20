@@ -1,4 +1,4 @@
-module github.com/lysShub/itun
+module github.com/lysShub/fatun
 
 go 1.21
 

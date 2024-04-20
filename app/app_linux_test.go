@@ -9,9 +9,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/lysShub/itun/app"
-	"github.com/lysShub/itun/app/server"
-	"github.com/lysShub/itun/sconn"
+	"github.com/lysShub/fatun/app"
+	"github.com/lysShub/fatun/app/server"
+	"github.com/lysShub/fatun/sconn"
 	"github.com/lysShub/sockit/conn/tcp"
 	"github.com/stretchr/testify/require"
 )

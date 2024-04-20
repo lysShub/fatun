@@ -4,8 +4,8 @@ import (
 	"os"
 	"sync"
 
-	"github.com/lysShub/itun/app/client/capture"
-	"github.com/lysShub/itun/session"
+	"github.com/lysShub/fatun/app/client/capture"
+	"github.com/lysShub/fatun/session"
 )
 
 type SessionMgr struct {

@@ -7,10 +7,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lysShub/itun/app/server/adapter"
-	"github.com/lysShub/itun/session"
+	"github.com/lysShub/fatun/app/server/adapter"
+	"github.com/lysShub/fatun/session"
 	"github.com/lysShub/sockit/packet"
-
 )
 
 type SessionMgr struct {

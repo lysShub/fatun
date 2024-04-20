@@ -8,9 +8,9 @@ import (
 	"net/netip"
 	"testing"
 
-	"github.com/lysShub/itun/ustack"
-	"github.com/lysShub/itun/ustack/gonet"
-	"github.com/lysShub/itun/ustack/link"
+	"github.com/lysShub/fatun/ustack"
+	"github.com/lysShub/fatun/ustack/gonet"
+	"github.com/lysShub/fatun/ustack/link"
 	"github.com/lysShub/sockit/packet"
 	"github.com/lysShub/sockit/test"
 	"github.com/stretchr/testify/require"

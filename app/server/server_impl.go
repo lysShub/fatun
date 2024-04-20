@@ -1,8 +1,8 @@
 package server
 
 import (
-	"github.com/lysShub/itun/app"
-	"github.com/lysShub/itun/app/server/adapter"
+	"github.com/lysShub/fatun/app"
+	"github.com/lysShub/fatun/app/server/adapter"
 )
 
 type proxyerImpl Server

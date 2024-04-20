@@ -7,9 +7,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/lysShub/itun"
-	"github.com/lysShub/itun/app/client/capture"
-	"github.com/lysShub/itun/session"
+	itun "github.com/lysShub/fatun"
+	"github.com/lysShub/fatun/app/client/capture"
+	"github.com/lysShub/fatun/session"
 	"github.com/lysShub/sockit/errorx"
 	"github.com/lysShub/sockit/packet"
 	"github.com/pkg/errors"

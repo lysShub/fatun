@@ -5,7 +5,7 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/lysShub/itun"
+	itun "github.com/lysShub/fatun"
 	"github.com/pkg/errors"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"

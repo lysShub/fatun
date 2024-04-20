@@ -5,8 +5,8 @@ import (
 	"encoding/gob"
 	"net"
 
-	"github.com/lysShub/itun/control/internal"
-	"github.com/lysShub/itun/session"
+	"github.com/lysShub/fatun/control/internal"
+	"github.com/lysShub/fatun/session"
 )
 
 // todo: support ctx, e.g: ctr.IPv6(ctx)
