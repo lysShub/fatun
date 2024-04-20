@@ -89,6 +89,7 @@ func (c *Conn) handshake(ctx context.Context) (err error) {
 
 	var key crypto.Key
 	if c.role == server {
+		// todo: require tcp NoDelay
 		if err := c.cfg.PrevPackets.Server(ctx, tcp); err != nil {
 			return err
 		}
