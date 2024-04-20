@@ -8,8 +8,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/lysShub/itun/app/client/filter/mapping"
-	"github.com/lysShub/itun/session"
+	"github.com/lysShub/fatun/app/client/filter/mapping"
+	"github.com/lysShub/fatun/session"
 	"github.com/lysShub/sockit/test"
 	"github.com/lysShub/sockit/test/debug"
 	"github.com/pkg/errors"

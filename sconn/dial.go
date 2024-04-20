@@ -3,9 +3,9 @@ package sconn
 import (
 	"context"
 
-	"github.com/lysShub/itun/session"
-	"github.com/lysShub/itun/ustack"
-	"github.com/lysShub/itun/ustack/link"
+	"github.com/lysShub/fatun/session"
+	"github.com/lysShub/fatun/ustack"
+	"github.com/lysShub/fatun/ustack/link"
 	"github.com/lysShub/sockit/conn"
 )
 

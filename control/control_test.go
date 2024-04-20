@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lysShub/itun/session"
+	"github.com/lysShub/fatun/session"
 	"github.com/lysShub/sockit/test"
 	"github.com/stretchr/testify/require"
 )

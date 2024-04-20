@@ -7,7 +7,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/lysShub/itun/app/client/filter"
+	"github.com/lysShub/fatun/app/client/filter"
 	"github.com/lysShub/sockit/packet"
 
 	"github.com/pkg/errors"

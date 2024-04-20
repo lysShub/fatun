@@ -4,8 +4,8 @@ import (
 	"context"
 	"log/slog"
 
-	cs "github.com/lysShub/itun/app/client/session"
-	"github.com/lysShub/itun/session"
+	cs "github.com/lysShub/fatun/app/client/session"
+	"github.com/lysShub/fatun/session"
 	"github.com/lysShub/sockit/packet"
 )
 

@@ -3,7 +3,7 @@ package filter
 import (
 	"sync"
 
-	"github.com/lysShub/itun/app/client/filter/mapping"
+	"github.com/lysShub/fatun/app/client/filter/mapping"
 )
 
 type Hitter interface {

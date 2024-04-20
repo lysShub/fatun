@@ -6,12 +6,12 @@ import (
 	"os"
 	"sync/atomic"
 
-	"github.com/lysShub/itun/app"
-	"github.com/lysShub/itun/app/server/adapter"
-	ss "github.com/lysShub/itun/app/server/proxyer/session"
-	"github.com/lysShub/itun/control"
-	"github.com/lysShub/itun/sconn"
-	"github.com/lysShub/itun/session"
+	"github.com/lysShub/fatun/app"
+	"github.com/lysShub/fatun/app/server/adapter"
+	ss "github.com/lysShub/fatun/app/server/proxyer/session"
+	"github.com/lysShub/fatun/control"
+	"github.com/lysShub/fatun/sconn"
+	"github.com/lysShub/fatun/session"
 	"github.com/lysShub/sockit/errorx"
 	"github.com/lysShub/sockit/packet"
 )

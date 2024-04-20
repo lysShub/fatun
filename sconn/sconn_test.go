@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lysShub/itun/crypto"
-	"github.com/lysShub/itun/sconn"
-	"github.com/lysShub/itun/session"
-	"github.com/lysShub/itun/ustack/gonet"
+	"github.com/lysShub/fatun/crypto"
+	"github.com/lysShub/fatun/sconn"
+	"github.com/lysShub/fatun/session"
+	"github.com/lysShub/fatun/ustack/gonet"
 	"github.com/pkg/errors"
 	"golang.org/x/sync/errgroup"
 

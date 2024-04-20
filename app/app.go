@@ -3,7 +3,7 @@ package app
 import (
 	"log/slog"
 
-	"github.com/lysShub/itun/sconn"
+	"github.com/lysShub/fatun/sconn"
 )
 
 type Config struct {

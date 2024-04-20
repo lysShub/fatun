@@ -4,7 +4,7 @@ import (
 	"context"
 	"net"
 
-	"github.com/lysShub/itun/session"
+	"github.com/lysShub/fatun/session"
 )
 
 type Handler interface {

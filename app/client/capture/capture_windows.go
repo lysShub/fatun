@@ -11,8 +11,8 @@ import (
 	"sync/atomic"
 
 	"github.com/lysShub/divert-go"
-	"github.com/lysShub/itun/app/client/filter"
-	sess "github.com/lysShub/itun/session"
+	"github.com/lysShub/fatun/app/client/filter"
+	sess "github.com/lysShub/fatun/session"
 	"github.com/lysShub/sockit/errorx"
 	"github.com/lysShub/sockit/helper/ipstack"
 	"github.com/lysShub/sockit/packet"

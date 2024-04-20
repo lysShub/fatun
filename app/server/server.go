@@ -4,10 +4,10 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/lysShub/itun/app"
-	"github.com/lysShub/itun/app/server/adapter"
-	"github.com/lysShub/itun/app/server/proxyer"
-	"github.com/lysShub/itun/sconn"
+	"github.com/lysShub/fatun/app"
+	"github.com/lysShub/fatun/app/server/adapter"
+	"github.com/lysShub/fatun/app/server/proxyer"
+	"github.com/lysShub/fatun/sconn"
 )
 
 func ListenAndServe(ctx context.Context, l *sconn.Listener, cfg *app.Config) error {

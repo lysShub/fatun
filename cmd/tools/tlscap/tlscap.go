@@ -1,3 +1,6 @@
+//go:build windows
+// +build windows
+
 package main
 
 import (
@@ -8,8 +11,8 @@ import (
 	"path/filepath"
 
 	"github.com/docker/go-units"
-	"github.com/lysShub/itun/app/client/capture"
-	"github.com/lysShub/itun/config"
+	"github.com/lysShub/fatun/app/client/capture"
+	"github.com/lysShub/fatun/config"
 )
 
 func main() {
