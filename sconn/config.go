@@ -55,13 +55,23 @@ func (pps PrevPackets) Client(ctx context.Context, conn net.Conn) (err error) {
 		if i%2 == 0 {
 			_, err := conn.Write(pps[i])
 			if err != nil {
-				return errors.WithStack(err)
+				select {
+				case <-ctx.Done():
+					return errors.WithStack(ctx.Err())
+				default:
+					return errors.WithStack(err)
+				}
 			}
 		} else {
 			var b = make([]byte, len(pps[i]))
 
 			if _, err := io.ReadFull(conn, b); err != nil {
-				return errors.WithStack(err)
+				select {
+				case <-ctx.Done():
+					return errors.WithStack(ctx.Err())
+				default:
+					return errors.WithStack(err)
+				}
 			}
 			if !bytes.Equal(b, pps[i]) {
 				return ErrPrevPacketInvalid(i)
@@ -82,7 +92,12 @@ func (pps PrevPackets) Server(ctx context.Context, conn net.Conn) (err error) {
 			var b = make([]byte, len(pps[i]))
 
 			if _, err := io.ReadFull(conn, b); err != nil {
-				return errors.WithStack(err)
+				select {
+				case <-ctx.Done():
+					return errors.WithStack(ctx.Err())
+				default:
+					return errors.WithStack(err)
+				}
 			}
 			if !bytes.Equal(b, pps[i]) {
 				return ErrPrevPacketInvalid(i)
@@ -90,7 +105,12 @@ func (pps PrevPackets) Server(ctx context.Context, conn net.Conn) (err error) {
 		} else {
 			_, err := conn.Write(pps[i])
 			if err != nil {
-				return errors.WithStack(err)
+				select {
+				case <-ctx.Done():
+					return errors.WithStack(ctx.Err())
+				default:
+					return errors.WithStack(err)
+				}
 			}
 		}
 	}
@@ -121,7 +141,12 @@ func (t *Sign) Client(ctx context.Context, conn net.Conn) (crypto.Key, error) {
 
 	err = gob.NewEncoder(conn).Encode(t.Sign)
 	if err != nil {
-		return crypto.Key{}, errors.WithStack(err)
+		select {
+		case <-ctx.Done():
+			return crypto.Key{}, errors.WithStack(err)
+		default:
+			return crypto.Key{}, err
+		}
 	}
 
 	return key, nil

@@ -106,7 +106,7 @@ func Test_Capture(t *testing.T) {
 	for {
 		s, err := capture.Capture(context.Background())
 		require.NoError(t, err)
-		fmt.Println(s.Session().String())
+		fmt.Println(s.ID().String())
 
 		go func() {
 			var b = packet.Make(0, 1536)

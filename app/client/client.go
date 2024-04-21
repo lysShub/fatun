@@ -130,11 +130,11 @@ func (c *Client) AddSession(ctx context.Context, s capture.Session) error {
 	ctx, cancel := context.WithTimeout(ctx, time.Second*3)
 	defer cancel()
 
-	if s.Session() == c.self {
+	if s.ID() == c.self {
 		return errors.Errorf("can't proxy self %s", c.self.String())
 	}
 
-	resp, err := c.ctr.AddSession(ctx, s.Session())
+	resp, err := c.ctr.AddSession(ctx, s.ID())
 	if err != nil {
 		if c.closeErr.Load() != nil {
 			return *c.closeErr.Load()

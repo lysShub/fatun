@@ -98,7 +98,7 @@ func (s *capture) Capture(ctx context.Context) (Session, error) {
 			} else {
 				sess := sess.FromIP(ip)
 				c, err := newSession(sess, ip, int(s.addr.Network().IfIdx), s.opt.Priority+1)
-				return c, err
+				return WrapMss(c, -(20 + 16 + 2)), err
 			}
 		}
 	}
@@ -180,8 +180,8 @@ func (c *session) Inject(pkt *packet.Packet) error {
 	return err
 }
 
-func (c *session) Session() sess.Session { return c.s }
-func (s *session) String() string        { return s.s.String() }
+func (c *session) ID() sess.Session { return c.s }
+func (s *session) String() string   { return s.s.String() }
 
 func (c *session) Close() error { return c.close(nil) }
 
