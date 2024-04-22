@@ -30,9 +30,10 @@ func main() {
 	}
 
 	var (
-		cfg  = &config.Config{}
-		url  string
-		size int
+		cfg      = &config.Config{}
+		url      string
+		size     int
+		mssDelta int = -(20 + 16 + 2)
 	)
 
 	if path, err := filepath.Abs(args[0]); err != nil {
@@ -60,7 +61,7 @@ func main() {
 		size = int(v)
 	}
 
-	pps, err := capture.CaptureTLSWithGolang(context.Background(), url, size)
+	pps, err := capture.CaptureTLSWithGolang(context.Background(), url, size, mssDelta)
 	if err != nil {
 		fmt.Println("capture:", err.Error())
 		return

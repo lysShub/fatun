@@ -20,7 +20,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
-func CaptureTLSWithGolang(partenCtx context.Context, url string, sizeLimit int) (sconn.PrevPackets, error) {
+func CaptureTLSWithGolang(partenCtx context.Context, url string, totalSzie, mssDelta int) (sconn.PrevPackets, error) {
 	u, err := nurl.Parse(url)
 	if err != nil {
 		return nil, err
@@ -53,17 +53,18 @@ func CaptureTLSWithGolang(partenCtx context.Context, url string, sizeLimit int) 
 		divert.Load(divert.DLL)
 		defer divert.Release()
 		var f = fmt.Sprintf("tcp and remoteAddr=%s and remotePort=%d", addr.IP.String(), addr.Port)
-		d, err := divert.Open(f, divert.Network, 0, divert.ReadOnly|divert.Sniff)
+		d, err := divert.Open(f, divert.Network, 0, 0)
 		if err != nil {
 			return err
 		}
 		defer d.Close()
 
 		var size int
-		for size <= sizeLimit {
+		var addr divert.Address
+		for size <= totalSzie {
 			var b = make([]byte, 1536)
 
-			n, err := d.RecvCtx(ctx, b, nil)
+			n, err := d.RecvCtx(ctx, b, &addr)
 			if err != nil {
 				if errors.Is(err, context.Canceled) {
 					return nil // url source size < sizeLimit
@@ -74,7 +75,6 @@ func CaptureTLSWithGolang(partenCtx context.Context, url string, sizeLimit int) 
 			}
 
 			size += n
-
 			var tcp header.TCP
 			switch header.IPVersion(b) {
 			case 4:
@@ -83,14 +83,19 @@ func CaptureTLSWithGolang(partenCtx context.Context, url string, sizeLimit int) 
 				tcp = header.IPv6(b[:n]).Payload()
 			default:
 			}
+			if err := UpdateMSS(tcp, mssDelta); err != nil {
+				return err
+			}
 
+			if _, err := d.Send(b[:n], &addr); err != nil {
+				return err
+			}
 			seg := tcp.Payload()
 			if len(seg) > 0 {
 				size += len(seg)
 				pps = append(pps, seg)
 			}
 		}
-
 		return nil
 	})
 	eg.Go(func() error { // request
