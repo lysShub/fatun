@@ -37,8 +37,8 @@ func Test_Handshake_Ctx(t *testing.T) {
 					}
 					return pps
 				}(),
-				SwapKey:      sign,
-				HandshakeMTU: 1500,
+				SwapKey: sign,
+				MTU:     1500,
 			}
 		)
 		c, s := test.NewMockRaw(
@@ -83,7 +83,7 @@ func Test_Handshake_Ctx(t *testing.T) {
 					Sign:   sign,
 					Parser: func(sign []byte) (crypto.Key, error) { return crypto.Key{1: 1}, nil },
 				},
-				HandshakeMTU: 1500,
+				MTU: 1500,
 			}
 		)
 		rand.New(rand.NewSource(0)).Read(sign)
@@ -143,9 +143,9 @@ func Test_Ctr_Conn(t *testing.T) {
 		saddr = netip.AddrPortFrom(test.LocIP(), 8080)  // test.RandPort()
 		mtu   = 1500
 		cfg   = sconn.Config{
-			PrevPackets:  pps,
-			SwapKey:      sign,
-			HandshakeMTU: mtu,
+			PrevPackets: pps,
+			SwapKey:     sign,
+			MTU:         mtu,
 		}
 	)
 	c, s := test.NewMockRaw(

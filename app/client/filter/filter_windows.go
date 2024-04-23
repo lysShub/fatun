@@ -34,6 +34,8 @@ func newFilter() *filter {
 	}
 }
 
+func (f *filter) Close() error { return nil }
+
 func (f *filter) Hit(ip []byte) (bool, error) {
 	ep := mapping.FromIP(ip)
 	if !ep.Valid() {

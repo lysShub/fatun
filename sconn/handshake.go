@@ -140,7 +140,7 @@ func (c *Conn) handshake(ctx context.Context) (err error) {
 
 func (c *Conn) handshakeInboundService(ctx context.Context) error {
 	var (
-		pkt = packet.Make(64, c.cfg.HandshakeMTU)
+		pkt = packet.Make(64, c.cfg.MTU)
 	)
 
 	for {

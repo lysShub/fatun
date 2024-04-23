@@ -11,15 +11,8 @@ type Hitter interface {
 	Hit(ip []byte) (bool, error)
 }
 
-type ErrNotRecord struct{}
-
-func (ErrNotRecord) Error() string { return "filter not record" }
-
-func (ErrNotRecord) Temporary() bool { return true }
-
+// todo: humanable syntax
 type Filter interface {
-	Hitter
-
 	// default filter rule, will hit tcp connection when send secondary  SYN
 	EnableDefault() error
 	DisableDefault() error
@@ -28,7 +21,18 @@ type Filter interface {
 	DelProcess(process string) error
 }
 
-func New() (Filter, error) {
+type HitFilter interface {
+	Hitter
+	Filter
+	Close() error
+}
+
+type ErrNotRecord struct{}
+
+func (ErrNotRecord) Error() string   { return "filter not record" }
+func (ErrNotRecord) Temporary() bool { return true }
+
+func New() (HitFilter, error) {
 	var err error
 	GlobalOnce.Do(func() {
 		Global, err = mapping.New()

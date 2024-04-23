@@ -75,7 +75,6 @@ func (p *Proxyer) close(cause error) error {
 		if p.ctr != nil {
 			if err := p.ctr.Close(); err != nil {
 				cause = err
-				p.logger.Error(err.Error(), errorx.TraceAttr(err))
 			}
 		}
 		p.srvCancel()

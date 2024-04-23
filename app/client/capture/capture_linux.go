@@ -7,7 +7,6 @@ import (
 	"context"
 	"time"
 
-	"github.com/lysShub/fatun/app/client/filter"
 	"github.com/lysShub/sockit/packet"
 
 	"github.com/pkg/errors"
@@ -16,7 +15,7 @@ import (
 type capture struct {
 }
 
-func newCapture(hit filter.Hitter, opt *Config) (Capture, error) {
+func newCapture(client Client) (cap *capture, err error) {
 	// return nil, errors.New("implement")
 	panic(errors.New("todo implement"))
 }

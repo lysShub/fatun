@@ -15,6 +15,10 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
+// todo: maybe tcp payload start with tls packet
+
+const Overhead = 20 + crypto.Bytes
+
 // record tcp seq/ack, not care handshake/clode, etc.
 // todo: more reasonable wnd
 type FakeTCP struct {
@@ -53,14 +57,6 @@ func New(localPort, remotePort uint16, opts ...func(*FakeTCP)) *FakeTCP {
 func (f *FakeTCP) InitNxt(snd, rcv uint32) {
 	f.sndNxt.Store(snd)
 	f.rcvNxt.Store(rcv)
-}
-
-func (f *FakeTCP) Overhead() int {
-	n := 20 // ipv4 header
-	if f.crypto != nil {
-		n += f.crypto.Overhead()
-	}
-	return n
 }
 
 // AttachSend input tcp payload, attach tcp header, and return

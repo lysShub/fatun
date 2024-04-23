@@ -2,6 +2,6 @@ package filter
 
 // divert
 
-func newFilter() Filter {
+func newFilter() HitFilter {
 	panic("not implement")
 }

@@ -21,6 +21,8 @@ import (
 	"github.com/lysShub/sockit/test/debug"
 )
 
+const Overhead = session.Overhead
+
 type Sconn interface {
 	net.Conn // control tcp conn
 
@@ -128,7 +130,7 @@ func (c *Conn) close(cause error) error {
 
 func (c *Conn) outboundService() error {
 	var (
-		pkt = packet.Make(64, c.cfg.HandshakeMTU)
+		pkt = packet.Make(64, c.cfg.MTU)
 	)
 
 	for {
@@ -153,11 +155,6 @@ func (c *Conn) outboundService() error {
 			}
 		}
 	}
-}
-
-func (c *Conn) Overhead() int {
-	n := session.Size
-	return n + c.fake.Overhead()
 }
 
 func (c *Conn) TCP() net.Conn {

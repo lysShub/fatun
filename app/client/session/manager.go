@@ -1,29 +1,28 @@
 package session
 
 import (
-	"os"
 	"sync"
 
-	"github.com/lysShub/fatun/app/client/capture"
 	"github.com/lysShub/fatun/session"
+	"github.com/lysShub/sockit/errorx"
 )
 
 type SessionMgr struct {
 	closeCh chan struct{}
 
 	mu       sync.RWMutex
-	sessions map[session.ID]*Session
+	sessions map[session.ID]Session
 }
 
 func NewSessionMgr() *SessionMgr {
 	var sm = &SessionMgr{
-		sessions: make(map[session.ID]*Session, 16),
+		sessions: make(map[session.ID]Session, 16),
 	}
 	return sm
 }
 
 func (sm *SessionMgr) Close() error {
-	var ss []*Session
+	var ss []Session
 	sm.mu.Lock()
 	for _, e := range sm.sessions {
 		ss = append(ss, e)
@@ -32,17 +31,17 @@ func (sm *SessionMgr) Close() error {
 	sm.mu.Unlock()
 
 	for _, e := range ss {
-		e.close(os.ErrClosed)
+		e.Close()
 	}
 	return nil
 }
 
-func (sm *SessionMgr) Add(client Client, s capture.Session, id session.ID) error {
+func (sm *SessionMgr) Add(client Client, id session.ID, firstIP []byte) error {
 	if _, err := sm.Get(id); err == nil {
-		return session.ErrExistID(id)
+		return errorx.WrapTemp(session.ErrExistID(id))
 	}
 
-	session, err := newSession(sm, client, id, s)
+	sess, err := newSession(client, id, firstIP)
 	if err != nil {
 		return err
 	}
@@ -50,11 +49,11 @@ func (sm *SessionMgr) Add(client Client, s capture.Session, id session.ID) error
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
-	sm.sessions[id] = session
+	sm.sessions[id] = sess
 	return nil
 }
 
-func (sm *SessionMgr) Get(id session.ID) (s *Session, err error) {
+func (sm *SessionMgr) Get(id session.ID) (s Session, err error) {
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
 
@@ -65,10 +64,8 @@ func (sm *SessionMgr) Get(id session.ID) (s *Session, err error) {
 	return s, err
 }
 
-func (sm *SessionMgr) del(id session.ID) {
-	if s, err := sm.Get(id); err == nil {
-		sm.mu.Lock()
-		delete(sm.sessions, s.id)
-		sm.mu.Unlock()
-	}
+func (sm *SessionMgr) Del(id session.ID) {
+	sm.mu.Lock()
+	delete(sm.sessions, id)
+	sm.mu.Unlock()
 }
