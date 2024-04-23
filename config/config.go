@@ -1,29 +1,64 @@
 package config
 
 import (
-	"fmt"
 	"go/parser"
 	"go/token"
-	"time"
+	"log/slog"
+	"os"
 
+	"github.com/lysShub/fatun/app"
 	"github.com/lysShub/fatun/sconn"
+	"github.com/pkg/errors"
 )
 
 // var _ = (&printer.Config{}).Fprint(nil, nil, *ast.File)
 
 type Config struct {
+	Server string
 
-	// client set first tcp packet, server recv and check it, then replay
-	// second tcp packet, etc.
-	PrevPackets sconn.PrevPackets //todo: support mutiple data set
+	PrevPackets string
 
-	HandShakeTimeout time.Duration
-
-	// swap secret key
 	SwapKey sconn.SwapKey
+
+	MTU int
+
+	Log string
+}
+
+func (cfg *Config) Config() (*app.Config, error) {
+	scfg := &sconn.Config{
+		SwapKey: cfg.SwapKey,
+		MTU:     cfg.MTU,
+	}
+	err := scfg.PrevPackets.Unmarshal(cfg.PrevPackets)
+	if err != nil {
+		return nil, err
+	}
+
+	var fh *os.File
+	switch cfg.Log {
+	case "stderr":
+		fh = os.Stderr
+	case "stdout", "":
+		fh = os.Stdout
+	default:
+		fh, err = os.Create(cfg.Log)
+		if err != nil {
+			return nil, errors.WithStack(err)
+		}
+	}
+
+	c := &app.Config{
+		Config: scfg,
+		MTU:    cfg.MTU,
+		Logger: slog.NewJSONHandler(fh, nil),
+	}
+	return c, nil
 }
 
 func (cfg *Config) Load(from string) error {
+	panic("todo: ")
+
 	mode := parser.ParseComments | parser.DeclarationErrors | parser.AllErrors
 	fs := token.NewFileSet()
 	f, err := parser.ParseFile(fs, from, nil, mode)
@@ -42,7 +77,7 @@ func (cfg *Config) Load(from string) error {
 	// }
 	// fh.Write(b.Bytes())
 
-	fmt.Println(f)
+	_ = f
 
 	return nil
 }

@@ -3,14 +3,42 @@ package server
 import (
 	"context"
 	"log/slog"
+	"net"
+	"net/netip"
 
 	"github.com/lysShub/fatun/app"
 	"github.com/lysShub/fatun/app/server/adapter"
 	"github.com/lysShub/fatun/app/server/proxyer"
 	"github.com/lysShub/fatun/sconn"
+	"github.com/lysShub/sockit/conn/tcp"
+	"github.com/pkg/errors"
 )
 
-func ListenAndServe(ctx context.Context, l *sconn.Listener, cfg *app.Config) error {
+func ListenAndServe(ctx context.Context, addr string, cfg *app.Config) error {
+	var laddr netip.AddrPort
+	if addr, err := net.ResolveTCPAddr("tcp", addr); err != nil {
+		return errors.WithStack(err)
+	} else {
+		ip := addr.IP
+		if ip == nil {
+			laddr = netip.AddrPortFrom(netip.IPv4Unspecified(), uint16(addr.Port))
+		} else if ip.To4() != nil {
+			laddr = netip.AddrPortFrom(netip.AddrFrom4([4]byte(ip.To4())), uint16(addr.Port))
+		} else {
+			laddr = netip.AddrPortFrom(netip.AddrFrom16([16]byte(ip.To16())), uint16(addr.Port))
+		}
+	}
+
+	raw, err := tcp.Listen(laddr)
+	if err != nil {
+		return err
+	}
+	defer raw.Close()
+	l, err := sconn.NewListener(raw, cfg.Config)
+	if err != nil {
+		return err
+	}
+
 	s, err := NewServer(l, cfg)
 	if err != nil {
 		return err
@@ -52,5 +80,4 @@ func (s *Server) Serve(ctx context.Context) error {
 
 		go proxyer.Proxy(ctx, proxyerImplPtr(s), conn)
 	}
-
 }

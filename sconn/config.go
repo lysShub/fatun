@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/gob"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net"
+	"os"
+	"slices"
 	"time"
 
 	"github.com/pkg/errors"
@@ -22,7 +25,7 @@ type Config struct {
 	// swap secret key
 	SwapKey SwapKey
 
-	HandshakeMTU int
+	MTU int
 }
 
 func (c *Config) init() error {
@@ -30,7 +33,7 @@ func (c *Config) init() error {
 		return errors.New("xx")
 	}
 
-	if c.HandshakeMTU <= 0 {
+	if c.MTU <= 0 {
 		return errors.New("invalid mtu")
 	}
 
@@ -43,6 +46,56 @@ type ErrPrevPacketInvalid int
 
 func (e ErrPrevPacketInvalid) Error() string {
 	return fmt.Sprintf("previous pakcet %d is invalid", e)
+}
+
+func (pps PrevPackets) Marshal(file string) error {
+	fh, err := os.Create(file)
+	if err != nil {
+		return err
+	}
+	defer fh.Close()
+
+	var dst []byte
+	for i, e := range pps {
+		n := hex.EncodedLen(len(e))
+		dst = slices.Grow(dst, n+1)
+		dst = dst[:n+1]
+
+		hex.Encode(dst, e)
+		if i != len(pps)-1 {
+			dst[n] = '\n'
+			n = n + 1
+		}
+		if _, err = fh.Write(dst[:n]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (pps *PrevPackets) Unmarshal(file string) error {
+	fh, err := os.Open(file)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	defer fh.Close()
+
+	data, err := io.ReadAll(fh)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+
+	ps := bytes.Split(data, []byte{'\n'})
+	for i := range ps {
+		n, err := hex.Decode(ps[i], ps[i])
+		if err != nil {
+			return errors.WithStack(err)
+		}
+		ps[i] = ps[i][:n]
+	}
+	(*pps) = ps
+
+	return nil
 }
 
 func (pps PrevPackets) Client(ctx context.Context, conn net.Conn) (err error) {

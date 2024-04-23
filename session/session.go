@@ -25,7 +25,7 @@ func Encode(pkt *packet.Packet, id ID) {
 func Decode(seg *packet.Packet) ID {
 	b := seg.Bytes()
 	id := binary.BigEndian.Uint16(b[idOffset1:idOffset2])
-	seg.SetHead(seg.Head() + Size)
+	seg.SetHead(seg.Head() + Overhead)
 	return ID(id)
 }
 
@@ -33,15 +33,18 @@ func ErrInvalidID(id ID) error {
 	return errors.Errorf("invalid session id %d", id)
 }
 
-func ErrExistID(id ID) error {
-	return errors.Errorf("exist session id %d", id)
+type ErrExistID ID
+
+func (e ErrExistID) Error() string {
+	return fmt.Sprintf("exist session id %d", e)
 }
+func (e ErrExistID) Temporary() bool { return true }
 
 const CtrSessID ID = 0xffff
 const (
 	idOffset1 = 0
 	idOffset2 = 2
-	Size      = idOffset2
+	Overhead  = idOffset2
 )
 
 // Session on clinet, corresponding a transport connect

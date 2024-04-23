@@ -15,6 +15,6 @@ type Sender interface {
 	Close() error
 }
 
-func NewSender(loc netip.AddrPort, proto tcpip.TransportProtocolNumber, dst netip.AddrPort) (Sender, error) {
-	return newSender(loc, proto, dst)
+func NewSender(local netip.AddrPort, proto tcpip.TransportProtocolNumber, remote netip.AddrPort) (Sender, error) {
+	return newSender(local, proto, remote)
 }

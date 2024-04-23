@@ -3,16 +3,10 @@ package sconn
 import (
 	"context"
 
-	"github.com/lysShub/fatun/session"
 	"github.com/lysShub/fatun/ustack"
 	"github.com/lysShub/fatun/ustack/link"
 	"github.com/lysShub/sockit/conn"
 )
-
-// todo: 应该在newConn就应该确定crypto等只资源类型，起码确定其Overhead()的值，这样
-// Conn的Overhead大小是确定的，在link.NewXxx使用cfg.HandshakeMTU-c.Overhead()。
-// 现在使用的是maxOverhead是理论最大开销。
-const maxOverhead = 20 + 16 + session.Size
 
 func Dial(raw conn.RawConn, cfg *Config) (*Conn, error) {
 	return DialCtx(context.Background(), raw, cfg)
@@ -28,7 +22,7 @@ func dial(ctx context.Context, raw conn.RawConn, cfg *Config) (*Conn, error) {
 	}
 
 	stack, err := ustack.NewUstack(
-		link.NewList(8, cfg.HandshakeMTU-maxOverhead),
+		link.NewList(8, cfg.MTU-Overhead),
 		raw.LocalAddr().Addr(),
 	)
 	if err != nil {

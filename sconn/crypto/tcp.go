@@ -21,8 +21,11 @@ type TCP struct {
 
 var _ Crypto = (*TCP)(nil)
 
-const Bytes = 16
-const nonces = 12
+const (
+	Bytes    = 16
+	Overhead = Bytes
+	nonces   = 12
+)
 
 // NewTCP a tcp AES-GCM-128 crypter, not update tcp Seq/Ack
 func NewTCP(key [Bytes]byte, pseudoSum1 uint16) (*TCP, error) {

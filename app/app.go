@@ -7,7 +7,7 @@ import (
 )
 
 type Config struct {
-	sconn.Config
+	*sconn.Config
 	MTU    int
 	Logger slog.Handler
 }

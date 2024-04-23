@@ -5,58 +5,49 @@ package capture
 
 import (
 	"context"
-	"fmt"
-	"net"
 	"os"
 	"sync/atomic"
 
 	"github.com/lysShub/divert-go"
-	"github.com/lysShub/fatun/app/client/filter"
-	sess "github.com/lysShub/fatun/session"
-	"github.com/lysShub/sockit/errorx"
-	"github.com/lysShub/sockit/helper/ipstack"
-	"github.com/lysShub/sockit/packet"
-
-	"github.com/lysShub/sockit/test"
-	"github.com/lysShub/sockit/test/debug"
-	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
 type capture struct {
-	opt *Config
+	c Client
 
 	handle *divert.Handle
 	addr   divert.Address
 
-	hitter filter.Hitter
-
+	srvCtx   context.Context
+	cancel   context.CancelFunc
 	closeErr atomic.Pointer[error]
 }
 
 var _ Capture = (*capture)(nil)
 
-func newCapture(hit filter.Hitter, opt *Config) (*capture, error) {
+func newCapture(client Client) (cap *capture, err error) {
 	var c = &capture{
-		opt:    opt,
-		hitter: hit,
+		c: client,
 	}
+	c.srvCtx, c.cancel = context.WithCancel(context.Background())
 
 	// for performance, only capture tcp.Syn packet
 	// todo: support icmp
 	var filter = "outbound and !loopback and ip and (tcp.Syn or udp)"
-
-	var err error
-	c.handle, err = divert.Open(filter, divert.Network, opt.Priority, 0)
+	c.handle, err = divert.Open(filter, divert.Network, c.c.DivertPriority(), 0)
 	if err != nil {
 		return nil, c.close(err)
 	}
 
+	go c.captureService()
 	return c, nil
 }
 
 func (s *capture) close(cause error) error {
 	if s.closeErr.CompareAndSwap(nil, &os.ErrClosed) {
+		if s.cancel != nil {
+			s.cancel()
+		}
+
 		if s.handle != nil {
 			if err := s.handle.Close(); err != nil {
 				cause = err
@@ -71,132 +62,21 @@ func (s *capture) close(cause error) error {
 	return *s.closeErr.Load()
 }
 
-func (s *capture) Capture(ctx context.Context) (Session, error) {
-	var ip = make([]byte, s.opt.Mtu)
+func (c *capture) captureService() error {
+	var ip = make([]byte, c.c.MTU())
 	for {
-		n, err := s.handle.RecvCtx(ctx, ip[:cap(ip)], &s.addr)
+		n, err := c.handle.RecvCtx(c.srvCtx, ip[:cap(ip)], &c.addr)
 		if err != nil {
-			return nil, s.close(err)
+			return c.close(err)
 		}
 		ip = ip[:n]
 
-		// ss := time.Now()
-		if hit, err := s.hitter.Hit(ip); err != nil {
-			if !errorx.Temporary(err) {
-				return nil, s.close(err)
-			}
-			s.opt.Logger.Warn(err.Error(), errorx.TraceAttr(err))
-
-			// fmt.Println("filter not record", time.Since(ss), sess.FromIP(ip).String())
-		} else {
-			// fmt.Println("filter has record", time.Since(ss), sess.FromIP(ip).String())
-
-			if !hit {
-				if _, err = s.handle.Send(ip[:n], &s.addr); err != nil {
-					return nil, s.close(err)
-				}
-			} else {
-				sess := sess.FromIP(ip)
-				c, err := newSession(sess, ip, int(s.addr.Network().IfIdx), s.opt.Priority+1)
-				return WrapMss(c, -(20 + 16 + 2)), err
+		if !c.c.Hit(ip) {
+			if _, err = c.handle.Send(ip[:n], &c.addr); err != nil {
+				return c.close(err)
 			}
 		}
 	}
 }
 
-func (s *capture) Close() error { return s.close(os.ErrClosed) }
-
-type session struct {
-	s sess.Session
-	d *divert.Handle
-
-	initPack    []byte
-	inboundAddr *divert.Address
-	ipstack     *ipstack.IPStack
-
-	closeErr atomic.Pointer[error]
-}
-
-var _ Session = (*session)(nil)
-
-func newSession(
-	s sess.Session, initPacket []byte,
-	injectIfIdx int, priority int16,
-) (*session, error) {
-	var err error
-	var c = &session{
-		s: s,
-
-		initPack:    initPacket,
-		inboundAddr: &divert.Address{},
-	}
-	c.inboundAddr.Network().IfIdx = uint32(injectIfIdx)
-
-	filter := fmt.Sprintf(
-		"%s and localAddr=%s and localPort=%d and remoteAddr=%s and remotePort=%d",
-		sess.ProtoStr(s.Proto), s.Src.Addr().String(), s.Src.Port(), s.Dst.Addr().String(), s.Dst.Port(),
-	)
-
-	c.d, err = divert.Open(filter, divert.Network, priority, 0)
-	if err != nil {
-		return nil, err
-	}
-	c.ipstack, err = ipstack.New(s.Src.Addr(), s.Dst.Addr(), tcpip.TransportProtocolNumber(s.Proto))
-	if err != nil {
-		return nil, err
-	}
-
-	return c, nil
-}
-
-func (c *session) Capture(ctx context.Context, pkt *packet.Packet) (err error) {
-	if len(c.initPack) > 0 {
-		pkt.SetData(0).Append(c.initPack)
-		c.initPack = nil
-		return nil
-	}
-
-	b := pkt.Bytes()
-	n, err := c.d.RecvCtx(ctx, b[:cap(b)], nil)
-	if err != nil {
-		pkt.SetData(0)
-		return err
-	}
-	pkt.SetData(n)
-
-	// todo: ipv6
-	iphdrLen := header.IPv4(pkt.Bytes()).HeaderLength()
-	pkt.SetHead(pkt.Head() + int(iphdrLen))
-	return nil
-}
-
-func (c *session) Inject(pkt *packet.Packet) error {
-	c.ipstack.AttachInbound(pkt)
-	if debug.Debug() {
-		test.ValidIP(test.T(), pkt.Bytes())
-	}
-
-	_, err := c.d.Send(pkt.Bytes(), c.inboundAddr)
-	return err
-}
-
-func (c *session) ID() sess.Session { return c.s }
-func (s *session) String() string   { return s.s.String() }
-
-func (c *session) Close() error { return c.close(nil) }
-
-func (c *session) close(cause error) error {
-	if c.closeErr.CompareAndSwap(nil, &net.ErrClosed) {
-		if c.d != nil {
-			if err := c.d.Close(); cause != nil {
-				cause = err
-			}
-		}
-
-		if cause != nil {
-			c.closeErr.Store(&cause)
-		}
-		return cause
-	}
-	return *c.closeErr.Load()
-}
+func (c *capture) Close() error { return c.close(os.ErrClosed) }

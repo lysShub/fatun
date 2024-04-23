@@ -10,6 +10,7 @@ import (
 
 	"github.com/pkg/errors"
 
+	"github.com/lysShub/fatun/session"
 	"github.com/lysShub/sockit/conn"
 	"github.com/lysShub/sockit/helper/ipstack"
 	"github.com/lysShub/sockit/packet"
@@ -29,9 +30,9 @@ type sender struct {
 	pseudoSum1 uint16
 }
 
-func newSender(loc netip.AddrPort, proto tcpip.TransportProtocolNumber, dst netip.AddrPort) (*sender, error) {
+func newSender(local netip.AddrPort, proto tcpip.TransportProtocolNumber, remote netip.AddrPort) (*sender, error) {
 	ipstack, err := ipstack.New(
-		loc.Addr(), dst.Addr(),
+		local.Addr(), remote.Addr(),
 		tcpip.TransportProtocolNumber(proto),
 	)
 	if err != nil {
@@ -41,7 +42,7 @@ func newSender(loc netip.AddrPort, proto tcpip.TransportProtocolNumber, dst neti
 	switch proto {
 	case header.TCPProtocolNumber:
 		tcp, err := tcp.Connect(
-			loc, dst,
+			local, remote,
 			conn.UsedPort(), // PortAdapter bind the port
 		)
 		if err != nil {
@@ -55,8 +56,8 @@ func newSender(loc netip.AddrPort, proto tcpip.TransportProtocolNumber, dst neti
 
 		pseudoSum1 := header.PseudoHeaderChecksum(
 			header.TCPProtocolNumber,
-			tcpip.AddrFromSlice(loc.Addr().AsSlice()),
-			tcpip.AddrFromSlice(dst.Addr().AsSlice()),
+			tcpip.AddrFromSlice(local.Addr().AsSlice()),
+			tcpip.AddrFromSlice(remote.Addr().AsSlice()),
 			0,
 		)
 		return &sender{
@@ -66,7 +67,7 @@ func newSender(loc netip.AddrPort, proto tcpip.TransportProtocolNumber, dst neti
 			pseudoSum1: pseudoSum1,
 		}, nil
 	default:
-		return nil, errors.New("not support")
+		return nil, errors.Errorf("not support %s", session.ProtoStr(proto))
 	}
 }
 

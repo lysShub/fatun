@@ -1,18 +1,27 @@
+//go:build windows
+// +build windows
+
 package client
 
 import (
 	"context"
 	"log/slog"
+	"net"
+	"net/netip"
 	"os"
 	"sync/atomic"
-	"time"
 
+	"github.com/lysShub/divert-go"
 	"github.com/lysShub/fatun/app"
 	"github.com/lysShub/fatun/app/client/capture"
+	"github.com/lysShub/fatun/app/client/filter"
 	cs "github.com/lysShub/fatun/app/client/session"
 	"github.com/lysShub/fatun/control"
 	"github.com/lysShub/fatun/sconn"
 	"github.com/lysShub/fatun/session"
+	"github.com/lysShub/sockit/conn"
+	"github.com/lysShub/sockit/conn/tcp"
+	dconn "github.com/lysShub/sockit/conn/tcp/divert"
 	"github.com/lysShub/sockit/errorx"
 	"github.com/lysShub/sockit/packet"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -25,9 +34,13 @@ type Client struct {
 	logger *slog.Logger
 	self   session.Session
 
-	conn *sconn.Conn
+	conn           *sconn.Conn
+	divertPriority int16
 
 	sessMgr *cs.SessionMgr
+	hiter   filter.Hitter
+	filter.Filter
+	capture capture.Capture
 
 	ctr control.Client
 
@@ -36,25 +49,77 @@ type Client struct {
 	closeErr  atomic.Pointer[error]
 }
 
-func NewClient(ctx context.Context, conn *sconn.Conn, cfg *app.Config) (*Client, error) {
+var _ = divert.MustLoad(divert.DLL)
+
+func Proxy(ctx context.Context, server string, cfg *app.Config) (*Client, error) {
+	var laddr, raddr netip.AddrPort
+	if addr, err := net.ResolveTCPAddr("tcp", server); err != nil {
+		return nil, errors.WithStack(err)
+	} else {
+		ip := addr.IP
+		if ip == nil {
+			laddr = netip.AddrPortFrom(netip.IPv4Unspecified(), 0)
+			raddr = netip.AddrPortFrom(netip.IPv4Unspecified(), uint16(addr.Port))
+		} else if ip.To4() != nil {
+			laddr = netip.AddrPortFrom(netip.IPv4Unspecified(), 0)
+			raddr = netip.AddrPortFrom(netip.AddrFrom4([4]byte(ip.To4())), uint16(addr.Port))
+		} else {
+			laddr = netip.AddrPortFrom(netip.IPv6Unspecified(), 0)
+			raddr = netip.AddrPortFrom(netip.AddrFrom16([16]byte(ip.To16())), uint16(addr.Port))
+		}
+	}
+
+	raw, err := tcp.Connect(laddr, raddr)
+	if err != nil {
+		return nil, err
+	}
+	// wraw, err := test.WrapPcap(raw, "raw.pcap")
+	// require.NoError(t, err)
+
+	c, err := NewClient(ctx, raw, cfg)
+	if err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
+func NewClient(ctx context.Context, raw conn.RawConn, cfg *app.Config) (*Client, error) {
 	var c = &Client{
 		cfg: cfg,
 		logger: slog.New(cfg.Logger.WithGroup("client").WithAttrs([]slog.Attr{
-			{Key: "local", Value: slog.StringValue(conn.LocalAddr().String())},
-			{Key: "proxyer", Value: slog.StringValue(conn.RemoteAddr().String())},
+			{Key: "local", Value: slog.StringValue(raw.LocalAddr().String())},
+			{Key: "proxyer", Value: slog.StringValue(raw.RemoteAddr().String())},
 		})),
 		self: session.Session{
-			Src:   conn.LocalAddr(),
+			Src:   raw.LocalAddr(),
 			Proto: header.TCPProtocolNumber,
-			Dst:   conn.RemoteAddr(),
+			Dst:   raw.RemoteAddr(),
 		},
-		conn:    conn,
 		sessMgr: cs.NewSessionMgr(),
 	}
 	c.srvCtx, c.srvCancel = context.WithCancel(context.Background())
 
+	var err error
+	if c.conn, err = sconn.Dial(raw, cfg.Config); err != nil {
+		return nil, c.close(err)
+	} else {
+		if /* dc */ _, ok := raw.(*dconn.Conn); ok {
+			c.divertPriority = 2 // todo: dc.Priority()
+		}
+	}
+	c.logger.Info("connected server")
+
+	if f, err := filter.New(); err != nil {
+		return nil, c.close(err)
+	} else {
+		c.hiter, c.Filter = f, f
+	}
+	if c.capture, err = capture.New(captureImplPtr(c)); err != nil {
+		return nil, c.close(err)
+	}
+
 	go c.downlinkService()
-	c.ctr = control.NewClient(conn.TCP())
+	c.ctr = control.NewClient(c.conn.TCP())
 
 	// todo: init config
 	if err := c.ctr.InitConfig(ctx, &control.Config{}); err != nil {
@@ -94,13 +159,10 @@ func (c *Client) close(cause error) error {
 func (c *Client) downlinkService() error {
 	var (
 		tcp = packet.Make(64, c.cfg.MTU)
-		id  session.ID
-		s   *cs.Session
-		err error
 	)
 
 	for {
-		id, err = c.conn.Recv(c.srvCtx, tcp.SetHead(64))
+		id, err := c.conn.Recv(c.srvCtx, tcp.SetHead(64))
 		if err != nil {
 			if errorx.Temporary(err) {
 				c.logger.Warn(err.Error())
@@ -109,7 +171,7 @@ func (c *Client) downlinkService() error {
 			}
 		}
 
-		s, err = c.sessMgr.Get(id)
+		s, err := c.sessMgr.Get(id)
 		if err != nil {
 			c.logger.Warn(err.Error())
 			continue
@@ -124,27 +186,6 @@ func (c *Client) downlinkService() error {
 
 func (c *Client) uplink(ctx context.Context, pkt *packet.Packet, id session.ID) error {
 	return c.conn.Send(ctx, pkt, id)
-}
-
-func (c *Client) AddSession(ctx context.Context, s capture.Session) error {
-	ctx, cancel := context.WithTimeout(ctx, time.Second*3)
-	defer cancel()
-
-	if s.ID() == c.self {
-		return errors.Errorf("can't proxy self %s", c.self.String())
-	}
-
-	resp, err := c.ctr.AddSession(ctx, s.ID())
-	if err != nil {
-		if c.closeErr.Load() != nil {
-			return *c.closeErr.Load()
-		}
-		return err
-	} else if resp.Err != "" {
-		return errors.New(resp.Err)
-	} else {
-		return c.sessMgr.Add(sessionImplPtr(c), s, resp.ID)
-	}
 }
 
 func (c *Client) Close() error { return c.close(nil) }

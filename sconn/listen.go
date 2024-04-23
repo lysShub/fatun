@@ -33,7 +33,7 @@ func NewListener(l conn.Listener, cfg *Config) (*Listener, error) {
 
 	var err error
 	if li.stack, err = ustack.NewUstack(
-		link.NewList(64, cfg.HandshakeMTU-maxOverhead), l.Addr().Addr(),
+		link.NewList(64, cfg.MTU), l.Addr().Addr(),
 	); err != nil {
 		return nil, li.close(err)
 	}
