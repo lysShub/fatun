@@ -13,6 +13,7 @@ import (
 	"github.com/lysShub/sockit/errorx"
 	"github.com/lysShub/sockit/packet"
 	"github.com/pkg/errors"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
 type sessionImpl Client
@@ -49,6 +50,8 @@ func (c *captureImpl) Hit(ip []byte) bool {
 		id := session.FromIP(ip)
 		if id == c.self {
 			c.raw().close(errors.Errorf("can't proxy self %s", c.self.String()))
+		} else if id.Proto != header.TCPProtocolNumber {
+			return false // todo: support udp
 		}
 
 		resp, err := c.ctr.AddSession(c.srvCtx, id) // todo: add timeout

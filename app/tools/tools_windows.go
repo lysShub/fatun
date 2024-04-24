@@ -21,7 +21,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
-func CaptureTLSWithGolang(partenCtx context.Context, url string, totalSzie, mssDelta int) (sconn.PrevPackets, error) {
+func CaptureTLSWithGolang(partenCtx context.Context, url string, totalSzie, mssDelta int) (sconn.PrevSegmets, error) {
 	u, err := nurl.Parse(url)
 	if err != nil {
 		return nil, err
@@ -47,7 +47,7 @@ func CaptureTLSWithGolang(partenCtx context.Context, url string, totalSzie, mssD
 	defer cancel()
 	eg, ctx := errgroup.WithContext(ctx)
 
-	var pps sconn.PrevPackets
+	var pss sconn.PrevSegmets
 	eg.Go(func() error { // capturer
 		defer cancel()
 
@@ -94,7 +94,7 @@ func CaptureTLSWithGolang(partenCtx context.Context, url string, totalSzie, mssD
 			seg := tcp.Payload()
 			if len(seg) > 0 {
 				size += len(seg)
-				pps = append(pps, seg)
+				pss = append(pss, seg)
 			}
 		}
 		return nil
@@ -139,9 +139,9 @@ func CaptureTLSWithGolang(partenCtx context.Context, url string, totalSzie, mssD
 	if err = eg.Wait(); err != nil {
 		return nil, err
 	}
-	return pps, partenCtx.Err()
+	return pss, partenCtx.Err()
 }
 
-func TLSCapWithBrowser(partenCtx context.Context, url string, sizeLimit int) (sconn.PrevPackets, error) {
+func TLSCapWithBrowser(partenCtx context.Context, url string, sizeLimit int) (sconn.PrevSegmets, error) {
 	return nil, errors.New("todo")
 }

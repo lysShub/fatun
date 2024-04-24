@@ -11,45 +11,45 @@ import (
 
 func Test_PrevPackets(t *testing.T) {
 	t.Run("1", func(t *testing.T) {
-		var pps = sconn.PrevPackets{
+		var pss = sconn.PrevSegmets{
 			[]byte("hello"),
 			[]byte("world"),
 		}
-		defer func() { os.Remove("a.pps") }()
+		defer func() { os.Remove("a.pss") }()
 
-		err := pps.Marshal("a.pps")
+		err := pss.Marshal("a.pss")
 		require.NoError(t, err)
 
-		var pps2 sconn.PrevPackets
-		err = pps2.Unmarshal("a.pps")
+		var pss2 sconn.PrevSegmets
+		err = pss2.Unmarshal("a.pss")
 		require.NoError(t, err)
 
-		for i, e := range pps2 {
-			require.Equal(t, pps[i], e)
+		for i, e := range pss2 {
+			require.Equal(t, pss[i], e)
 		}
 	})
 
 	t.Run("2", func(t *testing.T) {
-		var pps = sconn.PrevPackets{
+		var pss = sconn.PrevSegmets{
 			make([]byte, 1460),
 			make([]byte, 345),
 			make([]byte, 1460),
 		}
 		var r = rand.New(rand.NewSource(0))
-		for i := range pps {
-			r.Read(pps[i])
+		for i := range pss {
+			r.Read(pss[i])
 		}
-		defer func() { os.Remove("a.pps") }()
+		defer func() { os.Remove("a.pss") }()
 
-		err := pps.Marshal("a.pps")
+		err := pss.Marshal("a.pss")
 		require.NoError(t, err)
 
-		var pps2 sconn.PrevPackets
-		err = pps2.Unmarshal("a.pps")
+		var pss2 sconn.PrevSegmets
+		err = pss2.Unmarshal("a.pss")
 		require.NoError(t, err)
 
-		for i, e := range pps2 {
-			require.Equal(t, pps[i], e)
+		for i, e := range pss2 {
+			require.Equal(t, pss[i], e)
 		}
 	})
 }

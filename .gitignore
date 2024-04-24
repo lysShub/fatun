@@ -1,3 +1,5 @@
 .vscode
-*.pps
+*.pss
 *.pcap
+*.exe
+*.log

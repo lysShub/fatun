@@ -30,15 +30,15 @@ func Test_Handshake_Ctx(t *testing.T) {
 			caddr = netip.AddrPortFrom(test.LocIP(), 19986)
 			saddr = netip.AddrPortFrom(test.LocIP(), 8080)
 			cfg   = sconn.Config{
-				PrevPackets: func() sconn.PrevPackets {
-					var pps [][]byte
+				PSS: func() sconn.PrevSegmets {
+					var pss [][]byte
 					for i := 0; i < 0xffff; i++ {
-						pps = append(pps, make([]byte, rand.Int()%1023+1))
+						pss = append(pss, make([]byte, rand.Int()%1023+1))
 					}
-					return pps
+					return pss
 				}(),
-				SwapKey: sign,
-				MTU:     1500,
+				Key: sign,
+				MTU: 1500,
 			}
 		)
 		c, s := test.NewMockRaw(
@@ -78,8 +78,8 @@ func Test_Handshake_Ctx(t *testing.T) {
 			saddr = netip.AddrPortFrom(test.LocIP(), 8080)
 			sign  = make([]byte, 1024*1024*8)
 			cfg   = sconn.Config{
-				PrevPackets: pps,
-				SwapKey: &sconn.Sign{
+				PSS: pss,
+				Key: &sconn.Sign{
 					Sign:   sign,
 					Parser: func(sign []byte) (crypto.Key, error) { return crypto.Key{1: 1}, nil },
 				},
@@ -129,7 +129,7 @@ var (
 			return crypto.Key{}, errors.New("invalid sign")
 		},
 	}
-	pps = sconn.PrevPackets{
+	pss = sconn.PrevSegmets{
 		header.TCP("hello"),
 		header.TCP("world"),
 		header.TCP("abcdef"),
@@ -143,9 +143,9 @@ func Test_Ctr_Conn(t *testing.T) {
 		saddr = netip.AddrPortFrom(test.LocIP(), 8080)  // test.RandPort()
 		mtu   = 1500
 		cfg   = sconn.Config{
-			PrevPackets: pps,
-			SwapKey:     sign,
-			MTU:         mtu,
+			PSS: pss,
+			Key: sign,
+			MTU: mtu,
 		}
 	)
 	c, s := test.NewMockRaw(
@@ -227,8 +227,8 @@ func Test_Conn(t *testing.T) {
 	// echo server
 	eg.Go(func() error {
 		var cfg = sconn.Config{
-			PrevPackets: pps,
-			SwapKey:     sign,
+			PSS: pss,
+			Key: sign,
 		}
 
 		l, err := sconn.NewListener(test.NewMockListener(t, s), &cfg)
@@ -258,8 +258,8 @@ func Test_Conn(t *testing.T) {
 	// client
 	eg.Go(func() error {
 		var cfg = sconn.Config{
-			PrevPackets: pps,
-			SwapKey:     sign,
+			PSS: pss,
+			Key: sign,
 		}
 		wc, err := test.WrapPcap(c, "./test.pcap")
 		require.NoError(t, err)

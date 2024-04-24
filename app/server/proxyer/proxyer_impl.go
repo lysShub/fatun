@@ -45,7 +45,11 @@ func (c *controlImpl) InitConfig(cfg *control.Config) error {
 func (c *controlImpl) AddSession(sess session.Session) (session.ID, error) {
 	s, err := c.sessionMgr.Add(sess)
 	if err != nil {
-		c.logger.Error(err.Error(), errorx.TraceAttr(err))
+		if errorx.Temporary(err) {
+			c.logger.Warn(err.Error())
+		} else {
+			c.logger.Error(err.Error(), errorx.TraceAttr(err))
+		}
 		return 0, err
 	} else {
 		c.logger.LogAttrs(context.Background(), slog.LevelInfo, "add session",

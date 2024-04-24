@@ -27,7 +27,7 @@ var sign = &sconn.Sign{
 	},
 }
 
-var pps = sconn.PrevPackets{
+var pss = sconn.PrevSegmets{
 	header.TCP("hello"),
 	header.TCP("world"),
 }

@@ -106,6 +106,13 @@ func (f *filter) DelProcess(process string) error {
 	return nil
 }
 
+func (f *filter) Processes() []string {
+	f.processMu.RLock()
+	defer f.processMu.RUnlock()
+
+	return slices.Clone(f.processes)
+}
+
 type tcpSyn struct {
 	mu        sync.RWMutex
 	addrs     map[netip.AddrPort]uint8

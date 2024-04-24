@@ -67,7 +67,7 @@ func newSender(local netip.AddrPort, proto tcpip.TransportProtocolNumber, remote
 			pseudoSum1: pseudoSum1,
 		}, nil
 	default:
-		return nil, errors.Errorf("not support %s", session.ProtoStr(proto))
+		return nil, errors.WithStack(session.ErrNotSupportProto(proto))
 	}
 }
 

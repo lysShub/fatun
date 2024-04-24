@@ -9,11 +9,10 @@ import (
 	nurl "net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	"github.com/docker/go-units"
 	"github.com/lysShub/fatun/app/tools"
-	"github.com/lysShub/fatun/config"
-	"github.com/lysShub/fatun/sconn"
 )
 
 func main() {
@@ -23,50 +22,68 @@ func main() {
 	} else {
 		args = []string{"-h"}
 	}
-	if args[0] == "-h" || len(args) != 3 {
-		fmt.Println("tlscap config-file-path url bytes-size")
-		fmt.Println("example:")
-		fmt.Println("tlscap ./config.go https://dlcdn.apache.org/maven/maven-3/3.8.5/binaries/apache-maven-3.8.5-bin.zip 32kB")
+	if args[0] == "-h" || len(args) != 4 {
+		fmt.Print(helper)
 		return
 	}
 
 	var (
-		cfg      = &config.Config{}
 		url      string
 		size     int
-		mssDelta int = -sconn.Overhead
+		mssDelta int // = -sconn.Overhead
+		path     string
 	)
 
-	if path, err := filepath.Abs(args[0]); err != nil {
-		fmt.Println("config-file-path:", err.Error())
-		return
-	} else {
-		if err := cfg.Load(path); err != nil {
-			fmt.Println("config-file-path:", err.Error())
-			return
-		}
-		defer cfg.Flush(path)
-	}
-
-	if _, err := nurl.Parse(args[1]); err != nil {
+	if _, err := nurl.Parse(args[0]); err != nil {
 		fmt.Println("url:", err.Error())
 		return
 	} else {
-		url = args[1]
+		url = args[0]
 	}
 
-	if v, err := units.RAMInBytes(args[2]); err != nil {
+	if v, err := units.RAMInBytes(args[1]); err != nil {
 		fmt.Println("bytes-size:", err.Error())
 		return
 	} else {
 		size = int(v)
 	}
 
-	pps, err := tools.CaptureTLSWithGolang(context.Background(), url, size, mssDelta)
+	if v, err := strconv.Atoi(args[2]); err != nil {
+		fmt.Println("mss-delta:", err.Error())
+		return
+	} else {
+		mssDelta = v
+	}
+
+	if v, err := filepath.Abs(args[3]); err != nil {
+		fmt.Println("pss-path:", err.Error())
+		return
+	} else {
+		path = v
+	}
+
+	pss, err := tools.CaptureTLSWithGolang(context.Background(), url, size, mssDelta)
 	if err != nil {
 		fmt.Println("capture:", err.Error())
 		return
 	} else {
-		pps.Unmarshal("temp.pps")
+		err := pss.Marshal(path)
+		if err != nil {
+			fmt.Println("error:", err.Error())
+		}
 	}
+	fmt.Println("success.")
+	fmt.Println(path)
 }
+
+const (
+	helper = `
+tlscap url bytes-size mss-delta pss-path
+
+capture the first bytes-size TCP segments for the URL http(s) GET request, store them in 
+pss-path, where mss-delta can be used to modify the TCP MSS.
+
+example:
+tlscap https://example.com/xxx-1.2.3-bin.zip 32kB -16 ./apache.pss
+`
+)

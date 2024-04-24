@@ -115,7 +115,7 @@ func ProtoStr(num tcpip.TransportProtocolNumber) string {
 	case header.ICMPv6ProtocolNumber:
 		return "icmp6"
 	default:
-		return "unknown"
+		return fmt.Sprintf("unknown(%d)", int(num))
 	}
 }
 
@@ -126,3 +126,11 @@ func ErrInvalidSession(s Session) error {
 func ErrExistSession(s Session) error {
 	return errors.New(s.String())
 }
+
+type ErrNotSupportProto tcpip.TransportProtocolNumber
+
+func (e ErrNotSupportProto) Error() string {
+	return fmt.Sprintf("not support transport protocol %s", ProtoStr(tcpip.TransportProtocolNumber(e)))
+}
+
+func (e ErrNotSupportProto) Temporary() bool { return true }
