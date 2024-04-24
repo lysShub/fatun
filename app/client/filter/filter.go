@@ -19,6 +19,7 @@ type Filter interface {
 
 	AddProcess(process string) error
 	DelProcess(process string) error
+	Processes() []string
 }
 
 type HitFilter interface {

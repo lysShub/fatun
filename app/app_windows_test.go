@@ -19,9 +19,9 @@ import (
 
 func TestXxxxx(t *testing.T) {
 	var cfg = &config.Config{
-		MTU:         1536,
-		PrevPackets: `./tools/a.pps`,
-		SwapKey: &sconn.Sign{
+		MTU: 1536,
+		PSS: `./tools/a.pss`,
+		Key: &sconn.Sign{
 			Sign: []byte("0123456789abcdef"),
 			Parser: func(sign []byte) (crypto.Key, error) {
 				return crypto.Key{9: 1}, nil

@@ -90,17 +90,17 @@ func (c *Conn) handshake(ctx context.Context) (err error) {
 	var key crypto.Key
 	if c.role == server {
 		// todo: require tcp NoDelay
-		if err := c.cfg.PrevPackets.Server(ctx, tcp); err != nil {
+		if err := c.cfg.PSS.Server(ctx, tcp); err != nil {
 			return err
 		}
-		if key, err = c.cfg.SwapKey.Server(ctx, tcp); err != nil {
+		if key, err = c.cfg.Key.Server(ctx, tcp); err != nil {
 			return err
 		}
 	} else if c.role == client {
-		if err := c.cfg.PrevPackets.Client(ctx, tcp); err != nil {
+		if err := c.cfg.PSS.Client(ctx, tcp); err != nil {
 			return err
 		}
-		if key, err = c.cfg.SwapKey.Client(ctx, tcp); err != nil {
+		if key, err = c.cfg.Key.Client(ctx, tcp); err != nil {
 			return err
 		}
 	} else {

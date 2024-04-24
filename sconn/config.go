@@ -20,10 +20,10 @@ import (
 type Config struct {
 	// client set first tcp packet, server recv and check it, then replay
 	// second tcp packet, etc.
-	PrevPackets PrevPackets //todo: support mutiple data set
+	PSS PrevSegmets //todo: support mutiple data set
 
-	// swap secret key
-	SwapKey SwapKey
+	// exchange secret key
+	Key KeyExchange
 
 	MTU int
 }
@@ -40,7 +40,7 @@ func (c *Config) init() error {
 	return nil
 }
 
-type PrevPackets [][]byte
+type PrevSegmets [][]byte
 
 type ErrPrevPacketInvalid int
 
@@ -48,21 +48,21 @@ func (e ErrPrevPacketInvalid) Error() string {
 	return fmt.Sprintf("previous pakcet %d is invalid", e)
 }
 
-func (pps PrevPackets) Marshal(file string) error {
-	fh, err := os.Create(file)
+func (pss PrevSegmets) Marshal(to string) error {
+	fh, err := os.Create(to)
 	if err != nil {
 		return err
 	}
 	defer fh.Close()
 
 	var dst []byte
-	for i, e := range pps {
+	for i, e := range pss {
 		n := hex.EncodedLen(len(e))
 		dst = slices.Grow(dst, n+1)
 		dst = dst[:n+1]
 
 		hex.Encode(dst, e)
-		if i != len(pps)-1 {
+		if i != len(pss)-1 {
 			dst[n] = '\n'
 			n = n + 1
 		}
@@ -73,8 +73,8 @@ func (pps PrevPackets) Marshal(file string) error {
 	return nil
 }
 
-func (pps *PrevPackets) Unmarshal(file string) error {
-	fh, err := os.Open(file)
+func (pss *PrevSegmets) Unmarshal(from string) error {
+	fh, err := os.Open(from)
 	if err != nil {
 		return errors.WithStack(err)
 	}
@@ -93,20 +93,20 @@ func (pps *PrevPackets) Unmarshal(file string) error {
 		}
 		ps[i] = ps[i][:n]
 	}
-	(*pps) = ps
+	(*pss) = ps
 
 	return nil
 }
 
-func (pps PrevPackets) Client(ctx context.Context, conn net.Conn) (err error) {
+func (pss PrevSegmets) Client(ctx context.Context, conn net.Conn) (err error) {
 	stop := context.AfterFunc(ctx, func() {
 		conn.SetDeadline(time.Now())
 	})
 	defer stop()
 
-	for i := 0; i < len(pps); i++ {
+	for i := 0; i < len(pss); i++ {
 		if i%2 == 0 {
-			_, err := conn.Write(pps[i])
+			_, err := conn.Write(pss[i])
 			if err != nil {
 				select {
 				case <-ctx.Done():
@@ -116,7 +116,7 @@ func (pps PrevPackets) Client(ctx context.Context, conn net.Conn) (err error) {
 				}
 			}
 		} else {
-			var b = make([]byte, len(pps[i]))
+			var b = make([]byte, len(pss[i]))
 
 			if _, err := io.ReadFull(conn, b); err != nil {
 				select {
@@ -126,7 +126,7 @@ func (pps PrevPackets) Client(ctx context.Context, conn net.Conn) (err error) {
 					return errors.WithStack(err)
 				}
 			}
-			if !bytes.Equal(b, pps[i]) {
+			if !bytes.Equal(b, pss[i]) {
 				return ErrPrevPacketInvalid(i)
 			}
 		}
@@ -134,15 +134,15 @@ func (pps PrevPackets) Client(ctx context.Context, conn net.Conn) (err error) {
 	return nil
 }
 
-func (pps PrevPackets) Server(ctx context.Context, conn net.Conn) (err error) {
+func (pss PrevSegmets) Server(ctx context.Context, conn net.Conn) (err error) {
 	stop := context.AfterFunc(ctx, func() {
 		conn.SetDeadline(time.Now())
 	})
 	defer stop()
 
-	for i := 0; i < len(pps); i++ {
+	for i := 0; i < len(pss); i++ {
 		if i%2 == 0 {
-			var b = make([]byte, len(pps[i]))
+			var b = make([]byte, len(pss[i]))
 
 			if _, err := io.ReadFull(conn, b); err != nil {
 				select {
@@ -152,11 +152,11 @@ func (pps PrevPackets) Server(ctx context.Context, conn net.Conn) (err error) {
 					return errors.WithStack(err)
 				}
 			}
-			if !bytes.Equal(b, pps[i]) {
+			if !bytes.Equal(b, pss[i]) {
 				return ErrPrevPacketInvalid(i)
 			}
 		} else {
-			_, err := conn.Write(pps[i])
+			_, err := conn.Write(pss[i])
 			if err != nil {
 				select {
 				case <-ctx.Done():
@@ -170,7 +170,7 @@ func (pps PrevPackets) Server(ctx context.Context, conn net.Conn) (err error) {
 	return nil
 }
 
-type SwapKey interface {
+type KeyExchange interface {
 	Client(ctx context.Context, conn net.Conn) (crypto.Key, error)
 	Server(ctx context.Context, conn net.Conn) (crypto.Key, error)
 }

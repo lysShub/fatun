@@ -16,9 +16,9 @@ import (
 type Config struct {
 	Server string
 
-	PrevPackets string
+	PSS string
 
-	SwapKey sconn.SwapKey
+	Key sconn.KeyExchange
 
 	MTU int
 
@@ -27,10 +27,10 @@ type Config struct {
 
 func (cfg *Config) Config() (*app.Config, error) {
 	scfg := &sconn.Config{
-		SwapKey: cfg.SwapKey,
-		MTU:     cfg.MTU,
+		Key: cfg.Key,
+		MTU: cfg.MTU,
 	}
-	err := scfg.PrevPackets.Unmarshal(cfg.PrevPackets)
+	err := scfg.PSS.Unmarshal(cfg.PSS)
 	if err != nil {
 		return nil, err
 	}
