@@ -22,9 +22,10 @@ type TCP struct {
 var _ Crypto = (*TCP)(nil)
 
 const (
-	Bytes    = 16
-	Overhead = Bytes
-	nonces   = 12
+	Bytes     = 16
+	Overhead  = Bytes
+	nonces    = 12
+	noncesOff = 2
 )
 
 // NewTCP a tcp AES-GCM-128 crypter, not update tcp Seq/Ack
@@ -47,22 +48,51 @@ func NewTCP(key [Bytes]byte, pseudoSum1 uint16) (*TCP, error) {
 func (g *TCP) Overhead() int { return g.c.Overhead() }
 
 func (g *TCP) Encrypt(tcp *packet.Packet) {
-	tcphdr := header.TCP(tcp.AppendN(Bytes).ReduceN(Bytes).Bytes())
+	hdr := header.TCP(tcp.AppendN(Bytes).ReduceN(Bytes).Bytes())
 
-	i := tcphdr.DataOffset()
-	g.c.Seal(tcphdr[i:i], tcphdr[:nonces], tcphdr[i:], tcphdr[:header.TCPChecksumOffset])
-	tcphdr = tcphdr[:len(tcphdr)+Bytes]
+	i := hdr.DataOffset()
+	g.c.Seal(hdr[i:i], nonce(hdr), hdr[i:], nil)
+	hdr = hdr[:len(hdr)+Bytes]
 
-	tcphdr.SetChecksum(0)
-	psosum := checksum.Combine(g.pseudoSum1, uint16(len(tcphdr)))
-	tcphdr.SetChecksum(^checksum.Checksum(tcphdr, psosum))
+	hdr.SetChecksum(0)
+	psosum := checksum.Combine(g.pseudoSum1, uint16(len(hdr)))
+	hdr.SetChecksum(^checksum.Checksum(hdr, psosum))
 
-	tcp.SetData(len(tcphdr))
+	tcp.SetData(len(hdr))
 	if debug.Debug() {
 		test.ValidTCP(test.T(), tcp.Bytes(), g.pseudoSum1)
 	}
 }
 
+func (g *TCP) Decrypt(tcp *packet.Packet) error {
+	if debug.Debug() {
+		test.ValidTCP(test.T(), tcp.Bytes(), g.pseudoSum1)
+	}
+	hdr := header.TCP(tcp.Bytes())
+
+	i := hdr.DataOffset()
+	_, err := g.c.Open(hdr[i:i], nonce(hdr), hdr[i:], nil)
+	if err != nil {
+		return err
+	}
+	hdr = hdr[:len(hdr)-Bytes]
+
+	hdr.SetChecksum(0)
+	psosum := checksum.Combine(g.pseudoSum1, uint16(len(hdr)))
+	hdr.SetChecksum(^checksum.Checksum(hdr, psosum))
+
+	tcp.SetData(len(hdr))
+	if debug.Debug() {
+		test.ValidTCP(test.T(), tcp.Bytes(), g.pseudoSum1)
+	}
+	return nil
+}
+
+func nonce(tcp []byte) []byte {
+	return tcp[noncesOff : noncesOff+nonces]
+}
+
+// Deprecated: useless
 func (g *TCP) EncryptRaw(ip *packet.Packet) {
 	if debug.Debug() {
 		test.ValidIP(test.T(), ip.Bytes())
@@ -98,30 +128,7 @@ func (g *TCP) EncryptRaw(ip *packet.Packet) {
 	}
 }
 
-func (g *TCP) Decrypt(tcp *packet.Packet) error {
-	if debug.Debug() {
-		test.ValidTCP(test.T(), tcp.Bytes(), g.pseudoSum1)
-	}
-	tcphdr := header.TCP(tcp.Bytes())
-
-	i := tcphdr.DataOffset()
-	_, err := g.c.Open(tcphdr[i:i], tcphdr[:nonces], tcphdr[i:], tcphdr[:header.TCPChecksumOffset])
-	if err != nil {
-		return err
-	}
-	tcphdr = tcphdr[:len(tcphdr)-Bytes]
-
-	tcphdr.SetChecksum(0)
-	psosum := checksum.Combine(g.pseudoSum1, uint16(len(tcphdr)))
-	tcphdr.SetChecksum(^checksum.Checksum(tcphdr, psosum))
-
-	tcp.SetData(len(tcphdr))
-	if debug.Debug() {
-		test.ValidTCP(test.T(), tcp.Bytes(), g.pseudoSum1)
-	}
-	return nil
-}
-
+// Deprecated: useless
 func (g *TCP) DecryptRaw(ip *packet.Packet) error {
 	if debug.Debug() {
 		test.ValidIP(test.T(), ip.Bytes())

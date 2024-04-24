@@ -32,8 +32,6 @@ github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 h1:6E+4a0GO5zZEnZ
 github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0/go.mod h1:zJYVVT2jmtg6P3p1VtQj7WsuWi/y4VnjVBn7F8KPB3I=
 github.com/lysShub/divert-go v0.0.0-20240415114628-03a432d8c814 h1:P2VygPzHOJZYk8yMXuylJUzAMqg8ePtZ8RvJ2hgC+UU=
 github.com/lysShub/divert-go v0.0.0-20240415114628-03a432d8c814/go.mod h1:iWqZEwCkgY3PZpUFbyvOvErYC9DZv3Tv/SS1glsiIl0=
-github.com/lysShub/sockit v0.0.0-20240419043520-05f1850172bb h1:Sc1uRemf4xbTy6YQjEzzs0idoj9Nanp9QwnPEMh46FU=
-github.com/lysShub/sockit v0.0.0-20240419043520-05f1850172bb/go.mod h1:TRrkGHrBk/LebOxgRG+vHwIdeUnRO65gZEewkdH16UQ=
 github.com/lysShub/sockit v0.0.0-20240423092415-267efbb5c898 h1:loeq1dODXou40TfLsNbQCAmqd3rISNAZ0DXQK2VjUZI=
 github.com/lysShub/sockit v0.0.0-20240423092415-267efbb5c898/go.mod h1:TRrkGHrBk/LebOxgRG+vHwIdeUnRO65gZEewkdH16UQ=
 github.com/lysShub/wintun-go v0.0.0-20240410130619-383598c11ea1 h1:AV6Pt7nAFy3nvbRX9M8DOZ6gFSTEmq1DUNTIq2QoqeA=

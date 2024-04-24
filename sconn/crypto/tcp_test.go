@@ -61,13 +61,40 @@ func buildTCP(t require.TestingT, msgSize int, prevAlloc bool) (*packet.Packet, 
 	return p, pseudoSum1
 }
 
-func Test_TCP_Crypto(t *testing.T) {
+func Test_Tcp_Base(t *testing.T) {
 	var (
-		key     = [crypto.Bytes]byte{0: 1}
-		msgSize = 5
+		key = [crypto.Bytes]byte{0: 1}
 	)
 
-	p, pseudoSum1 := buildTCP(t, msgSize, false)
+	for _, e := range []int{0, 1, 5, 16, 1024, 1480} {
+
+		p, pseudoSum1 := buildTCP(t, e, false)
+
+		c, err := crypto.NewTCP(key, pseudoSum1)
+		require.NoError(t, err)
+
+		c.Encrypt(p)
+		test.ValidTCP(t, p.Bytes(), pseudoSum1)
+
+		err = c.Decrypt(p)
+		require.NoError(t, err)
+		test.ValidTCP(t, p.Bytes(), pseudoSum1)
+
+		msg := header.TCP(p.Bytes()).Payload()
+		require.Equal(t, e, len(msg))
+		for i, e := range msg {
+			require.Equal(t, byte(i), e)
+		}
+	}
+}
+
+func Test_Tcp_NAT(t *testing.T) {
+	// encrypt packet usually pass NAT gateway
+	var (
+		key = [crypto.Bytes]byte{0: 1}
+	)
+
+	p, pseudoSum1 := buildTCP(t, 16, false)
 
 	c, err := crypto.NewTCP(key, pseudoSum1)
 	require.NoError(t, err)
@@ -75,15 +102,22 @@ func Test_TCP_Crypto(t *testing.T) {
 	c.Encrypt(p)
 	test.ValidTCP(t, p.Bytes(), pseudoSum1)
 
+	// change src port
+	header.TCP(p.Bytes()).SetSourcePortWithChecksumUpdate(1234)
+	test.ValidTCP(t, p.Bytes(), pseudoSum1)
+
 	err = c.Decrypt(p)
 	require.NoError(t, err)
 	test.ValidTCP(t, p.Bytes(), pseudoSum1)
 
 	msg := header.TCP(p.Bytes()).Payload()
-	require.Equal(t, []byte{0, 1, 2, 3, 4}, msg)
+	require.Equal(t, 16, len(msg))
+	for i, e := range msg {
+		require.Equal(t, byte(i), e)
+	}
 }
 
-func Test_Conn(t *testing.T) {
+func Test_Tcp_Conn(t *testing.T) {
 	t.Skip("need change seq")
 
 	var (
