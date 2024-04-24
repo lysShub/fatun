@@ -62,7 +62,7 @@ func (s *serverFactory) Close() error { return nil }
 	握手关键需要处理好边界情况；关键函数是gonet.WaitBeforeDataTransmitted。
 	流程：
 		handshake1完成后，（handshak2阶段）等待对方握手完成，期间将不会主动发送数据包。判定对方握手完成的依据是我方
-		在握手期间发送的数据包全部被对方收到，及WaitBeforeDataTransmitted。
+		在握手期间发送的数据包全部被对方收到--WaitBeforeDataTransmitted。
 		a. 对于outboundService，在handshak2完成后，发送的是control-segment包, 而不是原始的tcp数据包。
 		b. 对于handshakeInboundService，在handshak2完成后，才能退出。
 		c. 如果handshakeInboundService运行时收到segment包，若此时hanshake1已经完成，应该尝试decode，session-id是CtrSessID

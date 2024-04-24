@@ -73,8 +73,11 @@ func Proxy(ctx context.Context, server string, cfg *app.Config) (*Client, error)
 	if err != nil {
 		return nil, err
 	}
-	// wraw, err := test.WrapPcap(raw, "raw.pcap")
-	// require.NoError(t, err)
+
+	// wraw, err := test.WrapPcap(raw, "client.pcap")
+	// if err != nil {
+	// 	panic(err)
+	// }
 
 	c, err := NewClient(ctx, raw, cfg)
 	if err != nil {

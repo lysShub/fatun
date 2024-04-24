@@ -22,8 +22,9 @@ import (
 func main() {
 
 	cfg := &config.Config{
-		Server: "172.24.131.26:443",
-		MTU:    1536,
+		// Server: "172.24.131.26:443",
+
+		MTU: 1536,
 		Key: &sconn.Sign{
 			Sign: []byte("0123456789abcdef"),
 			Parser: func(sign []byte) (crypto.Key, error) {

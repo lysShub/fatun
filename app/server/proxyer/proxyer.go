@@ -63,7 +63,7 @@ func NewProxyer(srv Server, conn *sconn.Conn) (*Proxyer, error) {
 	p.sessionMgr = ss.NewSessionMgr(proxyerImplPtr(p))
 	p.srvCtx, p.srvCancel = context.WithCancel(context.Background())
 
-	p.logger.Info("accept")
+	p.logger.Info("accepted")
 	go p.uplinkService()
 	p.ctr = control.NewServer(conn.TCP(), controlImplPtr(p))
 
