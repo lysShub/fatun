@@ -5,7 +5,6 @@ package client
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"net"
 	"net/netip"
@@ -123,17 +122,7 @@ func NewClient(ctx context.Context, raw conn.RawConn, cfg *app.Config) (*Client,
 	}
 
 	go c.downlinkService()
-
-	tcp := c.conn.TCP()
-	{
-		n, err := tcp.Write([]byte("hello"))
-		fmt.Println(n, err)
-		var b = make([]byte, 5)
-		n, err = tcp.Read(b)
-		fmt.Println(n, err)
-	}
-
-	c.ctr = control.NewClient(tcp)
+	c.ctr = control.NewClient(c.conn.TCP())
 
 	// todo: init config
 	if err := c.ctr.InitConfig(ctx, &control.Config{}); err != nil {

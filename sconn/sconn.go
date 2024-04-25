@@ -222,9 +222,9 @@ func (c *Conn) Recv(ctx context.Context, pkt *packet.Packet) (id session.ID, err
 func (c *Conn) inboundControlSegment(pkt *packet.Packet) {
 	// if the data packet passes through the NAT gateway, update the client port
 	if c.role == server {
-		header.TCP(pkt.Bytes()).SetDestinationPort(c.clientPort)
-	} else {
 		header.TCP(pkt.Bytes()).SetSourcePortWithChecksumUpdate(c.clientPort)
+	} else {
+		header.TCP(pkt.Bytes()).SetDestinationPortWithChecksumUpdate(c.clientPort)
 	}
 	c.ep.Inbound(pkt)
 }
