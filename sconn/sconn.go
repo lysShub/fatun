@@ -16,6 +16,7 @@ import (
 	"github.com/lysShub/sockit/conn"
 	"github.com/lysShub/sockit/errorx"
 	"github.com/lysShub/sockit/packet"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 
 	"github.com/lysShub/sockit/test"
 	"github.com/lysShub/sockit/test/debug"
@@ -33,10 +34,11 @@ type Sconn interface {
 
 // security datagram conn
 type Conn struct {
-	cfg   *Config
-	raw   conn.RawConn
-	role  role
-	state state
+	cfg        *Config
+	raw        conn.RawConn
+	remotePort uint16
+	role       role
+	state      state
 
 	handshakedTime    time.Time
 	handshakedNotify  sync.WaitGroup
@@ -76,13 +78,13 @@ func newConn(raw conn.RawConn, ep *ustack.LinkEndpoint, role role, cfg *Config) 
 	}
 
 	var c = &Conn{
-		cfg:  cfg,
-		raw:  raw,
-		role: role,
+		cfg:        cfg,
+		raw:        raw,
+		remotePort: raw.RemoteAddr().Port(),
+		role:       role,
 
 		handshakeRecvSegs: &heap{},
-
-		ep: ep,
+		ep:                ep,
 	}
 	c.handshakedNotify.Add(1)
 	c.srvCtx, c.srvCancel = context.WithCancel(context.Background())
@@ -203,6 +205,9 @@ func (c *Conn) Recv(ctx context.Context, pkt *packet.Packet) (id session.ID, err
 
 		id = session.Decode(pkt)
 		if id == session.CtrSessID {
+			// if the data packet passes through the NAT gateway, update the destination port
+			header.TCP(pkt.Bytes()).SetSourcePortWithChecksumUpdate(c.remotePort)
+
 			c.ep.Inbound(pkt)
 			continue
 		}
