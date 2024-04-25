@@ -39,7 +39,7 @@ func (c *controlImpl) IPv6() bool {
 	return true
 }
 func (c *controlImpl) InitConfig(cfg *control.Config) error {
-	c.logger.Info("start")
+	c.logger.Info("inited config")
 	return nil
 }
 func (c *controlImpl) AddSession(sess session.Session) (session.ID, error) {

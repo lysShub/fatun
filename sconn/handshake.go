@@ -166,7 +166,7 @@ func (c *Conn) handshakeInboundService(ctx context.Context) error {
 				c.fake.DetachRecv(seg) == nil &&
 				session.Decode(seg) == session.CtrSessID {
 
-				c.ep.Inbound(seg)
+				c.inboundControlSegment(seg)
 			} else {
 				c.handshakeRecvSegs.put(pkt)
 				// todo：log

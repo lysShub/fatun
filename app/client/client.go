@@ -5,6 +5,7 @@ package client
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/netip"
@@ -103,7 +104,7 @@ func NewClient(ctx context.Context, raw conn.RawConn, cfg *app.Config) (*Client,
 	c.srvCtx, c.srvCancel = context.WithCancel(context.Background())
 
 	var err error
-	if c.conn, err = sconn.Dial(raw, cfg.Config); err != nil {
+	if c.conn, err = sconn.DialCtx(ctx, raw, cfg.Config); err != nil {
 		return nil, c.close(err)
 	} else {
 		if /* dc */ _, ok := raw.(*dconn.Conn); ok {
@@ -122,7 +123,17 @@ func NewClient(ctx context.Context, raw conn.RawConn, cfg *app.Config) (*Client,
 	}
 
 	go c.downlinkService()
-	c.ctr = control.NewClient(c.conn.TCP())
+
+	tcp := c.conn.TCP()
+	{
+		n, err := tcp.Write([]byte("hello"))
+		fmt.Println(n, err)
+		var b = make([]byte, 5)
+		n, err = tcp.Read(b)
+		fmt.Println(n, err)
+	}
+
+	c.ctr = control.NewClient(tcp)
 
 	// todo: init config
 	if err := c.ctr.InitConfig(ctx, &control.Config{}); err != nil {

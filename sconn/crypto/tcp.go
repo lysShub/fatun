@@ -25,7 +25,7 @@ const (
 	Bytes     = 16
 	Overhead  = Bytes
 	nonces    = 12
-	noncesOff = 2
+	noncesOff = 4
 )
 
 // NewTCP a tcp AES-GCM-128 crypter, not update tcp Seq/Ack

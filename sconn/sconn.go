@@ -16,6 +16,7 @@ import (
 	"github.com/lysShub/sockit/conn"
 	"github.com/lysShub/sockit/errorx"
 	"github.com/lysShub/sockit/packet"
+	"github.com/pkg/errors"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 
 	"github.com/lysShub/sockit/test"
@@ -36,7 +37,7 @@ type Sconn interface {
 type Conn struct {
 	cfg        *Config
 	raw        conn.RawConn
-	remotePort uint16
+	clientPort uint16
 	role       role
 	state      state
 
@@ -78,13 +79,20 @@ func newConn(raw conn.RawConn, ep *ustack.LinkEndpoint, role role, cfg *Config) 
 	}
 
 	var c = &Conn{
-		cfg:        cfg,
-		raw:        raw,
-		remotePort: raw.RemoteAddr().Port(),
-		role:       role,
+		cfg:  cfg,
+		raw:  raw,
+		role: role,
 
 		handshakeRecvSegs: &heap{},
 		ep:                ep,
+	}
+	switch role {
+	case client:
+		c.clientPort = raw.LocalAddr().Port()
+	case server:
+		c.clientPort = raw.RemoteAddr().Port()
+	default:
+		return nil, errors.Errorf("unknown role %d", role)
 	}
 	c.handshakedNotify.Add(1)
 	c.srvCtx, c.srvCancel = context.WithCancel(context.Background())
@@ -205,14 +213,20 @@ func (c *Conn) Recv(ctx context.Context, pkt *packet.Packet) (id session.ID, err
 
 		id = session.Decode(pkt)
 		if id == session.CtrSessID {
-			// if the data packet passes through the NAT gateway, update the destination port
-			header.TCP(pkt.Bytes()).SetSourcePortWithChecksumUpdate(c.remotePort)
-
-			c.ep.Inbound(pkt)
+			c.inboundControlSegment(pkt)
 			continue
 		}
 		return id, nil
 	}
+}
+func (c *Conn) inboundControlSegment(pkt *packet.Packet) {
+	// if the data packet passes through the NAT gateway, update the client port
+	if c.role == server {
+		header.TCP(pkt.Bytes()).SetDestinationPort(c.clientPort)
+	} else {
+		header.TCP(pkt.Bytes()).SetSourcePortWithChecksumUpdate(c.clientPort)
+	}
+	c.ep.Inbound(pkt)
 }
 
 func (c *Conn) LocalAddr() netip.AddrPort  { return c.raw.LocalAddr() }
