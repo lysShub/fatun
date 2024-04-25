@@ -26,7 +26,7 @@ func main() {
 			},
 		},
 		PSS: "a.pss",
-		Log: "server.log",
+		// Log: "server.log",
 	}
 
 	c, err := cfg.Config()

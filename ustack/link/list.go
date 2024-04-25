@@ -100,6 +100,11 @@ func (l *List) outboundBy(ctx context.Context, dst netip.AddrPort, tcp *packet.P
 
 	if debug.Debug() {
 		test.ValidIP(test.T(), tcp.Bytes())
+
+		ip := header.IPv4(tcp.Bytes())
+		tcp := header.TCP(ip.Payload())
+		dst := netip.AddrPortFrom(netip.MustParseAddr(ip.DestinationAddress().String()), tcp.DestinationPort())
+		require.Equal(test.T(), dst, dst)
 	}
 	switch pkb.NetworkProtocolNumber {
 	case header.IPv4ProtocolNumber:

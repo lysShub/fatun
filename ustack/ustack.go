@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
+	"github.com/stretchr/testify/require"
 
 	"github.com/lysShub/fatun/ustack/link"
 	"github.com/lysShub/sockit/helper/ipstack"
@@ -145,6 +146,13 @@ func (e *LinkEndpoint) Inbound(tcp *packet.Packet) {
 	e.ipstack.AttachInbound(tcp)
 	if debug.Debug() {
 		test.ValidIP(test.T(), tcp.Bytes())
+
+		ip := header.IPv4(tcp.Bytes())
+		tcp := header.TCP(ip.Payload())
+		src := netip.AddrPortFrom(netip.MustParseAddr(ip.SourceAddress().String()), tcp.SourcePort())
+		require.Equal(test.T(), e.RemoteAddr(), src)
+		dst := netip.AddrPortFrom(netip.MustParseAddr(ip.DestinationAddress().String()), tcp.DestinationPort())
+		require.Equal(test.T(), e.LocalAddr(), dst)
 	}
 	e.stack.Inbound(tcp)
 }

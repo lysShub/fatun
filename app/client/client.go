@@ -103,7 +103,7 @@ func NewClient(ctx context.Context, raw conn.RawConn, cfg *app.Config) (*Client,
 	c.srvCtx, c.srvCancel = context.WithCancel(context.Background())
 
 	var err error
-	if c.conn, err = sconn.Dial(raw, cfg.Config); err != nil {
+	if c.conn, err = sconn.DialCtx(ctx, raw, cfg.Config); err != nil {
 		return nil, c.close(err)
 	} else {
 		if /* dc */ _, ok := raw.(*dconn.Conn); ok {

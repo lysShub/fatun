@@ -102,8 +102,9 @@ func Test_Tcp_NAT(t *testing.T) {
 	c.Encrypt(p)
 	test.ValidTCP(t, p.Bytes(), pseudoSum1)
 
-	// change src port
+	// change src/dest port
 	header.TCP(p.Bytes()).SetSourcePortWithChecksumUpdate(1234)
+	header.TCP(p.Bytes()).SetDestinationPortWithChecksumUpdate(1234)
 	test.ValidTCP(t, p.Bytes(), pseudoSum1)
 
 	err = c.Decrypt(p)

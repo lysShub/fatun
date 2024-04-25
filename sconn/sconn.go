@@ -16,6 +16,8 @@ import (
 	"github.com/lysShub/sockit/conn"
 	"github.com/lysShub/sockit/errorx"
 	"github.com/lysShub/sockit/packet"
+	"github.com/pkg/errors"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 
 	"github.com/lysShub/sockit/test"
 	"github.com/lysShub/sockit/test/debug"
@@ -33,10 +35,11 @@ type Sconn interface {
 
 // security datagram conn
 type Conn struct {
-	cfg   *Config
-	raw   conn.RawConn
-	role  role
-	state state
+	cfg        *Config
+	raw        conn.RawConn
+	clientPort uint16
+	role       role
+	state      state
 
 	handshakedTime    time.Time
 	handshakedNotify  sync.WaitGroup
@@ -81,8 +84,15 @@ func newConn(raw conn.RawConn, ep *ustack.LinkEndpoint, role role, cfg *Config) 
 		role: role,
 
 		handshakeRecvSegs: &heap{},
-
-		ep: ep,
+		ep:                ep,
+	}
+	switch role {
+	case client:
+		c.clientPort = raw.LocalAddr().Port()
+	case server:
+		c.clientPort = raw.RemoteAddr().Port()
+	default:
+		return nil, errors.Errorf("unknown role %d", role)
 	}
 	c.handshakedNotify.Add(1)
 	c.srvCtx, c.srvCancel = context.WithCancel(context.Background())
@@ -203,11 +213,20 @@ func (c *Conn) Recv(ctx context.Context, pkt *packet.Packet) (id session.ID, err
 
 		id = session.Decode(pkt)
 		if id == session.CtrSessID {
-			c.ep.Inbound(pkt)
+			c.inboundControlSegment(pkt)
 			continue
 		}
 		return id, nil
 	}
+}
+func (c *Conn) inboundControlSegment(pkt *packet.Packet) {
+	// if the data packet passes through the NAT gateway, update the client port
+	if c.role == server {
+		header.TCP(pkt.Bytes()).SetSourcePortWithChecksumUpdate(c.clientPort)
+	} else {
+		header.TCP(pkt.Bytes()).SetDestinationPortWithChecksumUpdate(c.clientPort)
+	}
+	c.ep.Inbound(pkt)
 }
 
 func (c *Conn) LocalAddr() netip.AddrPort  { return c.raw.LocalAddr() }
