@@ -91,10 +91,12 @@ func (s *sess) close(cause error) error {
 		}
 
 		if cause != nil {
+			if errorx.Temporary(cause) {
+				s.client.Logger().Info(errors.WithMessage(cause, "session close").Error())
+			} else {
+				s.client.Logger().Warn(cause.Error(), errorx.TraceAttr(cause))
+			}
 			s.closeErr.Store(&cause)
-			s.client.Logger().Warn("session close", cause.Error(), errorx.TraceAttr(cause))
-		} else {
-			s.client.Logger().Info("session close")
 		}
 		return cause
 	}
@@ -148,10 +150,10 @@ func (s *sess) keepalive() {
 	const magic uint32 = 0x23df83a0
 	switch s.cnt.Load() {
 	case magic:
-		s.close(errors.WithStack(app.KeepaliveExceeded))
+		s.close(app.KeepaliveExceeded)
 	default:
 		s.cnt.Store(magic)
-		time.AfterFunc(time.Minute, s.keepalive) // todo: from config
+		time.AfterFunc(time.Minute*5, s.keepalive) // todo: from config
 	}
 }
 

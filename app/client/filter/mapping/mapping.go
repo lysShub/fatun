@@ -1,6 +1,8 @@
 package mapping
 
 import (
+	"encoding/hex"
+	"fmt"
 	"net/netip"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -28,15 +30,15 @@ func New() (Mapping, error) {
 }
 
 type Endpoint struct {
-	Addr  netip.AddrPort
-	Proto tcpip.TransportProtocolNumber
+	Addr  netip.AddrPort                // local address
+	Proto tcpip.TransportProtocolNumber // protocol
 }
 
 func (e Endpoint) Valid() bool {
 	return e.Proto != 0 && e.Addr.IsValid()
 }
 
-func FromIP(ip []byte) Endpoint {
+func FromOutbound(ip []byte) Endpoint {
 	var iphdr header.Network
 	var addr netip.Addr
 	switch header.IPVersion(ip) {
@@ -47,7 +49,7 @@ func FromIP(ip []byte) Endpoint {
 		iphdr = header.IPv6(ip)
 		addr = netip.AddrFrom16(iphdr.SourceAddress().As16())
 	default:
-		return Endpoint{}
+		panic(fmt.Sprintf("invalid ip: %s", hex.EncodeToString(ip[:min(len(ip), 20)])))
 	}
 
 	switch iphdr.TransportProtocol() {
@@ -62,6 +64,6 @@ func FromIP(ip []byte) Endpoint {
 			Addr:  netip.AddrPortFrom(addr, header.UDP(iphdr.Payload()).SourcePort()),
 		}
 	default:
-		return Endpoint{}
+		panic(fmt.Sprintf("invalid ip: %s", hex.EncodeToString(ip[:min(len(ip), 20)])))
 	}
 }

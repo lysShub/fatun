@@ -69,7 +69,7 @@ func (mgr *SessionMgr) Add(s session.Session) (*Session, error) {
 	_, has := mgr.idMap[s]
 	mgr.mu.RUnlock()
 	if has {
-		return nil, session.ErrExistSession(s)
+		return nil, session.ErrSessionExist(s)
 	}
 
 	id, err := mgr.idmgr.Get()

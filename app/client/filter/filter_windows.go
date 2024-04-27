@@ -1,7 +1,6 @@
 package filter
 
 import (
-	"encoding/hex"
 	"net/netip"
 	"slices"
 	"sync"
@@ -9,7 +8,6 @@ import (
 	"time"
 
 	"github.com/lysShub/fatun/app/client/filter/mapping"
-	"github.com/lysShub/fatun/session"
 	"github.com/lysShub/sockit/test"
 	"github.com/lysShub/sockit/test/debug"
 	"github.com/pkg/errors"
@@ -37,13 +35,11 @@ func newFilter() *filter {
 func (f *filter) Close() error { return nil }
 
 func (f *filter) Hit(ip []byte) (bool, error) {
-	ep := mapping.FromIP(ip)
-	if !ep.Valid() {
-		session.FromIP(ip)
-		return false, errors.Errorf("capture invalid ip packet: %s", hex.EncodeToString(ip))
-	}
+	ep := mapping.FromOutbound(ip)
 	if debug.Debug() {
-		require.True(test.T(), ep.Addr.Addr().IsPrivate() || ep.Addr.Addr().IsUnspecified() || ep.Addr.Addr().IsLoopback())
+		require.True(test.T(),
+			ep.Addr.Addr().IsPrivate() || ep.Addr.Addr().IsUnspecified() || ep.Addr.Addr().IsLoopback(),
+		)
 	}
 
 	if f.defaultEnable.Load() {
@@ -69,7 +65,8 @@ func (f *filter) Hit(ip []byte) (bool, error) {
 
 		f.processMu.RLock()
 		defer f.processMu.RUnlock()
-		return slices.Contains(f.processes, name), nil
+		hit := slices.Contains(f.processes, name)
+		return hit, nil
 	}
 
 	return false, nil
@@ -167,7 +164,7 @@ func NewHeap[T info | int]() *heap[T] {
 	}
 }
 
-const initHeapCap = 16
+const initHeapCap = 64
 
 func (h *heap[T]) Put(t T) {
 	i := (h.s + h.n) % len(h.vals)
