@@ -50,14 +50,6 @@ func (f *filter) Hit(ip []byte) (bool, error) {
 		if ep.Proto == header.TCPProtocolNumber {
 			n := f.tcps.Upgrade(ep.Addr)
 			if n >= maxsyn {
-				// name, _ := Global.Name(ep)
-				// s := session.FromIP(ip)
-				// fmt.Println("tcp sync", s.String(), name)
-				// if name == "curl.exe" {
-				// 	return true, nil
-				// } else {
-				// 	return false, nil
-				// }
 				return true, nil
 			}
 		}

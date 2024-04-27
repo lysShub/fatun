@@ -58,7 +58,6 @@ func main() {
 		str = strings.TrimSpace(str)
 
 		ss := slices.Compact(strings.Split(str, " "))
-
 		switch ctr := ss[0]; ctr {
 		case "enable", "disable":
 			if ss[1] == "default" {
