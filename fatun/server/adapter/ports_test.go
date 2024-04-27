@@ -4,7 +4,7 @@ import (
 	"net/netip"
 	"testing"
 
-	"github.com/lysShub/fatun/app/server/adapter"
+	"github.com/lysShub/fatun/fatun/server/adapter"
 	"github.com/lysShub/sockit/conn"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 

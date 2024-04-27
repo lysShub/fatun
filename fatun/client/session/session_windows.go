@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/lysShub/divert-go"
-	"github.com/lysShub/fatun/app"
+	"github.com/lysShub/fatun/fatun"
 	"github.com/lysShub/fatun/session"
 	"github.com/lysShub/sockit/errorx"
 	"github.com/lysShub/sockit/helper/ipstack"
@@ -150,7 +150,7 @@ func (s *sess) keepalive() {
 	const magic uint32 = 0x23df83a0
 	switch s.cnt.Load() {
 	case magic:
-		s.close(app.KeepaliveExceeded)
+		s.close(fatun.KeepaliveExceeded)
 	default:
 		s.cnt.Store(magic)
 		time.AfterFunc(time.Minute*5, s.keepalive) // todo: from config

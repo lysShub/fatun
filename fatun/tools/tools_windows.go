@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/lysShub/divert-go"
-	"github.com/lysShub/fatun/app/client/session"
+	"github.com/lysShub/fatun/fatun/client/session"
 	"github.com/lysShub/fatun/sconn"
 	"golang.org/x/sync/errgroup"
 	"gvisor.dev/gvisor/pkg/tcpip/header"

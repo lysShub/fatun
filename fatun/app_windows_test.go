@@ -1,7 +1,7 @@
 //go:build windows
 // +build windows
 
-package app_test
+package fatun_test
 
 import (
 	"context"
@@ -10,8 +10,8 @@ import (
 
 	_ "net/http/pprof"
 
-	"github.com/lysShub/fatun/app/client"
 	"github.com/lysShub/fatun/config"
+	"github.com/lysShub/fatun/fatun/client"
 	"github.com/lysShub/fatun/sconn"
 	"github.com/lysShub/fatun/sconn/crypto"
 	"github.com/stretchr/testify/require"

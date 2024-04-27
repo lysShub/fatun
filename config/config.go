@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/lysShub/fatun/app"
+	"github.com/lysShub/fatun/fatun"
 	"github.com/lysShub/fatun/sconn"
 	"github.com/pkg/errors"
 )
@@ -25,7 +25,7 @@ type Config struct {
 	Log string
 }
 
-func (cfg *Config) Config() (*app.Config, error) {
+func (cfg *Config) Config() (*fatun.Config, error) {
 	scfg := &sconn.Config{
 		Key: cfg.Key,
 		MTU: cfg.MTU,
@@ -48,7 +48,7 @@ func (cfg *Config) Config() (*app.Config, error) {
 		}
 	}
 
-	c := &app.Config{
+	c := &fatun.Config{
 		Config: scfg,
 		MTU:    cfg.MTU,
 		Logger: slog.NewJSONHandler(fh, nil),

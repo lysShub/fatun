@@ -6,10 +6,10 @@ import (
 	"os"
 	"sync/atomic"
 
-	"github.com/lysShub/fatun/app"
-	"github.com/lysShub/fatun/app/server/adapter"
-	ss "github.com/lysShub/fatun/app/server/proxyer/session"
 	"github.com/lysShub/fatun/control"
+	"github.com/lysShub/fatun/fatun"
+	"github.com/lysShub/fatun/fatun/server/adapter"
+	ss "github.com/lysShub/fatun/fatun/server/proxyer/session"
 	"github.com/lysShub/fatun/sconn"
 	"github.com/lysShub/fatun/session"
 	"github.com/lysShub/sockit/errorx"
@@ -17,7 +17,7 @@ import (
 )
 
 type Server interface {
-	Config() *app.Config
+	Config() *fatun.Config
 	Adapter() *adapter.Ports
 }
 
@@ -38,7 +38,7 @@ func Proxy(ctx context.Context, srv Server, conn *sconn.Conn) {
 type Proxyer struct {
 	conn   *sconn.Conn
 	srv    Server
-	cfg    *app.Config
+	cfg    *fatun.Config
 	logger *slog.Logger
 
 	sessionMgr *ss.SessionMgr

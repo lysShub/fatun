@@ -1,4 +1,4 @@
-package app_test
+package fatun_test
 
 import (
 	"net/netip"

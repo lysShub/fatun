@@ -1,14 +1,14 @@
 //go:build linux
 // +build linux
 
-package app_test
+package fatun_test
 
 import (
 	"context"
 	"testing"
 
-	"github.com/lysShub/fatun/app/server"
 	"github.com/lysShub/fatun/config"
+	"github.com/lysShub/fatun/fatun/server"
 	"github.com/lysShub/fatun/sconn"
 	"github.com/lysShub/fatun/sconn/crypto"
 	"github.com/stretchr/testify/require"

@@ -6,15 +6,15 @@ import (
 	"net"
 	"net/netip"
 
-	"github.com/lysShub/fatun/app"
-	"github.com/lysShub/fatun/app/server/adapter"
-	"github.com/lysShub/fatun/app/server/proxyer"
+	"github.com/lysShub/fatun/fatun"
+	"github.com/lysShub/fatun/fatun/server/adapter"
+	"github.com/lysShub/fatun/fatun/server/proxyer"
 	"github.com/lysShub/fatun/sconn"
 	"github.com/lysShub/sockit/conn/tcp"
 	"github.com/pkg/errors"
 )
 
-func ListenAndServe(ctx context.Context, addr string, cfg *app.Config) error {
+func ListenAndServe(ctx context.Context, addr string, cfg *fatun.Config) error {
 	var laddr netip.AddrPort
 	if addr, err := net.ResolveTCPAddr("tcp", addr); err != nil {
 		return errors.WithStack(err)
@@ -48,7 +48,7 @@ func ListenAndServe(ctx context.Context, addr string, cfg *app.Config) error {
 }
 
 type Server struct {
-	cfg    *app.Config
+	cfg    *fatun.Config
 	logger *slog.Logger
 
 	l *sconn.Listener
@@ -56,7 +56,7 @@ type Server struct {
 	ap *adapter.Ports
 }
 
-func NewServer(l *sconn.Listener, cfg *app.Config) (*Server, error) {
+func NewServer(l *sconn.Listener, cfg *fatun.Config) (*Server, error) {
 	var s = &Server{
 		cfg: cfg,
 		logger: slog.New(cfg.Logger.WithGroup("server").WithAttrs([]slog.Attr{
