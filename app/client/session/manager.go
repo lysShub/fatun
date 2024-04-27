@@ -4,31 +4,36 @@ import (
 	"sync"
 
 	"github.com/lysShub/fatun/session"
-	"github.com/lysShub/sockit/errorx"
 )
 
 type SessionMgr struct {
-	closeCh chan struct{}
+	idsMu sync.RWMutex
+	ids   map[session.ID]Session
 
-	mu       sync.RWMutex
-	sessions map[session.ID]Session
+	sessMu sync.RWMutex
+	sesses map[session.Session]struct{}
 }
 
 func NewSessionMgr() *SessionMgr {
 	var sm = &SessionMgr{
-		sessions: make(map[session.ID]Session, 16),
+		ids:    make(map[session.ID]Session, 16),
+		sesses: make(map[session.Session]struct{}, 16),
 	}
 	return sm
 }
 
-func (sm *SessionMgr) Close() error {
+func (m *SessionMgr) Close() error {
 	var ss []Session
-	sm.mu.Lock()
-	for _, e := range sm.sessions {
+	m.idsMu.Lock()
+	for _, e := range m.ids {
 		ss = append(ss, e)
 	}
-	clear(sm.sessions)
-	sm.mu.Unlock()
+	clear(m.ids)
+	m.idsMu.Unlock()
+
+	m.sessMu.Lock()
+	clear(m.sesses)
+	m.sessMu.Unlock()
 
 	for _, e := range ss {
 		e.Close()
@@ -36,9 +41,9 @@ func (sm *SessionMgr) Close() error {
 	return nil
 }
 
-func (sm *SessionMgr) Add(client Client, id session.ID, firstIP []byte) error {
-	if _, err := sm.Get(id); err == nil {
-		return errorx.WrapTemp(session.ErrExistID(id))
+func (m *SessionMgr) Add(client Client, id session.ID, firstIP []byte) error {
+	if m.Exist(firstIP) {
+		return session.ErrExistID(id)
 	}
 
 	sess, err := newSession(client, id, firstIP)
@@ -46,26 +51,40 @@ func (sm *SessionMgr) Add(client Client, id session.ID, firstIP []byte) error {
 		return err
 	}
 
-	sm.mu.Lock()
-	defer sm.mu.Unlock()
+	m.idsMu.Lock()
+	m.ids[id] = sess
+	m.idsMu.Unlock()
 
-	sm.sessions[id] = sess
+	m.sessMu.Lock()
+	m.sesses[session.FromIP(firstIP)] = struct{}{}
+	m.sessMu.Unlock()
 	return nil
 }
 
-func (sm *SessionMgr) Get(id session.ID) (s Session, err error) {
-	sm.mu.RLock()
-	defer sm.mu.RUnlock()
+func (m *SessionMgr) Get(id session.ID) (s Session, err error) {
+	m.idsMu.RLock()
+	defer m.idsMu.RUnlock()
 
-	s = sm.sessions[id]
+	s = m.ids[id]
 	if s == nil {
 		err = session.ErrInvalidID(id)
 	}
 	return s, err
 }
 
-func (sm *SessionMgr) Del(id session.ID) {
-	sm.mu.Lock()
-	delete(sm.sessions, id)
-	sm.mu.Unlock()
+func (m *SessionMgr) Exist(firstIP []byte) bool {
+	m.sessMu.RLock()
+	_, has := m.sesses[session.FromIP(firstIP)]
+	m.sessMu.RUnlock()
+	return has
+}
+
+func (m *SessionMgr) Del(id session.ID) {
+	m.idsMu.Lock()
+	delete(m.ids, id)
+	m.idsMu.Unlock()
+
+	m.sessMu.Lock()
+	delete(m.ids, id)
+	m.sessMu.Unlock()
 }

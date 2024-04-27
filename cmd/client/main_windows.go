@@ -32,7 +32,7 @@ func main() {
 			},
 		},
 		PSS: "a.pss",
-		// Log: "client.log",
+		Log: "client.log",
 	}
 
 	acfg, err := cfg.Config()

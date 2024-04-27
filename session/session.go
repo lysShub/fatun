@@ -29,9 +29,12 @@ func Decode(seg *packet.Packet) ID {
 	return ID(id)
 }
 
-func ErrInvalidID(id ID) error {
-	return errors.Errorf("invalid session id %d", id)
+type ErrInvalidID ID
+
+func (e ErrInvalidID) Error() string {
+	return fmt.Sprintf("invalid session id %d", e)
 }
+func (e ErrInvalidID) Temporary() bool { return true }
 
 type ErrExistID ID
 

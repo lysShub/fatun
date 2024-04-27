@@ -54,6 +54,9 @@ func (c *captureImpl) Hit(ip []byte) bool {
 			return false // todo: support udp
 		}
 
+		if c.sessMgr.Exist(ip) {
+			return true
+		}
 		resp, err := c.ctr.AddSession(c.srvCtx, id) // todo: add timeout
 		if err != nil {
 			c.raw().close(err)
@@ -69,10 +72,11 @@ func (c *captureImpl) Hit(ip []byte) bool {
 					c.raw().close(err)
 				}
 			}
+
+			c.logger.LogAttrs(c.srvCtx, slog.LevelInfo, "add session", slog.Attr{
+				Key: "session", Value: slog.StringValue(id.String()),
+			})
 		}
-		c.logger.LogAttrs(c.srvCtx, slog.LevelInfo, "add session", slog.Attr{
-			Key: "session", Value: slog.StringValue(id.String()),
-		})
 	}
 	return hit
 }
