@@ -7,8 +7,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/lysShub/fatun/app/server"
 	"github.com/lysShub/fatun/config"
+	"github.com/lysShub/fatun/fatun/server"
 	"github.com/lysShub/fatun/sconn"
 	"github.com/lysShub/fatun/sconn/crypto"
 )

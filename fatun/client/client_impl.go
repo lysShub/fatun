@@ -8,7 +8,7 @@ import (
 	"log/slog"
 	"slices"
 
-	cs "github.com/lysShub/fatun/app/client/session"
+	cs "github.com/lysShub/fatun/fatun/client/session"
 	"github.com/lysShub/fatun/session"
 	"github.com/lysShub/sockit/errorx"
 	"github.com/lysShub/sockit/packet"

@@ -1,4 +1,4 @@
-package app
+package fatun
 
 import (
 	"log/slog"

@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lysShub/fatun/app/server/adapter"
+	"github.com/lysShub/fatun/fatun/server/adapter"
 	"github.com/lysShub/fatun/session"
 	"github.com/lysShub/sockit/packet"
 )

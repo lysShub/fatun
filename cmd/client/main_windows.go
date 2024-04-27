@@ -11,8 +11,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/lysShub/fatun/app/client"
 	"github.com/lysShub/fatun/config"
+	"github.com/lysShub/fatun/fatun/client"
 	"github.com/lysShub/fatun/sconn"
 	"github.com/lysShub/fatun/sconn/crypto"
 )

@@ -12,11 +12,11 @@ import (
 	"sync/atomic"
 
 	"github.com/lysShub/divert-go"
-	"github.com/lysShub/fatun/app"
-	"github.com/lysShub/fatun/app/client/capture"
-	"github.com/lysShub/fatun/app/client/filter"
-	cs "github.com/lysShub/fatun/app/client/session"
 	"github.com/lysShub/fatun/control"
+	"github.com/lysShub/fatun/fatun"
+	"github.com/lysShub/fatun/fatun/client/capture"
+	"github.com/lysShub/fatun/fatun/client/filter"
+	cs "github.com/lysShub/fatun/fatun/client/session"
 	"github.com/lysShub/fatun/sconn"
 	"github.com/lysShub/fatun/session"
 	"github.com/lysShub/sockit/conn"
@@ -30,7 +30,7 @@ import (
 )
 
 type Client struct {
-	cfg    *app.Config
+	cfg    *fatun.Config
 	logger *slog.Logger
 	self   session.Session
 
@@ -51,7 +51,7 @@ type Client struct {
 
 var _ = divert.MustLoad(divert.DLL)
 
-func Proxy(ctx context.Context, server string, cfg *app.Config) (*Client, error) {
+func Proxy(ctx context.Context, server string, cfg *fatun.Config) (*Client, error) {
 	var laddr, raddr netip.AddrPort
 	if addr, err := net.ResolveTCPAddr("tcp", server); err != nil {
 		return nil, errors.WithStack(err)
@@ -86,7 +86,7 @@ func Proxy(ctx context.Context, server string, cfg *app.Config) (*Client, error)
 	return c, nil
 }
 
-func NewClient(ctx context.Context, raw conn.RawConn, cfg *app.Config) (*Client, error) {
+func NewClient(ctx context.Context, raw conn.RawConn, cfg *fatun.Config) (*Client, error) {
 	var c = &Client{
 		cfg: cfg,
 		logger: slog.New(cfg.Logger.WithGroup("client").WithAttrs([]slog.Attr{

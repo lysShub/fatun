@@ -6,9 +6,9 @@ import (
 	"net/netip"
 	"time"
 
-	"github.com/lysShub/fatun/app/server/adapter"
-	ss "github.com/lysShub/fatun/app/server/proxyer/session"
 	"github.com/lysShub/fatun/control"
+	"github.com/lysShub/fatun/fatun/server/adapter"
+	ss "github.com/lysShub/fatun/fatun/server/proxyer/session"
 	"github.com/lysShub/fatun/session"
 	"github.com/lysShub/sockit/errorx"
 	"github.com/lysShub/sockit/packet"
