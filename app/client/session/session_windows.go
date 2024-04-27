@@ -151,7 +151,7 @@ func (s *sess) keepalive() {
 		s.close(errors.WithStack(app.KeepaliveExceeded))
 	default:
 		s.cnt.Store(magic)
-		time.AfterFunc(time.Minute, s.keepalive) // todo: from config
+		time.AfterFunc(time.Minute*5, s.keepalive) // todo: from config
 	}
 }
 

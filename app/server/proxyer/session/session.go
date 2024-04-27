@@ -10,6 +10,7 @@ import (
 	"github.com/lysShub/fatun/app"
 	"github.com/lysShub/fatun/app/server/proxyer/sender"
 	"github.com/lysShub/fatun/session"
+	"github.com/lysShub/sockit/errorx"
 	"github.com/lysShub/sockit/packet"
 	"github.com/pkg/errors"
 
@@ -89,8 +90,12 @@ func (s *Session) close(cause error) error {
 			}
 		}
 
-		s.proxyer.Logger().Info("session close")
 		if cause != nil {
+			if errorx.Temporary(cause) {
+				s.proxyer.Logger().Info(errors.WithMessage(cause, "session close").Error())
+			} else {
+				s.proxyer.Logger().Error(cause.Error(), errorx.TraceAttr(cause))
+			}
 			s.closeErr.Store(&cause)
 		}
 		return cause

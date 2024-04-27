@@ -123,8 +123,10 @@ func ErrInvalidSession(s Session) error {
 	return errors.New(s.String())
 }
 
-func ErrExistSession(s Session) error {
-	return errors.New(s.String())
+type ErrSessionExist Session
+
+func (e ErrSessionExist) Error() string {
+	return fmt.Sprintf("session %s existed", Session(e).String())
 }
 
 type ErrNotSupportProto tcpip.TransportProtocolNumber
