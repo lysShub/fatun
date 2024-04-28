@@ -2,6 +2,7 @@ package sconn
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"net/netip"
 	"os"
@@ -172,11 +173,21 @@ func (c *Conn) TCP() net.Conn {
 	return c.tcp
 }
 
+type ErrOverflowMTU int
+
+func (e ErrOverflowMTU) Error() string {
+	return fmt.Sprintf("packet size %d overflow mtu limit", int(e))
+}
+func (ErrOverflowMTU) Temporary() bool { return true }
+
 func (c *Conn) Send(ctx context.Context, pkt *packet.Packet, id session.ID) (err error) {
 	if err := c.handshake(ctx); err != nil {
 		return err
 	}
 
+	if pkt.Data() > c.cfg.MTU {
+		return errors.WithStack(ErrOverflowMTU(pkt.Data()))
+	}
 	session.Encode(pkt, id)
 	c.fake.AttachSend(pkt)
 

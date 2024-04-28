@@ -104,7 +104,8 @@ func (s *sess) close(cause error) error {
 }
 
 func (s *sess) uplinkService(initIP []byte) error {
-	var pkt = packet.Make(64, 0, s.client.MTU()).Append(initIP)
+	// todo: should mtu - overhead
+	var ip = packet.Make(64, 0, s.client.MTU()).Append(initIP)
 
 	ipver := header.IPVersion(initIP)
 	for {
@@ -112,21 +113,21 @@ func (s *sess) uplinkService(initIP []byte) error {
 
 		switch ipver {
 		case 4:
-			pkt.SetHead(pkt.Head() + int(header.IPv4(pkt.Bytes()).HeaderLength()))
+			ip.SetHead(ip.Head() + int(header.IPv4(ip.Bytes()).HeaderLength()))
 		case 6:
-			pkt.SetHead(pkt.Head() + header.IPv6FixedHeaderSize)
+			ip.SetHead(ip.Head() + header.IPv6FixedHeaderSize)
 		default:
 			panic("")
 		}
-		if err := s.client.Uplink(pkt, session.ID(s.id)); err != nil {
+		if err := s.client.Uplink(ip, session.ID(s.id)); err != nil {
 			return s.close(err)
 		}
 
-		n, err := s.inject.RecvCtx(s.srvCtx, pkt.Sets(64, 0xffff).Bytes(), nil)
+		n, err := s.inject.RecvCtx(s.srvCtx, ip.Sets(64, 0xffff).Bytes(), nil)
 		if err != nil {
 			return s.close(err)
 		} else {
-			pkt.SetData(n)
+			ip.SetData(n)
 		}
 	}
 }
