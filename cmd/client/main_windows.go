@@ -22,7 +22,7 @@ import (
 func main() {
 
 	cfg := &config.Config{
-		Server: "172.24.131.26:443",
+		// Server: "172.24.131.26:443",
 
 		MTU: 1536,
 		Key: &sconn.Sign{

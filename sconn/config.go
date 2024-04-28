@@ -48,6 +48,14 @@ func (e ErrPrevPacketInvalid) Error() string {
 	return fmt.Sprintf("previous pakcet %d is invalid", e)
 }
 
+func (pss PrevSegmets) Size() int {
+	n := 0
+	for _, e := range pss {
+		n += len(e)
+	}
+	return n
+}
+
 func (pss PrevSegmets) Marshal(to string) error {
 	fh, err := os.Create(to)
 	if err != nil {

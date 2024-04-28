@@ -72,7 +72,7 @@ func (c *capture) captureService() error {
 		ip = ip[:n]
 
 		if !c.c.Hit(ip) {
-			if _, err = c.handle.Send(ip[:n], &c.addr); err != nil {
+			if _, err = c.handle.Send(ip, &c.addr); err != nil {
 				return c.close(err)
 			}
 		}
