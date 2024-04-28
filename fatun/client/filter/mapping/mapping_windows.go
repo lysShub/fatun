@@ -53,7 +53,7 @@ func (m *mapping) close(cause error) error {
 func (m *mapping) query(ep Endpoint) (elem, error) {
 	switch ep.Proto {
 	case header.TCPProtocolNumber:
-		e := m.tcp.Query(ep.Addr)
+		e := m.tcp.Query(ep.Local)
 		if e.valid() {
 			return e, nil
 		}
@@ -62,13 +62,13 @@ func (m *mapping) query(ep Endpoint) (elem, error) {
 			return elem{}, err
 		}
 
-		e = m.tcp.Query(ep.Addr)
+		e = m.tcp.Query(ep.Local)
 		if e.valid() {
 			return e, nil
 		}
 		return elem{}, nil // not record
 	case header.UDPProtocolNumber:
-		e := m.udp.Query(ep.Addr)
+		e := m.udp.Query(ep.Local)
 		if e.valid() {
 			return e, nil
 		}
@@ -77,7 +77,7 @@ func (m *mapping) query(ep Endpoint) (elem, error) {
 			return elem{}, err
 		}
 
-		e = m.udp.Query(ep.Addr)
+		e = m.udp.Query(ep.Local)
 		if e.valid() {
 			return e, nil
 		}
