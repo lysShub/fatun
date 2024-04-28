@@ -94,14 +94,14 @@ func (p *Proxyer) Proxy(ctx context.Context) error {
 
 func (p *Proxyer) uplinkService() error {
 	var (
-		tcp = packet.Make(64, p.cfg.MTU)
+		pkt = packet.Make(64, p.cfg.MTU)
 		id  session.ID
 		s   *ss.Session
 		err error
 	)
 
 	for {
-		id, err = p.conn.Recv(p.srvCtx, tcp.SetHead(64))
+		id, err = p.conn.Recv(p.srvCtx, pkt.SetHead(64))
 		if err != nil {
 			if errorx.Temporary(err) {
 				p.logger.Warn(err.Error())
@@ -117,7 +117,7 @@ func (p *Proxyer) uplinkService() error {
 			continue
 		}
 
-		err = s.Send(tcp)
+		err = s.Send(pkt)
 		if err != nil {
 			return p.close(err)
 		}

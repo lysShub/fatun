@@ -102,6 +102,7 @@ func NewClient(ctx context.Context, raw conn.RawConn, cfg *fatun.Config) (*Clien
 	}
 	c.srvCtx, c.srvCancel = context.WithCancel(context.Background())
 
+	c.logger.Info("dial")
 	var err error
 	if c.conn, err = sconn.DialCtx(ctx, raw, cfg.Config); err != nil {
 		return nil, c.close(err)
@@ -110,7 +111,7 @@ func NewClient(ctx context.Context, raw conn.RawConn, cfg *fatun.Config) (*Clien
 			c.divertPriority = 2 // todo: dc.Priority()
 		}
 	}
-	c.logger.Info("connected server")
+	c.logger.Info("connected")
 
 	if f, err := filter.New(); err != nil {
 		return nil, c.close(err)

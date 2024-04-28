@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/lysShub/fatun/fatun/client/filter/mapping"
+	"github.com/lysShub/fatun/session"
 	"github.com/lysShub/sockit/test"
 	"github.com/lysShub/sockit/test/debug"
 	"github.com/pkg/errors"
@@ -35,28 +36,38 @@ func newFilter() *filter {
 func (f *filter) Close() error { return nil }
 
 func (f *filter) Hit(ip []byte) (bool, error) {
-	ep := mapping.FromOutbound(ip)
+	id := session.FromIP(ip)
 	if debug.Debug() {
 		require.True(test.T(),
-			ep.Addr.Addr().IsPrivate() || ep.Addr.Addr().IsUnspecified() || ep.Addr.Addr().IsLoopback(),
+			id.Src.Addr().IsPrivate() || id.Src.Addr().IsUnspecified() || id.Src.Addr().IsLoopback(),
 		)
 	}
 
 	if f.defaultEnable.Load() {
-		// // todo: from config
-		// notice: require filter is capture-read(not sniff-read) tcp SYN packet
-		const maxsyn = 3
+		const dns = 53
+		switch id.Proto {
+		case header.TCPProtocolNumber:
+			if id.Dst.Port() == dns {
+				return true, nil
+			}
 
-		if ep.Proto == header.TCPProtocolNumber {
-			n := f.tcps.Upgrade(ep.Addr)
+			// todo: from config
+			// notice: require filter is capture-read(not sniff-read) tcp SYN packet
+			const maxsyn = 3
+			n := f.tcps.Upgrade(id.Src)
 			if n >= maxsyn {
 				return true, nil
 			}
+		case header.UDPProtocolNumber:
+			if id.Dst.Port() == dns { // dns
+				return true, nil
+			}
+		default:
 		}
 	}
 
 	if f.processEnable.Load() {
-		name, err := Global.Name(ep)
+		name, err := Global.Name(mapping.Endpoint{Local: id.Src, Proto: id.Proto})
 		if err != nil {
 			return false, err
 		} else if name == "" {

@@ -6,16 +6,15 @@ package sender
 import (
 	"context"
 	"net/netip"
-	"time"
 
 	"github.com/pkg/errors"
 
 	"github.com/lysShub/fatun/session"
 	"github.com/lysShub/sockit/conn"
-	"github.com/lysShub/sockit/helper/ipstack"
 	"github.com/lysShub/sockit/packet"
 
 	"github.com/lysShub/sockit/conn/tcp"
+	udp "github.com/lysShub/sockit/conn/udp/raw"
 	"github.com/lysShub/sockit/test"
 	"github.com/lysShub/sockit/test/debug"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -25,60 +24,62 @@ import (
 
 type sender struct {
 	raw        conn.RawConn
-	ipstack    *ipstack.IPStack
-	start      time.Time
+	proto      tcpip.TransportProtocolNumber
 	pseudoSum1 uint16
 }
 
 func newSender(local netip.AddrPort, proto tcpip.TransportProtocolNumber, remote netip.AddrPort) (*sender, error) {
-	ipstack, err := ipstack.New(
-		local.Addr(), remote.Addr(),
-		tcpip.TransportProtocolNumber(proto),
+	pseudoSum1 := header.PseudoHeaderChecksum(
+		proto,
+		tcpip.AddrFromSlice(local.Addr().AsSlice()),
+		tcpip.AddrFromSlice(remote.Addr().AsSlice()),
+		0,
 	)
-	if err != nil {
-		return nil, err
-	}
 
+	var s = &sender{proto: proto, pseudoSum1: pseudoSum1}
+
+	var err error
 	switch proto {
 	case header.TCPProtocolNumber:
-		tcp, err := tcp.Connect(
+		if s.raw, err = tcp.Connect(
 			local, remote,
 			conn.UsedPort(), // PortAdapter bind the port
-		)
-		if err != nil {
+		); err != nil {
 			return nil, err
 		}
 
-		// tcp, err = test.WrapPcap(tcp, "sender.pcap")
+		// s.raw, err = test.WrapPcap(s.raw, "sender.pcap")
 		// if err != nil {
 		// 	panic(err)
 		// }
-
-		pseudoSum1 := header.PseudoHeaderChecksum(
-			header.TCPProtocolNumber,
-			tcpip.AddrFromSlice(local.Addr().AsSlice()),
-			tcpip.AddrFromSlice(remote.Addr().AsSlice()),
-			0,
-		)
-		return &sender{
-			raw:        tcp,
-			ipstack:    ipstack,
-			start:      time.Now(),
-			pseudoSum1: pseudoSum1,
-		}, nil
+	case header.UDPProtocolNumber:
+		if s.raw, err = udp.Connect(
+			local, remote,
+			conn.UsedPort(),
+		); err != nil {
+			return nil, err
+		}
 	default:
 		return nil, errors.WithStack(session.ErrNotSupportProto(proto))
 	}
+
+	return s, nil
 }
 
 func (s *sender) Send(pkt *packet.Packet) error {
 
+	// re-calc checksum, src addr-port changed
 	// todo: optimize
-	tcp := header.TCP(pkt.Bytes())
-	tcp.SetChecksum(0)
-	sum := checksum.Combine(s.pseudoSum1, uint16(len(tcp)))
-	sum = checksum.Checksum(tcp, sum)
-	tcp.SetChecksum(^sum)
+	var t header.Transport
+	if s.proto == header.TCPProtocolNumber {
+		t = header.TCP(pkt.Bytes())
+	} else {
+		t = header.UDP(pkt.Bytes())
+	}
+	t.SetChecksum(0)
+	sum := checksum.Combine(s.pseudoSum1, uint16(pkt.Data()))
+	sum = checksum.Checksum(pkt.Bytes(), sum)
+	t.SetChecksum(^sum)
 
 	if debug.Debug() {
 		test.ValidTCP(test.T(), pkt.Bytes(), s.pseudoSum1)

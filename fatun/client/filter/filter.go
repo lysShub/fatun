@@ -7,7 +7,7 @@ import (
 )
 
 type Hitter interface {
-	// Hit filter outbound ip packet
+	// Hit hit outbound ip packet
 	Hit(ip []byte) (bool, error)
 }
 
