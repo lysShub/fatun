@@ -9,6 +9,7 @@ import (
 
 	"github.com/lysShub/fatun/fatun/client/filter/mapping"
 	"github.com/lysShub/fatun/session"
+	"github.com/lysShub/sockit/packet"
 	"github.com/lysShub/sockit/test"
 	"github.com/lysShub/sockit/test/debug"
 	"github.com/pkg/errors"
@@ -35,8 +36,8 @@ func newFilter() *filter {
 
 func (f *filter) Close() error { return nil }
 
-func (f *filter) Hit(ip []byte) (bool, error) {
-	id := session.FromIP(ip)
+func (f *filter) Hit(ip *packet.Packet) (bool, error) {
+	id := session.FromIP(ip.Bytes())
 	if debug.Debug() {
 		require.True(test.T(),
 			id.Src.Addr().IsPrivate() || id.Src.Addr().IsUnspecified() || id.Src.Addr().IsLoopback(),

@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 
 	"github.com/lysShub/divert-go"
+	"github.com/lysShub/sockit/packet"
 )
 
 type capture struct {
@@ -30,9 +31,7 @@ func newCapture(client Client) (cap *capture, err error) {
 	}
 	c.srvCtx, c.cancel = context.WithCancel(context.Background())
 
-	// for performance, only capture tcp.Syn packet
-	// todo: support icmp
-	var filter = "outbound and !loopback and ip and (tcp.Syn or udp)"
+	var filter = "outbound and !loopback and ip and (tcp or udp)"
 	c.handle, err = divert.Open(filter, divert.Network, c.c.DivertPriority(), 0)
 	if err != nil {
 		return nil, c.close(err)
@@ -63,16 +62,17 @@ func (s *capture) close(cause error) error {
 }
 
 func (c *capture) captureService() error {
-	var ip = make([]byte, c.c.MTU())
+	var ip = packet.Make(32, c.c.MTU())
+
 	for {
-		n, err := c.handle.RecvCtx(c.srvCtx, ip[:cap(ip)], &c.addr)
+		n, err := c.handle.RecvCtx(c.srvCtx, ip.Sets(32, 0xffff).Bytes(), &c.addr)
 		if err != nil {
 			return c.close(err)
 		}
-		ip = ip[:n]
+		ip.SetData(n)
 
 		if !c.c.Hit(ip) {
-			if _, err = c.handle.Send(ip, &c.addr); err != nil {
+			if _, err = c.handle.Send(ip.Bytes(), &c.addr); err != nil {
 				return c.close(err)
 			}
 		}

@@ -18,13 +18,14 @@ import (
 	"github.com/lysShub/sockit/errorx"
 	"github.com/lysShub/sockit/packet"
 	"github.com/pkg/errors"
+	"github.com/stretchr/testify/require"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 
 	"github.com/lysShub/sockit/test"
 	"github.com/lysShub/sockit/test/debug"
 )
 
-const Overhead = session.Overhead
+const Overhead = session.Overhead + faketcp.Overhead
 
 type Sconn interface {
 	net.Conn // control tcp conn
@@ -181,6 +182,10 @@ func (e ErrOverflowMTU) Error() string {
 func (ErrOverflowMTU) Temporary() bool { return true }
 
 func (c *Conn) Send(ctx context.Context, pkt *packet.Packet, id session.ID) (err error) {
+	if debug.Debug() {
+		require.True(test.T(), id.Valid())
+	}
+
 	if err := c.handshake(ctx); err != nil {
 		return err
 	}
@@ -204,14 +209,15 @@ func (c *Conn) recv(ctx context.Context, pkt *packet.Packet) error {
 
 func (c *Conn) Recv(ctx context.Context, pkt *packet.Packet) (id session.ID, err error) {
 	if err := c.handshake(ctx); err != nil {
-		return 0, err
+		return session.ID{}, err
 	}
 
 	head := pkt.Head()
 	for {
+		// todo: 如果peer直接中断，似乎会无限读取到RST数据包
 		err = c.recv(ctx, pkt.SetHead(head))
 		if err != nil {
-			return 0, err
+			return session.ID{}, err
 		}
 
 		err = c.fake.DetachRecv(pkt)
@@ -219,10 +225,17 @@ func (c *Conn) Recv(ctx context.Context, pkt *packet.Packet) (id session.ID, err
 			if time.Since(c.handshakedTime) < time.Second*3 {
 				continue
 			}
-			return 0, errorx.WrapTemp(err)
+
+			// ss := c.ep.Stack().Stack().Stats().TCP
+			// fmt.Printf("%+v \n\n", ss)
+
+			return session.ID{}, errorx.WrapTemp(err)
 		}
 
 		id = session.Decode(pkt)
+		if debug.Debug() {
+			require.True(test.T(), id.Valid())
+		}
 		if id == session.CtrSessID {
 			c.inboundControlSegment(pkt)
 			continue

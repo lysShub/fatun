@@ -193,35 +193,34 @@ type slice struct {
 	s  []*stack.PacketBuffer
 	mu sync.RWMutex
 
-	writeNotify chan struct{}
+	writeNotify *sync.Cond
 }
 
 func newSlice(size int) *slice {
-	return &slice{
-		s:           make([]*stack.PacketBuffer, 0, size),
-		writeNotify: make(chan struct{}, size),
+	var s = &slice{
+		s: make([]*stack.PacketBuffer, 0, size),
 	}
+	s.writeNotify = sync.NewCond(&s.mu)
+	return s
 }
 
 var _ listIface = (*slice)(nil)
 
 func (s *slice) Put(pkb *stack.PacketBuffer) (ok bool) {
+	defer s.writeNotify.Broadcast()
 	if pkb.IsNil() {
 		return false
 	}
-
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if len(s.s) == cap(s.s) {
+		if debug.Debug() {
+			println("slice link cap too small")
+		}
 		return false
 	} else {
-
 		s.s = append(s.s, pkb.IncRef())
-		select {
-		case s.writeNotify <- struct{}{}:
-		default:
-		}
 		return true
 	}
 }
@@ -233,10 +232,15 @@ func (s *slice) Get(ctx context.Context) (pkb *stack.PacketBuffer) {
 	}
 
 	for {
+		// todo: ctx isn't timely
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-s.writeNotify:
+		default:
+			s.mu.Lock()
+			s.writeNotify.Wait()
+			s.mu.Unlock()
+
 			pkb = s.get()
 			if !pkb.IsNil() {
 				return pkb
@@ -255,7 +259,11 @@ func (s *slice) GetBy(ctx context.Context, dst netip.AddrPort) (pkb *stack.Packe
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-s.writeNotify:
+		default:
+			s.mu.Lock()
+			s.writeNotify.Wait()
+			s.mu.Unlock()
+
 			pkb = s.getBy(dst)
 			if !pkb.IsNil() {
 				return pkb

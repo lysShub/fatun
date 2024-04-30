@@ -2,6 +2,8 @@ package capture
 
 import (
 	"log/slog"
+
+	"github.com/lysShub/sockit/packet"
 )
 
 // Capture capture ip packet, for tcp, only read SYN packet, for udp, read everyone packet.
@@ -14,7 +16,7 @@ type Client interface {
 	Logger() *slog.Logger
 	MTU() int
 	DivertPriority() int16
-	Hit(ip []byte) bool
+	Hit(ip *packet.Packet) bool
 }
 
 func New(client Client) (Capture, error) {

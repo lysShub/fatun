@@ -32,57 +32,6 @@ func NewPorts(addr netip.Addr) *Ports {
 	}
 }
 
-type AddrSet struct {
-	addrs addrs
-}
-
-type addrs []netip.AddrPort
-
-func (a addrs) Len() int           { return len(a) }
-func (a addrs) Less(i, j int) bool { return less(a[i], a[j]) }
-func less(a, b netip.AddrPort) bool {
-	if a.Addr() != b.Addr() {
-		return a.Addr().Less(b.Addr())
-	} else {
-		return a.Port() < b.Port()
-	}
-}
-func (a addrs) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
-
-// idx<0 not Find
-func (a *AddrSet) Find(addr netip.AddrPort) (idx int) {
-	i := sort.Search(len(a.addrs), func(i int) bool {
-		return !less(a.addrs[i], addr)
-	})
-	if i < len(a.addrs) && a.addrs[i] == addr {
-		return i
-	}
-	return -1
-}
-func (a *AddrSet) Has(addr netip.AddrPort) bool {
-	return a.Find(addr) >= 0
-}
-func (a *AddrSet) Add(addr netip.AddrPort) {
-	if !a.Has(addr) {
-		a.addrs = append(a.addrs, addr)
-		sort.Sort(a.addrs)
-	}
-}
-func (a *AddrSet) Del(addr netip.AddrPort) {
-	i := a.Find(addr)
-	if i < 0 {
-		return
-	}
-	copy(a.addrs[i:], a.addrs[i+1:])
-	a.addrs = a.addrs[:len(a.addrs)-1]
-}
-func (a *AddrSet) Len() int { return len(a.addrs) }
-
-type portKey struct {
-	proto     tcpip.TransportProtocolNumber
-	loaclPort uint16
-}
-
 // GetPort get a local machine port
 func (a *Ports) GetPort(proto tcpip.TransportProtocolNumber, dst netip.AddrPort) (port uint16, err error) {
 	// try reuse alloced port,
@@ -129,6 +78,9 @@ func (a *Ports) GetPort(proto tcpip.TransportProtocolNumber, dst netip.AddrPort)
 	}
 	a.mu.Unlock()
 
+	if proto == header.TCPProtocolNumber && port == 443 {
+		panic("")
+	}
 	return port, nil
 }
 
@@ -182,4 +134,55 @@ func (a *Ports) Close() (err error) {
 
 	a.ports = map[portKey]*AddrSet{}
 	return err
+}
+
+type AddrSet struct {
+	addrs addrs
+}
+
+type addrs []netip.AddrPort
+
+func (a addrs) Len() int           { return len(a) }
+func (a addrs) Less(i, j int) bool { return less(a[i], a[j]) }
+func less(a, b netip.AddrPort) bool {
+	if a.Addr() != b.Addr() {
+		return a.Addr().Less(b.Addr())
+	} else {
+		return a.Port() < b.Port()
+	}
+}
+func (a addrs) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
+
+// idx<0 not Find
+func (a *AddrSet) Find(addr netip.AddrPort) (idx int) {
+	i := sort.Search(len(a.addrs), func(i int) bool {
+		return !less(a.addrs[i], addr)
+	})
+	if i < len(a.addrs) && a.addrs[i] == addr {
+		return i
+	}
+	return -1
+}
+func (a *AddrSet) Has(addr netip.AddrPort) bool {
+	return a.Find(addr) >= 0
+}
+func (a *AddrSet) Add(addr netip.AddrPort) {
+	if !a.Has(addr) {
+		a.addrs = append(a.addrs, addr)
+		sort.Sort(a.addrs)
+	}
+}
+func (a *AddrSet) Del(addr netip.AddrPort) {
+	i := a.Find(addr)
+	if i < 0 {
+		return
+	}
+	copy(a.addrs[i:], a.addrs[i+1:])
+	a.addrs = a.addrs[:len(a.addrs)-1]
+}
+func (a *AddrSet) Len() int { return len(a.addrs) }
+
+type portKey struct {
+	proto     tcpip.TransportProtocolNumber
+	loaclPort uint16
 }

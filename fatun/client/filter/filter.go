@@ -4,11 +4,12 @@ import (
 	"sync"
 
 	"github.com/lysShub/fatun/fatun/client/filter/mapping"
+	"github.com/lysShub/sockit/packet"
 )
 
 type Hitter interface {
 	// Hit hit outbound ip packet
-	Hit(ip []byte) (bool, error)
+	Hit(ip *packet.Packet) (bool, error)
 }
 
 // todo: humanable syntax

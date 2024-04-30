@@ -2,23 +2,29 @@ package proxyer
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
+	"net/netip"
 	"os"
 	"sync/atomic"
 
 	"github.com/lysShub/fatun/control"
 	"github.com/lysShub/fatun/fatun"
-	"github.com/lysShub/fatun/fatun/server/adapter"
-	ss "github.com/lysShub/fatun/fatun/server/proxyer/session"
 	"github.com/lysShub/fatun/sconn"
 	"github.com/lysShub/fatun/session"
 	"github.com/lysShub/sockit/errorx"
 	"github.com/lysShub/sockit/packet"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
 type Server interface {
 	Config() *fatun.Config
-	Adapter() *adapter.Ports
+	// Adapter() *adapter.Ports
+	AddSession(sess session.Session, pxy interface {
+		Downlink(*packet.Packet, session.ID) error
+	}) error
+	Send(sess session.Session, pkt *packet.Packet) error
 }
 
 func Proxy(ctx context.Context, srv Server, conn *sconn.Conn) {
@@ -41,8 +47,6 @@ type Proxyer struct {
 	cfg    *fatun.Config
 	logger *slog.Logger
 
-	sessionMgr *ss.SessionMgr
-
 	ctr control.Server
 
 	srvCtx    context.Context
@@ -60,13 +64,10 @@ func NewProxyer(srv Server, conn *sconn.Conn) (*Proxyer, error) {
 			{Key: "src", Value: slog.StringValue(conn.RemoteAddr().String())},
 		})),
 	}
-	p.sessionMgr = ss.NewSessionMgr(proxyerImplPtr(p))
 	p.srvCtx, p.srvCancel = context.WithCancel(context.Background())
 
-	p.logger.Info("accepted")
 	go p.uplinkService()
 	p.ctr = control.NewServer(conn.TCP(), controlImplPtr(p))
-
 	return p, nil
 }
 
@@ -95,13 +96,10 @@ func (p *Proxyer) Proxy(ctx context.Context) error {
 func (p *Proxyer) uplinkService() error {
 	var (
 		pkt = packet.Make(64, p.cfg.MTU)
-		id  session.ID
-		s   *ss.Session
-		err error
 	)
 
 	for {
-		id, err = p.conn.Recv(p.srvCtx, pkt.SetHead(64))
+		id, err := p.conn.Recv(p.srvCtx, pkt.SetHead(64))
 		if err != nil {
 			if errorx.Temporary(err) {
 				p.logger.Warn(err.Error())
@@ -111,20 +109,41 @@ func (p *Proxyer) uplinkService() error {
 			}
 		}
 
-		s, err = p.sessionMgr.Get(id)
-		if err != nil {
-			p.logger.Warn(err.Error())
-			continue
+		var t header.Transport
+		switch id.Proto {
+		case header.TCPProtocolNumber:
+			t = header.TCP(pkt.Bytes())
+		case header.UDPProtocolNumber:
+			t = header.UDP(pkt.Bytes())
+		default:
+			panic("")
 		}
 
-		err = s.Send(pkt)
-		if err != nil {
-			return p.close(err)
+		sess := session.Session{
+			Src:   netip.AddrPortFrom(p.conn.RemoteAddr().Addr(), t.SourcePort()),
+			Proto: id.Proto,
+			Dst:   netip.AddrPortFrom(id.Remote, t.DestinationPort()),
+		}
+		err = p.srv.Send(sess, pkt)
+		if errors.Is(err, fatun.ErrNotRecord{}) {
+
+			{
+				fmt.Println("add sess", sess.String())
+			}
+
+			if err := p.srv.AddSession(sess, p); err != nil {
+				p.logger.Warn(err.Error(), errorx.TraceAttr(err))
+			}
+			if err = p.srv.Send(sess, pkt); err != nil {
+				p.logger.Warn(err.Error(), errorx.TraceAttr(err))
+			}
+		} else if err != nil {
+			p.logger.Warn(err.Error(), errorx.TraceAttr(err))
 		}
 	}
 }
 
-func (p *Proxyer) downlink(pkt *packet.Packet, id session.ID) error {
+func (p *Proxyer) Downlink(pkt *packet.Packet, id session.ID) error {
 	err := p.conn.Send(p.srvCtx, pkt, id)
 	if err != nil {
 		p.close(err)
