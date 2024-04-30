@@ -190,9 +190,8 @@ type listIface interface {
 }
 
 type slice struct {
-	s  []*stack.PacketBuffer
-	mu sync.RWMutex
-
+	s           []*stack.PacketBuffer
+	mu          sync.RWMutex
 	writeNotify *sync.Cond
 }
 
