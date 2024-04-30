@@ -3,7 +3,6 @@ package proxyer
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net/netip"
 	"os"
@@ -126,10 +125,6 @@ func (p *Proxyer) uplinkService() error {
 		}
 		err = p.srv.Send(sess, pkt)
 		if errors.Is(err, fatun.ErrNotRecord{}) {
-
-			{
-				fmt.Println("add sess", sess.String())
-			}
 
 			if err := p.srv.AddSession(sess, p); err != nil {
 				p.logger.Warn(err.Error(), errorx.TraceAttr(err))

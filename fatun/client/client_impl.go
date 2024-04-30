@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"net/netip"
 
+	"github.com/lysShub/fatun/fatun"
+	"github.com/lysShub/fatun/sconn"
 	"github.com/lysShub/fatun/session"
 	"github.com/lysShub/sockit/errorx"
 	"github.com/lysShub/sockit/packet"
@@ -41,11 +43,20 @@ func (c *captureImpl) Hit(ip *packet.Packet) bool {
 			require.Equal(test.T(), 4, header.IPVersion(ip.Bytes()))
 			test.ValidIP(test.T(), ip.Bytes())
 		}
+
 		ip.SetHead(ip.Head() + int(hdr.HeaderLength()))
+		if ip.Data()+sconn.Overhead > c.MTU() {
+			c.logger.Warn("capture too big segment")
+			return true
+		}
 
 		id := session.ID{
 			Remote: netip.AddrFrom4(hdr.DestinationAddress().As4()),
 			Proto:  hdr.TransportProtocol(),
+		}
+
+		if id.Proto == header.TCPProtocolNumber {
+			fatun.UpdateMSS(ip.Bytes(), -sconn.Overhead)
 		}
 
 		c.raw().uplink(c.srvCtx, ip, id)

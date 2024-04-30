@@ -43,25 +43,32 @@ func (f *filter) Hit(ip *packet.Packet) (bool, error) {
 			id.Src.Addr().IsPrivate() || id.Src.Addr().IsUnspecified() || id.Src.Addr().IsLoopback(),
 		)
 	}
+	if id.Dst.Addr().IsLoopback() || id.Dst.Addr().IsMulticast() {
+		return false, nil
+	}
+
+	const dns = 53
+	if id.Dst.Port() == dns {
+		return true, nil
+	}
 
 	if f.defaultEnable.Load() {
-		const dns = 53
 		switch id.Proto {
 		case header.TCPProtocolNumber:
-			if id.Dst.Port() == dns {
-				return true, nil
+			var tcp header.TCP
+			if id.Dst.Addr().Is4() {
+				tcp = header.IPv4(ip.Bytes()).Payload()
+			} else {
+				tcp = header.IPv6(ip.Bytes()).Payload()
 			}
 
-			// todo: from config
-			// notice: require filter is capture-read(not sniff-read) tcp SYN packet
-			const maxsyn = 3
-			n := f.tcps.Upgrade(id.Src)
-			if n >= maxsyn {
-				return true, nil
-			}
-		case header.UDPProtocolNumber:
-			if id.Dst.Port() == dns { // dns
-				return true, nil
+			if tcp.Flags() == header.TCPFlagSyn {
+				// todo: from config
+				const maxsyn = 3
+				n := f.tcps.Upgrade(id.Src)
+				if n >= maxsyn {
+					return true, nil
+				}
 			}
 		default:
 		}

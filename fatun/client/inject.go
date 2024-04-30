@@ -10,6 +10,8 @@ import (
 	"strings"
 
 	"github.com/lysShub/divert-go"
+	"github.com/lysShub/fatun/fatun"
+	"github.com/lysShub/fatun/sconn"
 	"github.com/lysShub/fatun/session"
 	"github.com/lysShub/sockit/packet"
 	"github.com/lysShub/sockit/route"
@@ -64,6 +66,10 @@ func NewInject(addr netip.Addr) (*Inject, error) {
 }
 
 func (i *Inject) Inject(pkt *packet.Packet, id session.ID) error {
+	if id.Proto == header.TCPProtocolNumber {
+		fatun.UpdateMSS(pkt.Bytes(), -sconn.Overhead)
+	}
+
 	fields := header.IPv4Fields{
 		TOS:            0,
 		TotalLength:    header.IPv4MinimumSize + uint16(pkt.Data()),

@@ -19,10 +19,16 @@ import (
 
 // todo: support config
 
+// go run -tags  debug  .
 func main() {
+	/*
+	    add launcher.exe
+	   	add aces.exe
+	*/
 
 	cfg := &config.Config{
 		// Server: "172.24.131.26:443",
+		Server: "103.94.185.61:443",
 
 		MTU: 1536,
 		Key: &sconn.Sign{

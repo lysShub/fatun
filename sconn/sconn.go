@@ -182,10 +182,6 @@ func (e ErrOverflowMTU) Error() string {
 func (ErrOverflowMTU) Temporary() bool { return true }
 
 func (c *Conn) Send(ctx context.Context, pkt *packet.Packet, id session.ID) (err error) {
-	if debug.Debug() {
-		require.True(test.T(), id.Valid())
-	}
-
 	if err := c.handshake(ctx); err != nil {
 		return err
 	}
@@ -196,6 +192,12 @@ func (c *Conn) Send(ctx context.Context, pkt *packet.Packet, id session.ID) (err
 	session.Encode(pkt, id)
 	c.fake.AttachSend(pkt)
 
+	if debug.Debug() {
+		require.True(test.T(), id.Valid())
+
+		require.True(test.T(), c.LocalAddr().Addr().Is4())
+		require.LessOrEqual(test.T(), pkt.Data()+header.IPv4MinimumSize, c.cfg.MTU)
+	}
 	err = c.raw.Write(ctx, pkt)
 	return err
 }

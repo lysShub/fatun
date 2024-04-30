@@ -40,10 +40,8 @@ type Client struct {
 	hiter filter.Hitter
 	filter.Filter
 	capture capture.Capture
-
-	inject *Inject
-
-	ctr control.Client
+	inject  *Inject
+	ctr     control.Client
 
 	srvCtx    context.Context
 	srvCancel context.CancelFunc
@@ -75,7 +73,7 @@ func Proxy(ctx context.Context, server string, cfg *fatun.Config) (*Client, erro
 		return nil, err
 	}
 
-	// wraw, err := test.WrapPcap(raw, "client.pcap")
+	// wraw, err := test.WrapPcap(raw, "client-raw.pcap")
 	// if err != nil {
 	// 	panic(err)
 	// }

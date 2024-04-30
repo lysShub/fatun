@@ -206,26 +206,35 @@ func (s *Server) send(sess session.Session, pkt *packet.Packet) error {
 		tcp.SetChecksum(0)
 		sum := checksum.Checksum(tcp, psum)
 		tcp.SetChecksum(^sum)
+		if debug.Debug() {
+			test.ValidTCP(test.T(), pkt.Bytes(), checksum.Combine(psum, ^uint16(pkt.Data())))
+		}
+
+		_, err := s.tcpSnder.WriteToIP(pkt.Bytes(), &net.IPAddr{IP: sess.Dst.Addr().AsSlice()})
+		if err != nil {
+			return errors.WithStack(err)
+		}
+		return nil
 	case header.UDPProtocolNumber:
 		// header.UDP(pkt.Bytes()).SetSourcePortWithChecksumUpdate(pxyPort)
 
-		tcp := header.TCP(pkt.Bytes())
-		tcp.SetSourcePort(pxyPort)
-		tcp.SetChecksum(0)
-		sum := checksum.Checksum(tcp, psum)
-		tcp.SetChecksum(^sum)
+		udp := header.UDP(pkt.Bytes())
+		udp.SetSourcePort(pxyPort)
+		udp.SetChecksum(0)
+		sum := checksum.Checksum(udp, psum)
+		udp.SetChecksum(^sum)
+		if debug.Debug() {
+			test.ValidUDP(test.T(), pkt.Bytes(), checksum.Combine(psum, ^uint16(pkt.Data())))
+		}
+
+		_, err := s.tcpSnder.WriteToIP(pkt.Bytes(), &net.IPAddr{IP: sess.Dst.Addr().AsSlice()})
+		if err != nil {
+			return errors.WithStack(err)
+		}
+		return nil
 	default:
 		panic("")
 	}
-	if debug.Debug() {
-		test.ValidTCP(test.T(), pkt.Bytes(), checksum.Combine(psum, uint16(pkt.Data())))
-	}
-
-	_, err := s.tcpSnder.WriteToIP(pkt.Bytes(), &net.IPAddr{IP: sess.Dst.Addr().AsSlice()})
-	if err != nil {
-		return errors.WithStack(err)
-	}
-	return nil
 }
 
 func filter(conn *net.IPConn) error {
