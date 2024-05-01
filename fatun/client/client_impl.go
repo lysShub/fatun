@@ -12,9 +12,8 @@ import (
 	"github.com/lysShub/fatun/session"
 	"github.com/lysShub/sockit/errorx"
 	"github.com/lysShub/sockit/packet"
-	"github.com/lysShub/sockit/test"
-	"github.com/lysShub/sockit/test/debug"
-	"github.com/stretchr/testify/require"
+	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
@@ -34,32 +33,62 @@ func (c *captureImpl) Hit(ip *packet.Packet) bool {
 			c.raw().close(err)
 		}
 	} else if hit {
-		// todo: set by config
-		// calc checksum
+
+		// calc checksum:
+		// regarded source IP/Port as zore value to calculate the transport checksum,
+		// and then directly set the checksum (don't ^ operation)
 		hdr := header.IPv4(ip.Bytes())
+		switch hdr.TransportProtocol() {
+		case header.TCPProtocolNumber:
+			tcp := header.TCP(hdr.Payload())
 
-		hdr.SetChecksum(^hdr.CalculateChecksum())
-		if debug.Debug() {
-			require.Equal(test.T(), 4, header.IPVersion(ip.Bytes()))
-			test.ValidIP(test.T(), ip.Bytes())
+			// reduce tcp mss, avoid ip split fragment
+			if tcp.Flags().Contains(header.TCPFlagSyn) {
+				fatun.UpdateMSS(tcp, -sconn.Overhead)
+			}
+
+			tcp.SetChecksum(0)
+			srcPort := tcp.SourcePort()
+			tcp.SetSourcePort(0)
+			sum := header.PseudoHeaderChecksum(
+				hdr.TransportProtocol(),
+				defaultip4,
+				hdr.DestinationAddress(),
+				uint16(len(tcp)),
+			)
+			tcp.SetChecksum(checksum.Checksum(tcp, sum))
+			tcp.SetSourcePort(srcPort)
+		case header.UDPProtocolNumber:
+			udp := header.UDP(hdr.Payload())
+			udp.SetChecksum(0)
+			srcPort := udp.SourcePort()
+			udp.SetSourcePort(0)
+			sum := header.PseudoHeaderChecksum(
+				hdr.TransportProtocol(),
+				defaultip4,
+				hdr.DestinationAddress(),
+				uint16(len(udp)),
+			)
+			udp.SetChecksum(checksum.Checksum(udp, sum))
+			udp.SetSourcePort(srcPort)
+		default:
+			panic("")
 		}
-
 		ip.SetHead(ip.Head() + int(hdr.HeaderLength()))
-		if ip.Data()+sconn.Overhead > c.MTU() {
-			c.logger.Warn("capture too big segment")
-			return true
-		}
 
 		id := session.ID{
 			Remote: netip.AddrFrom4(hdr.DestinationAddress().As4()),
 			Proto:  hdr.TransportProtocol(),
 		}
-
-		if id.Proto == header.TCPProtocolNumber {
-			fatun.UpdateMSS(ip.Bytes(), -sconn.Overhead)
+		if err = c.raw().uplink(c.srvCtx, ip, id); err != nil {
+			if errorx.Temporary(err) {
+				c.logger.Warn(err.Error())
+			} else {
+				c.logger.Error(err.Error(), errorx.TraceAttr(err))
+			}
 		}
-
-		c.raw().uplink(c.srvCtx, ip, id)
 	}
 	return hit
 }
+
+var defaultip4 = tcpip.AddrFrom4([4]byte{})

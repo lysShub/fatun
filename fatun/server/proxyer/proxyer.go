@@ -92,13 +92,14 @@ func (p *Proxyer) Proxy(ctx context.Context) error {
 	return p.close(err)
 }
 
+// todo: add bandwidth limit
 func (p *Proxyer) uplinkService() error {
 	var (
-		pkt = packet.Make(64, p.cfg.MTU)
+		pkt = packet.Make(p.cfg.MTU)
 	)
 
 	for {
-		id, err := p.conn.Recv(p.srvCtx, pkt.SetHead(64))
+		id, err := p.conn.Recv(p.srvCtx, pkt.Sets(0, 0xffff))
 		if err != nil {
 			if errorx.Temporary(err) {
 				p.logger.Warn(err.Error())

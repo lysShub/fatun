@@ -186,7 +186,7 @@ func (c *Conn) Send(ctx context.Context, pkt *packet.Packet, id session.ID) (err
 		return err
 	}
 
-	if pkt.Data() > c.cfg.MTU {
+	if pkt.Data() > c.cfg.MTU { // todo: mss
 		return errors.WithStack(ErrOverflowMTU(pkt.Data()))
 	}
 	session.Encode(pkt, id)
@@ -227,10 +227,7 @@ func (c *Conn) Recv(ctx context.Context, pkt *packet.Packet) (id session.ID, err
 			if time.Since(c.handshakedTime) < time.Second*3 {
 				continue
 			}
-
-			// ss := c.ep.Stack().Stack().Stats().TCP
-			// fmt.Printf("%+v \n\n", ss)
-
+			// todo: too many error should shutdonw
 			return session.ID{}, errorx.WrapTemp(err)
 		}
 
@@ -239,18 +236,20 @@ func (c *Conn) Recv(ctx context.Context, pkt *packet.Packet) (id session.ID, err
 			require.True(test.T(), id.Valid())
 		}
 		if id == session.CtrSessID {
-			c.inboundControlSegment(pkt)
+			c.inboundControlPacket(pkt)
 			continue
 		}
 		return id, nil
 	}
 }
-func (c *Conn) inboundControlSegment(pkt *packet.Packet) {
-	// if the data packet passes through the NAT gateway, update the client port
-	if c.role == server {
-		header.TCP(pkt.Bytes()).SetSourcePortWithChecksumUpdate(c.clientPort)
-	} else {
+func (c *Conn) inboundControlPacket(pkt *packet.Packet) {
+	// if the data packet passes through the NAT gateway, on handshake
+	// step, the client port will be change automatically, after handshake, need manually
+	// change client port.
+	if c.role == client {
 		header.TCP(pkt.Bytes()).SetDestinationPortWithChecksumUpdate(c.clientPort)
+	} else {
+		header.TCP(pkt.Bytes()).SetSourcePortWithChecksumUpdate(c.clientPort)
 	}
 	c.ep.Inbound(pkt)
 }

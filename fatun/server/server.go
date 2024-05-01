@@ -9,7 +9,6 @@ import (
 	"net"
 	"net/netip"
 	"sync"
-	"unsafe"
 
 	"github.com/lysShub/fatun/fatun"
 	"github.com/lysShub/fatun/fatun/server/adapter"
@@ -21,8 +20,6 @@ import (
 	"github.com/lysShub/sockit/test"
 	"github.com/lysShub/sockit/test/debug"
 	"github.com/pkg/errors"
-	"golang.org/x/net/bpf"
-	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -69,12 +66,17 @@ type Server struct {
 
 	ap *adapter.Ports
 
+	// server keepalive
+	// 1. snd/rcv map 的keepalive
+	// 2. rcvVal 支持ref inc/dce, 当cnt为0是， proxyer将关闭自己（accpet时需要add spec Session）
 	tcpSnder *net.IPConn
 	udpSnder *net.IPConn
-	sndMap   map[session.Session]uint16 // {clinet-addr,server-addr} : proxyer-port
+	sndMap   map[session.Session]uint16 // {clinet-addr,server-addr} : local-port
 	sndMu    sync.RWMutex
 	rcvMap   map[session.Session]rcvVal // {server-addr, proxyer-addr} : Proxyer
 	rcvMu    sync.RWMutex
+
+	laddrChecksum uint16
 }
 
 type rcvVal struct {
@@ -96,13 +98,16 @@ func NewServer(l *sconn.Listener, cfg *fatun.Config) (*Server, error) {
 
 		sndMap: map[session.Session]uint16{},
 		rcvMap: map[session.Session]rcvVal{},
+
+		laddrChecksum: checksum.Checksum(l.Addr().Addr().AsSlice(), 0),
 	}
 
 	s.tcpSnder, err = net.ListenIP("ip:tcp", &net.IPAddr{IP: l.Addr().Addr().AsSlice()})
 	if err != nil {
 		return nil, errors.WithStack(err)
 	} else {
-		if err = filter(s.tcpSnder); err != nil {
+		err = FilterLocalPorts(s.tcpSnder, l.Addr().Port())
+		if err != nil {
 			return nil, errors.WithStack(err)
 		}
 	}
@@ -129,18 +134,6 @@ func (s *Server) Serve(ctx context.Context) error {
 			return err
 		}
 
-		// p, err := proxyer.NewProxyer(proxyerImplPtr(s), conn)
-		// if err != nil {
-		// 	s.logger.Error(err.Error(), errorx.TraceAttr(err))
-		// } else {
-		// 	go func() {
-		// 		err = p.Proxy(ctx)
-		// 		if err != nil {
-		// 			panic(err)
-		// 		}
-		// 	}()
-		// }
-
 		s.logger.Info("accepted", "client", conn.RemoteAddr().String())
 		go proxyer.Proxy(ctx, proxyerImplPtr(s), conn)
 	}
@@ -161,8 +154,7 @@ func (s *Server) recvService(conn *net.IPConn) error {
 		p, has := s.rcvMap[sess]
 		s.rcvMu.RUnlock()
 		if !has {
-			// todo: support skip ports
-			// s.logger.Warn("proxy no found", "session", sess.String())
+			// don't log, has too many other process's packet
 		} else {
 			switch sess.Proto {
 			case header.TCPProtocolNumber:
@@ -189,121 +181,44 @@ func (s *Server) send(sess session.Session, pkt *packet.Packet) error {
 		return fatun.ErrNotRecord{}
 	}
 
-	// update port
-	psum := header.PseudoHeaderChecksum(
-		sess.Proto,
-		tcpip.AddrFrom4(s.l.Addr().Addr().As4()),
-		tcpip.AddrFrom4(sess.Dst.Addr().As4()),
-		uint16(pkt.Data()),
-	)
 	switch sess.Proto {
 	case header.TCPProtocolNumber:
-		// header.TCP(pkt.Bytes()).SetSourcePortWithChecksumUpdate(pxyPort)
-
-		// todo: optimize
-		tcp := header.TCP(pkt.Bytes())
-		tcp.SetSourcePort(pxyPort)
-		tcp.SetChecksum(0)
-		sum := checksum.Checksum(tcp, psum)
-		tcp.SetChecksum(^sum)
+		t := header.TCP(pkt.Bytes())
+		t.SetSourcePort(pxyPort)
+		sum := checksum.Combine(t.Checksum(), pxyPort)
+		sum = checksum.Combine(sum, s.laddrChecksum)
+		t.SetChecksum(^sum)
 		if debug.Debug() {
-			test.ValidTCP(test.T(), pkt.Bytes(), checksum.Combine(psum, ^uint16(pkt.Data())))
+			psum := header.PseudoHeaderChecksum(
+				sess.Proto,
+				tcpip.AddrFrom4(s.l.Addr().Addr().As4()),
+				tcpip.AddrFrom4(sess.Dst.Addr().As4()),
+				0,
+			)
+			test.ValidTCP(test.T(), pkt.Bytes(), psum)
 		}
 
 		_, err := s.tcpSnder.WriteToIP(pkt.Bytes(), &net.IPAddr{IP: sess.Dst.Addr().AsSlice()})
-		if err != nil {
-			return errors.WithStack(err)
-		}
-		return nil
+		return errors.WithStack(err)
 	case header.UDPProtocolNumber:
-		// header.UDP(pkt.Bytes()).SetSourcePortWithChecksumUpdate(pxyPort)
-
 		udp := header.UDP(pkt.Bytes())
 		udp.SetSourcePort(pxyPort)
-		udp.SetChecksum(0)
-		sum := checksum.Checksum(udp, psum)
+		sum := checksum.Combine(udp.Checksum(), pxyPort)
+		sum = checksum.Combine(sum, s.laddrChecksum)
 		udp.SetChecksum(^sum)
 		if debug.Debug() {
-			test.ValidUDP(test.T(), pkt.Bytes(), checksum.Combine(psum, ^uint16(pkt.Data())))
+			psum := header.PseudoHeaderChecksum(
+				sess.Proto,
+				tcpip.AddrFrom4(s.l.Addr().Addr().As4()),
+				tcpip.AddrFrom4(sess.Dst.Addr().As4()),
+				0,
+			)
+			test.ValidTCP(test.T(), pkt.Bytes(), psum)
 		}
 
-		_, err := s.tcpSnder.WriteToIP(pkt.Bytes(), &net.IPAddr{IP: sess.Dst.Addr().AsSlice()})
-		if err != nil {
-			return errors.WithStack(err)
-		}
-		return nil
+		_, err := s.udpSnder.WriteToIP(pkt.Bytes(), &net.IPAddr{IP: sess.Dst.Addr().AsSlice()})
+		return errors.WithStack(err)
 	default:
-		panic("")
+		return errors.Errorf("not support transport protocol %d", sess.Proto)
 	}
-}
-
-func filter(conn *net.IPConn) error {
-	var ins = []bpf.Instruction{
-		// load ip version to A
-		bpf.LoadAbsolute{Off: 0, Size: 1},
-		bpf.ALUOpConstant{Op: bpf.ALUOpShiftRight, Val: 4},
-
-		// ipv4
-		bpf.JumpIf{Cond: bpf.JumpNotEqual, Val: 4, SkipTrue: 1},
-		bpf.LoadMemShift{Off: 0},
-
-		// ipv6
-		bpf.JumpIf{Cond: bpf.JumpNotEqual, Val: 6, SkipTrue: 1},
-		bpf.LoadConstant{Dst: bpf.RegX, Val: 40},
-		/*
-		  reg X ipHdrLen
-		*/
-
-		// dst-port not equal 443
-		bpf.LoadIndirect{Off: header.TCPDstPortOffset, Size: 2},
-		bpf.JumpIf{Cond: bpf.JumpNotEqual, Val: uint32(443), SkipTrue: 1},
-		bpf.RetConstant{Val: 0},
-
-		bpf.RetConstant{Val: 0xffff},
-	}
-
-	raw, err := conn.SyscallConn()
-	if err != nil {
-		return errors.WithStack(err)
-	}
-
-	var e error
-	err = raw.Control(func(fd uintptr) {
-		e = setBPF(fd, []bpf.Instruction{bpf.RetConstant{Val: 0}})
-		if e != nil {
-			return
-		}
-		var b = make([]byte, 1)
-		for {
-			n, _, _ := unix.Recvfrom(int(fd), b, unix.MSG_DONTWAIT)
-			if n < 0 {
-				break
-			}
-		}
-		e = setBPF(fd, ins)
-	})
-	if err != nil {
-		return errors.WithStack(err)
-	} else if e != nil {
-		return errors.WithStack(e)
-	}
-
-	return nil
-}
-
-func setBPF(fd uintptr, ins []bpf.Instruction) error {
-	var prog *unix.SockFprog
-	if rawIns, err := bpf.Assemble(ins); err != nil {
-		return err
-	} else {
-		prog = &unix.SockFprog{
-			Len:    uint16(len(rawIns)),
-			Filter: (*unix.SockFilter)(unsafe.Pointer(&rawIns[0])),
-		}
-	}
-
-	err := unix.SetsockoptSockFprog(
-		int(fd), unix.SOL_SOCKET, unix.SO_ATTACH_FILTER, prog,
-	)
-	return err
 }

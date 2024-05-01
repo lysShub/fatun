@@ -80,7 +80,7 @@ func proto(b []byte) tcpip.TransportProtocolNumber {
 // }
 // func (e ErrExistID) Temporary() bool { return true }
 
-var CtrSessID ID = ID{Remote: netip.IPv4Unspecified(), Proto: header.TCPProtocolNumber} // todo: 可以不要这个
+var CtrSessID ID = ID{Remote: netip.IPv4Unspecified(), Proto: header.TCPProtocolNumber}
 
 const (
 	off1     = 0
