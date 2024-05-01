@@ -37,9 +37,9 @@ func TestXxxxx(t *testing.T) {
 	require.NoError(t, err)
 	defer c.Close()
 
-	err = c.AddProcess("chrome.exe")
-	// err = c.AddProcess("curl.exe")
-	// err = c.EnableDefault()
+	err = c.Add("chrome.exe")
+	// err = c.Add("curl.exe")
+	// err = c.Add(filter.DefaultFilter)
 	require.NoError(t, err)
 
 	time.Sleep(time.Hour)

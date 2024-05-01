@@ -53,7 +53,6 @@ func main() {
 	defer c.Close()
 
 	var r = bufio.NewReader(os.Stdin)
-	var defaultStatus string = "disable"
 	for {
 		fmt.Print("->")
 
@@ -65,38 +64,20 @@ func main() {
 
 		ss := slices.Compact(strings.Split(str, " "))
 		switch ctr := ss[0]; ctr {
-		case "enable", "disable":
-			if ss[1] == "default" {
-				if ctr == "enable" {
-					if err := c.EnableDefault(); err != nil {
-						fmt.Println("Error:\n", err.Error())
-						return
-					}
-				} else {
-					if err := c.DisableDefault(); err != nil {
-						fmt.Println("Error:\n", err.Error())
-						return
-					}
-				}
-				defaultStatus = ctr
-			} else {
-				fmt.Println("无效参数", ss[1])
-			}
 		case "add", "del":
 			if ctr == "add" {
-				if err := c.AddProcess(ss[1]); err != nil {
+				if err := c.Add(ss[1]); err != nil {
 					fmt.Println("Error:\n", err.Error())
 					return
 				}
 			} else {
-				if err := c.DelProcess(ss[1]); err != nil {
+				if err := c.Del(ss[1]); err != nil {
 					fmt.Println("Error:\n", err.Error())
 					return
 				}
 			}
 		case "show":
-			fmt.Println("default: ", defaultStatus)
-			fmt.Println("process: ", strings.Join(c.Processes(), ", "))
+			fmt.Println("filters: ", strings.Join(c.Filters(), ", "))
 		default:
 			fmt.Println("无效参数", ctr)
 		}

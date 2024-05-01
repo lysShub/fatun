@@ -20,9 +20,7 @@ import (
 type Server interface {
 	Config() *fatun.Config
 	// Adapter() *adapter.Ports
-	AddSession(sess session.Session, pxy interface {
-		Downlink(*packet.Packet, session.ID) error
-	}) error
+	AddSession(sess session.Session, pxy IProxyer) error
 	Send(sess session.Session, pkt *packet.Packet) error
 }
 
@@ -40,11 +38,17 @@ func Proxy(ctx context.Context, srv Server, conn *sconn.Conn) {
 	}
 }
 
+type IProxyer interface {
+	Downlink(*packet.Packet, session.ID) error
+	DecRefs()
+}
+
 type Proxyer struct {
 	conn   *sconn.Conn
 	srv    Server
 	cfg    *fatun.Config
 	logger *slog.Logger
+	refs   atomic.Int32
 
 	ctr control.Server
 
@@ -65,6 +69,11 @@ func NewProxyer(srv Server, conn *sconn.Conn) (*Proxyer, error) {
 	}
 	p.srvCtx, p.srvCancel = context.WithCancel(context.Background())
 
+	// todo: 避免Proxyer没有任何数据包传输导致的协程泄露问题
+	// todo: 现在也不会超时释放proxyer（比如只有一个proxyer时）
+	// sess := session.Session{Src: conn.RemoteAddr(), Proto: header.TCPProtocolNumber}
+	// srv.AddSession(sess, (*serverImpl)(p))
+
 	go p.uplinkService()
 	p.ctr = control.NewServer(conn.TCP(), controlImplPtr(p))
 	return p, nil
@@ -80,6 +89,12 @@ func (p *Proxyer) close(cause error) error {
 		p.srvCancel()
 
 		if cause != nil {
+			if errorx.Temporary(cause) {
+				p.logger.Warn(cause.Error())
+			} else {
+				p.logger.Error(cause.Error(), errorx.TraceAttr(cause))
+			}
+
 			p.closeErr.Store(&cause)
 		}
 		return cause
@@ -125,24 +140,28 @@ func (p *Proxyer) uplinkService() error {
 			Dst:   netip.AddrPortFrom(id.Remote, t.DestinationPort()),
 		}
 		err = p.srv.Send(sess, pkt)
-		if errors.Is(err, fatun.ErrNotRecord{}) {
+		if err != nil {
+			if errors.Is(err, fatun.ErrNotRecord{}) {
+				if err := p.srv.AddSession(sess, (*serverImpl)(p)); err != nil {
+					p.logger.Warn(err.Error(), errorx.TraceAttr(err))
+				}
+				p.incRefs()
 
-			if err := p.srv.AddSession(sess, p); err != nil {
+				err = p.srv.Send(sess, pkt)
+			}
+
+			if err != nil {
 				p.logger.Warn(err.Error(), errorx.TraceAttr(err))
 			}
-			if err = p.srv.Send(sess, pkt); err != nil {
-				p.logger.Warn(err.Error(), errorx.TraceAttr(err))
-			}
-		} else if err != nil {
-			p.logger.Warn(err.Error(), errorx.TraceAttr(err))
 		}
 	}
 }
 
-func (p *Proxyer) Downlink(pkt *packet.Packet, id session.ID) error {
-	err := p.conn.Send(p.srvCtx, pkt, id)
-	if err != nil {
-		p.close(err)
+func (p *Proxyer) incRefs() {
+	p.refs.Add(1)
+}
+func (p *Proxyer) decRefs() {
+	if p.refs.Add(-1) <= 0 {
+		p.close(fatun.ErrkeepaliveExceeded{})
 	}
-	return err
 }

@@ -14,14 +14,16 @@ type Hitter interface {
 
 // todo: humanable syntax
 type Filter interface {
-	// default filter rule, will hit tcp connection when send secondary  SYN
-	EnableDefault() error
-	DisableDefault() error
-
-	AddProcess(process string) error
-	DelProcess(process string) error
-	Processes() []string
+	Add(filter string) error
+	Del(filter string) error
+	Filters() []string
 }
+
+const (
+	// default filter rule, will hit tcp connection when send secondary  SYN
+	DefaultFilter = "default"
+	DNSFilter     = "dns"
+)
 
 type HitFilter interface {
 	Hitter

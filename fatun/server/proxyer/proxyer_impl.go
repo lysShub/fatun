@@ -3,6 +3,7 @@ package proxyer
 import (
 	"github.com/lysShub/fatun/control"
 	"github.com/lysShub/fatun/session"
+	"github.com/lysShub/sockit/packet"
 )
 
 type controlImpl Proxyer
@@ -31,9 +32,13 @@ func (c *controlImpl) Ping() {
 
 }
 
-// type serverImpl Proxyer
-// type serverImplPrt = *serverImpl
+type serverImpl Proxyer
 
-// func (c *serverImpl) Downlink(pkt *packet.Packet, id session.ID) error {
-// 	return (*Proxyer)(c).downlink(pkt, id)
-// }
+func (s *serverImpl) Downlink(pkt *packet.Packet, id session.ID) error {
+	err := s.conn.Send(s.srvCtx, pkt, id)
+	return err
+}
+
+func (s *serverImpl) DecRefs() {
+	(*Proxyer)(s).decRefs()
+}

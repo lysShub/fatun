@@ -16,9 +16,12 @@ type Ports struct {
 
 	mu sync.RWMutex
 
-	// sess map[Session] /* localPort */ uint16
+	ports map[portKey]*AddrSet // {local-port, proto} : {remote-addrs}
+}
 
-	ports map[portKey] /* server adds */ *AddrSet
+type portKey struct {
+	proto     uint8
+	loaclPort uint16
 }
 
 // NewPorts for reuse local machine port, reduce port consume
@@ -26,22 +29,21 @@ type Ports struct {
 // destination address
 func NewPorts(addr netip.Addr) *Ports {
 	return &Ports{
-		mgr: ports.NewPortMgr(addr),
-		// sess:  make(map[Session]uint16, 16),
+		mgr:   ports.NewPortMgr(addr),
 		ports: make(map[portKey]*AddrSet, 16),
 	}
 }
 
 // GetPort get a local machine port
-func (a *Ports) GetPort(proto tcpip.TransportProtocolNumber, dst netip.AddrPort) (port uint16, err error) {
+func (a *Ports) GetPort(proto tcpip.TransportProtocolNumber, remote netip.AddrPort) (port uint16, err error) {
 	// try reuse alloced port,
 	a.mu.RLock()
 	for k, v := range a.ports {
-		if k.proto != proto {
+		if k.proto != uint8(proto) {
 			continue
 		}
 
-		if !v.Has(dst) {
+		if !v.Has(remote) {
 			port = k.loaclPort
 			break
 		}
@@ -67,13 +69,13 @@ func (a *Ports) GetPort(proto tcpip.TransportProtocolNumber, dst netip.AddrPort)
 	}
 
 	// update map
-	pk := portKey{proto: proto, loaclPort: port}
+	pk := portKey{proto: uint8(proto), loaclPort: port}
 	a.mu.Lock()
 	if as := a.ports[pk]; as != nil {
-		as.Add(dst)
+		as.Add(remote)
 	} else {
 		as = &AddrSet{}
-		as.Add(dst)
+		as.Add(remote)
 		a.ports[pk] = as
 	}
 	a.mu.Unlock()
@@ -85,15 +87,15 @@ func (a *Ports) GetPort(proto tcpip.TransportProtocolNumber, dst netip.AddrPort)
 }
 
 // todo: idle timeout delete
-func (a *Ports) DelPort(proto tcpip.TransportProtocolNumber, port uint16, dst netip.AddrPort) error {
+func (a *Ports) DelPort(proto tcpip.TransportProtocolNumber, port uint16, remote netip.AddrPort) error {
 	pk := portKey{
-		proto:     proto,
+		proto:     uint8(proto),
 		loaclPort: port,
 	}
-	notuse := false
 
+	notuse := false
 	a.mu.Lock()
-	a.ports[pk].Del(dst)
+	a.ports[pk].Del(remote)
 	if a.ports[pk].Len() == 0 {
 		delete(a.ports, pk)
 		notuse = true
@@ -120,15 +122,14 @@ func (a *Ports) Close() (err error) {
 	for pk := range a.ports {
 		var e error
 		switch pk.proto {
-		case header.TCPProtocolNumber:
+		case uint8(header.TCPProtocolNumber):
 			e = a.mgr.DelTCPPort(pk.loaclPort)
-		case header.UDPProtocolNumber:
+		case uint8(header.UDPProtocolNumber):
 			e = a.mgr.DelUDPPort(pk.loaclPort)
 		default:
-			panic("invalid proto")
 		}
 		if e != nil {
-			e = err
+			err = e
 		}
 	}
 
@@ -154,7 +155,7 @@ func less(a, b netip.AddrPort) bool {
 func (a addrs) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
 
 // idx<0 not Find
-func (a *AddrSet) Find(addr netip.AddrPort) (idx int) {
+func (a AddrSet) Find(addr netip.AddrPort) (idx int) {
 	i := sort.Search(len(a.addrs), func(i int) bool {
 		return !less(a.addrs[i], addr)
 	})
@@ -163,7 +164,7 @@ func (a *AddrSet) Find(addr netip.AddrPort) (idx int) {
 	}
 	return -1
 }
-func (a *AddrSet) Has(addr netip.AddrPort) bool {
+func (a AddrSet) Has(addr netip.AddrPort) bool {
 	return a.Find(addr) >= 0
 }
 func (a *AddrSet) Add(addr netip.AddrPort) {
@@ -181,8 +182,3 @@ func (a *AddrSet) Del(addr netip.AddrPort) {
 	a.addrs = a.addrs[:len(a.addrs)-1]
 }
 func (a *AddrSet) Len() int { return len(a.addrs) }
-
-type portKey struct {
-	proto     tcpip.TransportProtocolNumber
-	loaclPort uint16
-}

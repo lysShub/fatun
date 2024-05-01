@@ -8,10 +8,9 @@ import (
 	"log/slog"
 	"net"
 	"net/netip"
-	"sync"
+	"time"
 
 	"github.com/lysShub/fatun/fatun"
-	"github.com/lysShub/fatun/fatun/server/adapter"
 	"github.com/lysShub/fatun/fatun/server/proxyer"
 	"github.com/lysShub/fatun/sconn"
 	"github.com/lysShub/fatun/session"
@@ -59,31 +58,20 @@ func ListenAndServe(ctx context.Context, addr string, cfg *fatun.Config) error {
 }
 
 type Server struct {
-	cfg    *fatun.Config
-	logger *slog.Logger
+	cfg           *fatun.Config
+	logger        *slog.Logger
+	laddrChecksum uint16
 
 	l *sconn.Listener
-
-	ap *adapter.Ports
 
 	// server keepalive
 	// 1. snd/rcv map 的keepalive
 	// 2. rcvVal 支持ref inc/dce, 当cnt为0是， proxyer将关闭自己（accpet时需要add spec Session）
+	// todo: 这两个删除要同步，以上行为准
 	tcpSnder *net.IPConn
 	udpSnder *net.IPConn
-	sndMap   map[session.Session]uint16 // {clinet-addr,server-addr} : local-port
-	sndMu    sync.RWMutex
-	rcvMap   map[session.Session]rcvVal // {server-addr, proxyer-addr} : Proxyer
-	rcvMu    sync.RWMutex
 
-	laddrChecksum uint16
-}
-
-type rcvVal struct {
-	proxyer interface {
-		Downlink(*packet.Packet, session.ID) error
-	}
-	clientPort uint16
+	m *ttlmap
 }
 
 func NewServer(l *sconn.Listener, cfg *fatun.Config) (*Server, error) {
@@ -93,13 +81,10 @@ func NewServer(l *sconn.Listener, cfg *fatun.Config) (*Server, error) {
 		logger: slog.New(cfg.Logger.WithGroup("server").WithAttrs([]slog.Attr{
 			{Key: "addr", Value: slog.StringValue(l.Addr().String())},
 		})),
-		l:  l,
-		ap: adapter.NewPorts(l.Addr().Addr()),
-
-		sndMap: map[session.Session]uint16{},
-		rcvMap: map[session.Session]rcvVal{},
-
+		l:             l,
 		laddrChecksum: checksum.Checksum(l.Addr().Addr().AsSlice(), 0),
+
+		m: NewTTLMap(time.Minute*2, l.Addr().Addr()),
 	}
 
 	s.tcpSnder, err = net.ListenIP("ip:tcp", &net.IPAddr{IP: l.Addr().Addr().AsSlice()})
@@ -150,22 +135,20 @@ func (s *Server) recvService(conn *net.IPConn) error {
 		pkt.SetData(n)
 
 		sess := session.StripIP(pkt)
-		s.rcvMu.RLock()
-		p, has := s.rcvMap[sess]
-		s.rcvMu.RUnlock()
+		p, clientPort, has := s.m.Downlink(sess)
 		if !has {
 			// don't log, has too many other process's packet
 		} else {
 			switch sess.Proto {
 			case header.TCPProtocolNumber:
-				header.TCP(pkt.Bytes()).SetDestinationPort(p.clientPort)
+				header.TCP(pkt.Bytes()).SetDestinationPort(clientPort)
 			case header.UDPProtocolNumber:
-				header.UDP(pkt.Bytes()).SetDestinationPort(p.clientPort)
+				header.UDP(pkt.Bytes()).SetDestinationPort(clientPort)
 			default:
 				panic("")
 			}
 
-			err = p.proxyer.Downlink(pkt, session.ID{Remote: sess.Src.Addr(), Proto: sess.Proto})
+			err = p.Downlink(pkt, session.ID{Remote: sess.Src.Addr(), Proto: sess.Proto})
 			if err != nil {
 				return s.close(err)
 			}
@@ -174,9 +157,7 @@ func (s *Server) recvService(conn *net.IPConn) error {
 }
 
 func (s *Server) send(sess session.Session, pkt *packet.Packet) error {
-	s.sndMu.RLock()
-	pxyPort, has := s.sndMap[sess]
-	s.sndMu.RUnlock()
+	localPort, has := s.m.Uplink(sess)
 	if !has {
 		return fatun.ErrNotRecord{}
 	}
@@ -184,8 +165,8 @@ func (s *Server) send(sess session.Session, pkt *packet.Packet) error {
 	switch sess.Proto {
 	case header.TCPProtocolNumber:
 		t := header.TCP(pkt.Bytes())
-		t.SetSourcePort(pxyPort)
-		sum := checksum.Combine(t.Checksum(), pxyPort)
+		t.SetSourcePort(localPort)
+		sum := checksum.Combine(t.Checksum(), localPort)
 		sum = checksum.Combine(sum, s.laddrChecksum)
 		t.SetChecksum(^sum)
 		if debug.Debug() {
@@ -202,8 +183,8 @@ func (s *Server) send(sess session.Session, pkt *packet.Packet) error {
 		return errors.WithStack(err)
 	case header.UDPProtocolNumber:
 		udp := header.UDP(pkt.Bytes())
-		udp.SetSourcePort(pxyPort)
-		sum := checksum.Combine(udp.Checksum(), pxyPort)
+		udp.SetSourcePort(localPort)
+		sum := checksum.Combine(udp.Checksum(), localPort)
 		sum = checksum.Combine(sum, s.laddrChecksum)
 		udp.SetChecksum(^sum)
 		if debug.Debug() {
