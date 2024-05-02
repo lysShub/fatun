@@ -1,13 +1,41 @@
-package session
+package fatun_test
 
 import (
 	"encoding/binary"
+	"net/netip"
 	"testing"
 
+	"github.com/lysShub/fatun/fatun"
+	"github.com/lysShub/fatun/sconn"
+	"github.com/lysShub/fatun/sconn/crypto"
 	"github.com/lysShub/sockit/test"
 	"github.com/stretchr/testify/require"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
+
+var (
+	caddr = netip.AddrPortFrom(netip.AddrFrom4([4]byte{
+		// 172, 25, 32, 1,
+		172, 24, 128, 1,
+	}), 19986)
+
+	saddr = netip.AddrPortFrom(netip.AddrFrom4([4]byte{
+		// 172, 25, 38, 4,
+		172, 24, 131, 26,
+	}), 8080)
+)
+
+var sign = &sconn.Sign{
+	Sign: []byte("0123456789abcdef"),
+	Parser: func(sign []byte) (crypto.Key, error) {
+		return crypto.Key{9: 1}, nil
+	},
+}
+
+var pss = sconn.PrevSegmets{
+	header.TCP("hello"),
+	header.TCP("world"),
+}
 
 func Test_UpdateMSS(t *testing.T) {
 
@@ -49,7 +77,7 @@ func Test_UpdateMSS(t *testing.T) {
 			ip := append(header.IPv4{}, e...) // memcpy
 
 			tcp := ip.Payload()
-			UpdateMSS(tcp, delta)
+			fatun.UpdateMSS(tcp, delta)
 
 			test.ValidIP(t, ip)
 			new := int(GetMSS(tcp))

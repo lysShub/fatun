@@ -1,29 +1,38 @@
-package session
+package fatun
 
 import (
 	"encoding/binary"
 	"encoding/hex"
 	"log/slog"
 
-	"github.com/lysShub/fatun/session"
-	"github.com/lysShub/sockit/packet"
+	"github.com/lysShub/fatun/sconn"
 	"github.com/pkg/errors"
 	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
-type Client interface {
-	Uplink(pkt *packet.Packet, id session.ID) error
-	Logger() *slog.Logger
-	MTU() int
-	DivertPriority() int16
-	Release(session.ID)
+type Config struct {
+	*sconn.Config
+	MTU    int
+	Logger *slog.Logger
 }
 
-type Session interface {
-	Inject(pkt *packet.Packet) error
-	Close() error
+type ErrRecvTooManyError struct{}
+
+func (e ErrRecvTooManyError) Error() string {
+	return "recv too many invalid packet"
 }
+
+type ErrkeepaliveExceeded struct{}
+
+func (ErrkeepaliveExceeded) Error() string   { return "keepalive exceeded" }
+func (ErrkeepaliveExceeded) Timeout() bool   { return true }
+func (ErrkeepaliveExceeded) Temporary() bool { return true }
+
+type ErrNotRecord struct{}
+
+func (ErrNotRecord) Error() string   { return "filter not record" }
+func (ErrNotRecord) Temporary() bool { return true }
 
 func UpdateMSS(hdr header.TCP, delta int) error {
 	n := int(hdr.DataOffset())

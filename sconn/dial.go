@@ -28,7 +28,7 @@ func dial(ctx context.Context, raw conn.RawConn, cfg *Config) (*Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	// stack = test.MustWrapPcap("client-ctr.pcap", stack)
+	// stack = test.MustWrapPcap(fmt.Sprintf("client-ctr-%d.pcap", raw.LocalAddr().Port()), stack)
 
 	ep, err := stack.LinkEndpoint(raw.LocalAddr().Port(), raw.RemoteAddr())
 	if err != nil {

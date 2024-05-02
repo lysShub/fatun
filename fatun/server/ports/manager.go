@@ -6,12 +6,12 @@ import (
 	"sync"
 )
 
-func NewPortMgr(addr netip.Addr) *PortMgr {
+func NewMgr(addr netip.Addr) *Manager {
 	if !addr.IsValid() {
 		panic("invalid address")
 	}
 
-	var mgr = &PortMgr{
+	var mgr = &Manager{
 		tcp: map[uint16]*net.TCPListener{},
 		udp: map[uint16]*net.UDPConn{},
 	}
@@ -21,7 +21,7 @@ func NewPortMgr(addr netip.Addr) *PortMgr {
 	return mgr
 }
 
-type PortMgr struct {
+type Manager struct {
 	sync.RWMutex
 
 	tcpAddr *net.TCPAddr
@@ -31,7 +31,7 @@ type PortMgr struct {
 	udp     map[uint16]*net.UDPConn
 }
 
-func (p *PortMgr) GetTCPPort() (uint16, error) {
+func (p *Manager) GetTCPPort() (uint16, error) {
 	l, err := net.ListenTCP("tcp", p.tcpAddr)
 	if err != nil {
 		return 0, err
@@ -53,7 +53,7 @@ func (p *PortMgr) GetTCPPort() (uint16, error) {
 	}
 }
 
-func (p *PortMgr) DelTCPPort(port uint16) error {
+func (p *Manager) DelTCPPort(port uint16) error {
 	p.Lock()
 	l, ok := p.tcp[port]
 	delete(p.tcp, port)
@@ -65,7 +65,7 @@ func (p *PortMgr) DelTCPPort(port uint16) error {
 	return l.Close()
 }
 
-func (p *PortMgr) GetUDPPort() (uint16, error) {
+func (p *Manager) GetUDPPort() (uint16, error) {
 	c, err := net.ListenUDP("udp", p.udpAddr)
 	if err != nil {
 		return 0, err
@@ -87,7 +87,7 @@ func (p *PortMgr) GetUDPPort() (uint16, error) {
 	}
 }
 
-func (p *PortMgr) DelUDPPort(port uint16) error {
+func (p *Manager) DelUDPPort(port uint16) error {
 	p.Lock()
 	l, ok := p.udp[port]
 	delete(p.udp, port)

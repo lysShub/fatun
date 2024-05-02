@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/lysShub/divert-go"
-	"github.com/lysShub/fatun/fatun/client/session"
+	"github.com/lysShub/fatun/fatun"
 	"github.com/lysShub/fatun/sconn"
 	"golang.org/x/sync/errgroup"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -84,7 +84,7 @@ func CaptureTLSWithGolang(partenCtx context.Context, url string, totalSzie, mssD
 				tcp = header.IPv6(b[:n]).Payload()
 			default:
 			}
-			if err := session.UpdateMSS(tcp, mssDelta); err != nil {
+			if err := fatun.UpdateMSS(tcp, mssDelta); err != nil {
 				return err
 			}
 

@@ -214,6 +214,9 @@ func (s *slice) Put(pkb *stack.PacketBuffer) (ok bool) {
 	defer s.mu.Unlock()
 
 	if len(s.s) == cap(s.s) {
+		if debug.Debug() {
+			println("slice link cap too small")
+		}
 		return false
 	} else {
 		s.s = append(s.s, pkb.IncRef())

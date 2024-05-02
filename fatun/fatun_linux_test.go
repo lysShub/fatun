@@ -19,19 +19,19 @@ func TestXxxx(t *testing.T) {
 
 	cfg := &config.Config{
 		MTU: 1536,
-		PSS: `./tools/a.pss`,
+		PSS: `./a.pss`,
 		Key: &sconn.Sign{
 			Sign: []byte("0123456789abcdef"),
 			Parser: func(sign []byte) (crypto.Key, error) {
 				return crypto.Key{9: 1}, nil
 			},
 		},
-		Log: "stdout",
+		// Log: "stdout",
 	}
 
 	c, err := cfg.Config()
 	require.NoError(t, err)
 
-	err = server.ListenAndServe(context.Background(), ":8080", c)
+	err = server.ListenAndServe(context.Background(), ":443", c)
 	require.NoError(t, err)
 }

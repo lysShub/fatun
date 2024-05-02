@@ -18,13 +18,14 @@ import (
 	"github.com/lysShub/sockit/errorx"
 	"github.com/lysShub/sockit/packet"
 	"github.com/pkg/errors"
+	"github.com/stretchr/testify/require"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 
 	"github.com/lysShub/sockit/test"
 	"github.com/lysShub/sockit/test/debug"
 )
 
-const Overhead = session.Overhead
+const Overhead = session.Overhead + faketcp.Overhead
 
 type Sconn interface {
 	net.Conn // control tcp conn
@@ -41,6 +42,7 @@ type Conn struct {
 	clientPort uint16
 	role       role
 	state      state
+	tinyCnt    int
 
 	handshakedTime    time.Time
 	handshakedNotify  sync.WaitGroup
@@ -185,12 +187,18 @@ func (c *Conn) Send(ctx context.Context, pkt *packet.Packet, id session.ID) (err
 		return err
 	}
 
-	if pkt.Data() > c.cfg.MTU {
+	if pkt.Data() > c.cfg.MTU { // todo: mss
 		return errors.WithStack(ErrOverflowMTU(pkt.Data()))
 	}
 	session.Encode(pkt, id)
 	c.fake.AttachSend(pkt)
 
+	if debug.Debug() {
+		require.True(test.T(), id.Valid())
+
+		require.True(test.T(), c.LocalAddr().Addr().Is4())
+		require.LessOrEqual(test.T(), pkt.Data()+header.IPv4MinimumSize, c.cfg.MTU)
+	}
 	err = c.raw.Write(ctx, pkt)
 	return err
 }
@@ -204,14 +212,14 @@ func (c *Conn) recv(ctx context.Context, pkt *packet.Packet) error {
 
 func (c *Conn) Recv(ctx context.Context, pkt *packet.Packet) (id session.ID, err error) {
 	if err := c.handshake(ctx); err != nil {
-		return 0, err
+		return session.ID{}, err
 	}
 
 	head := pkt.Head()
 	for {
 		err = c.recv(ctx, pkt.SetHead(head))
 		if err != nil {
-			return 0, err
+			return session.ID{}, err
 		}
 
 		err = c.fake.DetachRecv(pkt)
@@ -219,23 +227,38 @@ func (c *Conn) Recv(ctx context.Context, pkt *packet.Packet) (id session.ID, err
 			if time.Since(c.handshakedTime) < time.Second*3 {
 				continue
 			}
-			return 0, errorx.WrapTemp(err)
+			if c.tinyCnt++; c.tinyCnt > c.cfg.RecvErrLimit {
+				return session.ID{}, errors.WithStack(&ErrRecvTooManyErrors{err})
+			}
+			return session.ID{}, errorx.WrapTemp(err)
 		}
 
 		id = session.Decode(pkt)
+		if debug.Debug() {
+			require.True(test.T(), id.Valid())
+		}
 		if id == session.CtrSessID {
-			c.inboundControlSegment(pkt)
+			c.inboundControlPacket(pkt)
 			continue
 		}
 		return id, nil
 	}
 }
-func (c *Conn) inboundControlSegment(pkt *packet.Packet) {
-	// if the data packet passes through the NAT gateway, update the client port
-	if c.role == server {
-		header.TCP(pkt.Bytes()).SetSourcePortWithChecksumUpdate(c.clientPort)
-	} else {
+
+type ErrRecvTooManyErrors struct{ error }
+
+func (e *ErrRecvTooManyErrors) Error() string {
+	return fmt.Sprintf("sconn recv too many error: %s", e.error.Error())
+}
+
+func (c *Conn) inboundControlPacket(pkt *packet.Packet) {
+	// if the data packet passes through the NAT gateway, on handshake
+	// step, the client port will be change automatically, after handshake, need manually
+	// change client port.
+	if c.role == client {
 		header.TCP(pkt.Bytes()).SetDestinationPortWithChecksumUpdate(c.clientPort)
+	} else {
+		header.TCP(pkt.Bytes()).SetSourcePortWithChecksumUpdate(c.clientPort)
 	}
 	c.ep.Inbound(pkt)
 }

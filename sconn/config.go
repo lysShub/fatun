@@ -26,6 +26,8 @@ type Config struct {
 	Key KeyExchange
 
 	MTU int
+
+	RecvErrLimit int
 }
 
 func (c *Config) init() error {
@@ -36,7 +38,9 @@ func (c *Config) init() error {
 	if c.MTU <= 0 {
 		return errors.New("invalid mtu")
 	}
-
+	if c.RecvErrLimit == 0 {
+		c.RecvErrLimit = 8
+	}
 	return nil
 }
 

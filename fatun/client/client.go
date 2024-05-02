@@ -16,7 +16,6 @@ import (
 	"github.com/lysShub/fatun/fatun"
 	"github.com/lysShub/fatun/fatun/client/capture"
 	"github.com/lysShub/fatun/fatun/client/filter"
-	cs "github.com/lysShub/fatun/fatun/client/session"
 	"github.com/lysShub/fatun/sconn"
 	"github.com/lysShub/fatun/session"
 	"github.com/lysShub/sockit/conn"
@@ -24,25 +23,24 @@ import (
 	dconn "github.com/lysShub/sockit/conn/tcp/divert"
 	"github.com/lysShub/sockit/errorx"
 	"github.com/lysShub/sockit/packet"
+	"github.com/lysShub/sockit/test"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 
 	"github.com/pkg/errors"
 )
 
 type Client struct {
-	cfg    *fatun.Config
-	logger *slog.Logger
-	self   session.Session
+	cfg  *fatun.Config
+	self session.Session
 
 	conn           *sconn.Conn
 	divertPriority int16
 
-	sessMgr *cs.SessionMgr
-	hiter   filter.Hitter
+	hiter filter.Hitter
 	filter.Filter
 	capture capture.Capture
-
-	ctr control.Client
+	inject  *Inject
+	ctr     control.Client
 
 	srvCtx    context.Context
 	srvCancel context.CancelFunc
@@ -74,7 +72,7 @@ func Proxy(ctx context.Context, server string, cfg *fatun.Config) (*Client, erro
 		return nil, err
 	}
 
-	// wraw, err := test.WrapPcap(raw, "client.pcap")
+	// wraw, err := test.WrapPcap(raw, "client-raw.pcap")
 	// if err != nil {
 	// 	panic(err)
 	// }
@@ -89,20 +87,15 @@ func Proxy(ctx context.Context, server string, cfg *fatun.Config) (*Client, erro
 func NewClient(ctx context.Context, raw conn.RawConn, cfg *fatun.Config) (*Client, error) {
 	var c = &Client{
 		cfg: cfg,
-		logger: slog.New(cfg.Logger.WithGroup("client").WithAttrs([]slog.Attr{
-			{Key: "local", Value: slog.StringValue(raw.LocalAddr().String())},
-			{Key: "proxyer", Value: slog.StringValue(raw.RemoteAddr().String())},
-		})),
 		self: session.Session{
 			Src:   raw.LocalAddr(),
 			Proto: header.TCPProtocolNumber,
 			Dst:   raw.RemoteAddr(),
 		},
-		sessMgr: cs.NewSessionMgr(),
 	}
 	c.srvCtx, c.srvCancel = context.WithCancel(context.Background())
 
-	c.logger.Info("dial")
+	c.cfg.Logger.Info("dialing")
 	var err error
 	if c.conn, err = sconn.DialCtx(ctx, raw, cfg.Config); err != nil {
 		return nil, c.close(err)
@@ -111,7 +104,7 @@ func NewClient(ctx context.Context, raw conn.RawConn, cfg *fatun.Config) (*Clien
 			c.divertPriority = 2 // todo: dc.Priority()
 		}
 	}
-	c.logger.Info("connected")
+	c.cfg.Logger.Info("connected", slog.String("proxy-server", c.conn.RemoteAddr().String()))
 
 	if f, err := filter.New(); err != nil {
 		return nil, c.close(err)
@@ -122,13 +115,17 @@ func NewClient(ctx context.Context, raw conn.RawConn, cfg *fatun.Config) (*Clien
 		return nil, c.close(err)
 	}
 
+	if c.inject, err = NewInject(test.LocIP()); err != nil {
+		return nil, c.close(err)
+	}
+
 	go c.downlinkService()
 	c.ctr = control.NewClient(c.conn.TCP())
 
-	// todo: init config
 	if err := c.ctr.InitConfig(ctx, &control.Config{}); err != nil {
 		return nil, c.close(err)
 	}
+
 	return c, nil
 }
 
@@ -140,11 +137,7 @@ func (c *Client) close(cause error) error {
 			}
 		}
 		c.srvCancel()
-		if c.sessMgr != nil {
-			if err := c.sessMgr.Close(); err != nil {
-				cause = err
-			}
-		}
+
 		if c.conn != nil {
 			if err := c.conn.Close(); err != nil {
 				cause = err
@@ -153,9 +146,9 @@ func (c *Client) close(cause error) error {
 
 		if cause != nil {
 			if errorx.Temporary(cause) {
-				c.logger.Info(errors.WithMessage(cause, "session close").Error())
+				c.cfg.Logger.Warn(errors.WithMessage(cause, "session close").Error())
 			} else {
-				c.logger.Warn(cause.Error(), errorx.TraceAttr(errors.WithStack(cause)))
+				c.cfg.Logger.Error(cause.Error(), errorx.TraceAttr(errors.WithStack(cause)))
 			}
 			c.closeErr.Store(&cause)
 		}
@@ -166,26 +159,21 @@ func (c *Client) close(cause error) error {
 
 func (c *Client) downlinkService() error {
 	var (
-		tcp = packet.Make(64, c.cfg.MTU)
+		tcp = packet.Make(32, c.cfg.MTU)
 	)
 
 	for {
-		id, err := c.conn.Recv(c.srvCtx, tcp.SetHead(64))
+		id, err := c.conn.Recv(c.srvCtx, tcp.Sets(32, 0xfff))
 		if err != nil {
 			if errorx.Temporary(err) {
-				c.logger.Warn(err.Error())
+				c.cfg.Logger.Warn(err.Error())
+				continue
 			} else {
 				return c.close(err)
 			}
 		}
 
-		s, err := c.sessMgr.Get(id)
-		if err != nil {
-			c.logger.Warn(err.Error())
-			continue
-		}
-
-		err = s.Inject(tcp)
+		err = c.inject.Inject(tcp, id)
 		if err != nil {
 			return c.close(err)
 		}

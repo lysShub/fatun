@@ -4,78 +4,91 @@
 package client
 
 import (
-	"context"
 	"log/slog"
-	"slices"
+	"net/netip"
 
-	cs "github.com/lysShub/fatun/fatun/client/session"
+	"github.com/lysShub/fatun/fatun"
+	"github.com/lysShub/fatun/sconn"
 	"github.com/lysShub/fatun/session"
 	"github.com/lysShub/sockit/errorx"
 	"github.com/lysShub/sockit/packet"
-	"github.com/pkg/errors"
+	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/checksum"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
-
-type sessionImpl Client
-
-type sessionImplPtr = *sessionImpl
-
-var _ cs.Client = (sessionImplPtr)(nil)
-
-func (s *sessionImpl) Logger() *slog.Logger { return s.logger }
-func (s *sessionImpl) Uplink(pkt *packet.Packet, id session.ID) error {
-	return (*Client)(s).uplink(context.Background(), pkt, id)
-}
-func (s *sessionImpl) MTU() int              { return s.cfg.MTU }
-func (s *sessionImpl) DivertPriority() int16 { return s.divertPriority - 1 }
-func (s *sessionImpl) Release(id session.ID) { s.sessMgr.Del(id) }
 
 type captureImpl Client
 type captureImplPtr = *captureImpl
 
 func (c *captureImpl) raw() *Client          { return ((*Client)(c)) }
-func (c *captureImpl) Logger() *slog.Logger  { return c.logger }
+func (c *captureImpl) Logger() *slog.Logger  { return c.cfg.Logger }
 func (c *captureImpl) MTU() int              { return c.cfg.MTU }
 func (c *captureImpl) DivertPriority() int16 { return c.divertPriority - 2 } // capture should read firstly
-func (c *captureImpl) Hit(ip []byte) bool {
+func (c *captureImpl) Hit(ip *packet.Packet) bool {
 	hit, err := c.hiter.Hit(ip)
 	if err != nil {
 		if errorx.Temporary(err) {
-			c.logger.Warn(err.Error(), errorx.TraceAttr(err))
+			c.cfg.Logger.Warn(err.Error(), errorx.TraceAttr(err))
 		} else {
 			c.raw().close(err)
 		}
 	} else if hit {
-		if c.sessMgr.Exist(ip) {
-			return true
-		}
 
-		// add session
-		id := session.FromIP(ip)
-		if id == c.self {
-			c.raw().close(errors.Errorf("can't proxy self %s", c.self.String()))
-		}
-		// todo: maybe idmgr on client
-		// todo: add timeout
-		resp, err := c.ctr.AddSession(c.srvCtx, id)
-		if err != nil {
-			c.raw().close(err)
-		} else if resp.Err != "" {
-			err = errors.New(resp.Err)
-			c.logger.Warn(err.Error(), errorx.TraceAttr(err))
-		} else {
-			err = c.sessMgr.Add(sessionImplPtr(c.raw()), resp.ID, slices.Clone(ip))
-			if err != nil {
-				if errorx.Temporary(err) {
-					c.logger.Warn(err.Error(), errorx.TraceAttr(err))
-				} else {
-					c.raw().close(err)
-				}
+		// calc checksum:
+		// regarded source IP/Port as zore value to calculate the transport checksum,
+		// and then directly set the checksum (don't ^ operation)
+		hdr := header.IPv4(ip.Bytes())
+		switch hdr.TransportProtocol() {
+		case header.TCPProtocolNumber:
+			tcp := header.TCP(hdr.Payload())
+
+			// reduce tcp mss, avoid ip split fragment
+			if tcp.Flags().Contains(header.TCPFlagSyn) {
+				fatun.UpdateMSS(tcp, -sconn.Overhead)
 			}
 
-			c.logger.LogAttrs(c.srvCtx, slog.LevelInfo, "add session", slog.Attr{
-				Key: "session", Value: slog.StringValue(id.String()),
-			})
+			tcp.SetChecksum(0)
+			srcPort := tcp.SourcePort()
+			tcp.SetSourcePort(0)
+			sum := header.PseudoHeaderChecksum(
+				hdr.TransportProtocol(),
+				defaultip4,
+				hdr.DestinationAddress(),
+				uint16(len(tcp)),
+			)
+			tcp.SetChecksum(checksum.Checksum(tcp, sum))
+			tcp.SetSourcePort(srcPort)
+		case header.UDPProtocolNumber:
+			udp := header.UDP(hdr.Payload())
+			udp.SetChecksum(0)
+			srcPort := udp.SourcePort()
+			udp.SetSourcePort(0)
+			sum := header.PseudoHeaderChecksum(
+				hdr.TransportProtocol(),
+				defaultip4,
+				hdr.DestinationAddress(),
+				uint16(len(udp)),
+			)
+			udp.SetChecksum(checksum.Checksum(udp, sum))
+			udp.SetSourcePort(srcPort)
+		default:
+			panic("")
+		}
+		ip.SetHead(ip.Head() + int(hdr.HeaderLength()))
+
+		id := session.ID{
+			Remote: netip.AddrFrom4(hdr.DestinationAddress().As4()),
+			Proto:  hdr.TransportProtocol(),
+		}
+		if err = c.raw().uplink(c.srvCtx, ip, id); err != nil {
+			if errorx.Temporary(err) {
+				c.cfg.Logger.Warn(err.Error())
+			} else {
+				c.cfg.Logger.Error(err.Error(), errorx.TraceAttr(err))
+			}
 		}
 	}
 	return hit
 }
+
+var defaultip4 = tcpip.AddrFrom4([4]byte{})

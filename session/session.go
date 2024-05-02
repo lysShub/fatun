@@ -1,53 +1,78 @@
 package session
 
 import (
-	"encoding/binary"
 	"fmt"
 	"net/netip"
 
 	"github.com/lysShub/sockit/packet"
+	"github.com/lysShub/sockit/test"
+	"github.com/lysShub/sockit/test/debug"
 	"github.com/pkg/errors"
+	"github.com/stretchr/testify/require"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
-// todo: session
+type ID struct {
+	Remote netip.Addr
+	Proto  tcpip.TransportProtocolNumber
+}
 
-// SessionID   Payload(tcp/udp packet)
-// [0, 2)      [2, n)
+func (id ID) String() string {
+	return fmt.Sprintf("%s:%s", ProtoStr(id.Proto), id.Remote.String())
+}
 
-type ID uint16
+func (id ID) Valid() bool {
+	return id.Remote.IsValid() &&
+		(id.Proto == header.TCPProtocolNumber || id.Proto == header.UDPProtocolNumber)
+}
+
+const (
+	tcp = 0
+	udp = 1
+)
 
 func Encode(pkt *packet.Packet, id ID) {
-	pkt.Attach(binary.BigEndian.AppendUint16(nil, uint16(id)))
+	if debug.Debug() {
+		require.True(test.T(), id.Remote.Is4())
+	}
+	pkt.Attach(id.Remote.AsSlice())
+	if id.Proto == header.TCPProtocolNumber {
+		pkt.Attach([]byte{tcp})
+	} else if id.Proto == header.UDPProtocolNumber {
+		pkt.Attach([]byte{udp})
+	} else {
+		panic("")
+	}
 }
 
 func Decode(seg *packet.Packet) ID {
 	b := seg.Bytes()
-	id := binary.BigEndian.Uint16(b[idOffset1:idOffset2])
 	seg.SetHead(seg.Head() + Overhead)
-	return ID(id)
+	return ID{
+		Proto:  proto(b[off1:off2]),
+		Remote: netip.AddrFrom4([4]byte(b[off2:off3])),
+	}
 }
 
-type ErrInvalidID ID
-
-func (e ErrInvalidID) Error() string {
-	return fmt.Sprintf("invalid session id %d", e)
+func proto(b []byte) tcpip.TransportProtocolNumber {
+	switch b[0] {
+	case tcp:
+		return header.TCPProtocolNumber
+	case udp:
+		return header.UDPProtocolNumber
+	default:
+		panic("")
+	}
 }
-func (e ErrInvalidID) Temporary() bool { return true }
 
-type ErrExistID ID
+var CtrSessID ID = ID{Remote: netip.IPv4Unspecified(), Proto: header.TCPProtocolNumber}
 
-func (e ErrExistID) Error() string {
-	return fmt.Sprintf("exist session id %d", e)
-}
-func (e ErrExistID) Temporary() bool { return true }
-
-const CtrSessID ID = 0xffff
 const (
-	idOffset1 = 0
-	idOffset2 = 2
-	Overhead  = idOffset2
+	off1     = 0
+	off2     = 1
+	off3     = 5
+	Overhead = off3
 )
 
 // Session on clinet, corresponding a transport connect
@@ -57,7 +82,18 @@ type Session struct {
 	Dst   netip.AddrPort
 }
 
-func FromIP(ip []byte) Session {
+func FromIP(ip []byte) (s Session) {
+	s, _ = fromIP(ip)
+	return s
+}
+
+func StripIP(ip *packet.Packet) Session {
+	s, n := fromIP(ip.Bytes())
+	ip.SetHead(ip.Head() + n)
+	return s
+}
+
+func fromIP(ip []byte) (s Session, ipHdrLen int) {
 	var (
 		proto    tcpip.TransportProtocolNumber
 		src, dst netip.Addr
@@ -70,14 +106,16 @@ func FromIP(ip []byte) Session {
 		dst = netip.AddrFrom4(ip.DestinationAddress().As4())
 		proto = ip.TransportProtocol()
 		hdr = ip.Payload()
+		ipHdrLen = int(ip.HeaderLength())
 	case 6:
 		ip := header.IPv6(ip)
 		src = netip.AddrFrom16(ip.SourceAddress().As16())
 		dst = netip.AddrFrom16(ip.DestinationAddress().As16())
 		proto = ip.TransportProtocol()
 		hdr = ip.Payload()
+		ipHdrLen = header.IPv6FixedHeaderSize
 	default:
-		return Session{}
+		return Session{}, 0
 	}
 	switch proto {
 	case header.TCPProtocolNumber:
@@ -86,16 +124,16 @@ func FromIP(ip []byte) Session {
 			Src:   netip.AddrPortFrom(src, tcp.SourcePort()),
 			Proto: proto,
 			Dst:   netip.AddrPortFrom(dst, tcp.DestinationPort()),
-		}
+		}, ipHdrLen
 	case header.UDPProtocolNumber:
 		udp := header.UDP(hdr)
 		return Session{
 			Src:   netip.AddrPortFrom(src, udp.SourcePort()),
 			Proto: proto,
 			Dst:   netip.AddrPortFrom(dst, udp.DestinationPort()),
-		}
+		}, ipHdrLen
 	default:
-		return Session{}
+		return Session{}, 0
 	}
 }
 

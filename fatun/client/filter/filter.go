@@ -4,23 +4,26 @@ import (
 	"sync"
 
 	"github.com/lysShub/fatun/fatun/client/filter/mapping"
+	"github.com/lysShub/sockit/packet"
 )
 
 type Hitter interface {
 	// Hit hit outbound ip packet
-	Hit(ip []byte) (bool, error)
+	Hit(ip *packet.Packet) (bool, error)
 }
 
 // todo: humanable syntax
 type Filter interface {
-	// default filter rule, will hit tcp connection when send secondary  SYN
-	EnableDefault() error
-	DisableDefault() error
-
-	AddProcess(process string) error
-	DelProcess(process string) error
-	Processes() []string
+	Add(filter string) error
+	Del(filter string) error
+	Filters() []string
 }
+
+const (
+	// default filter rule, will hit tcp connection when send secondary  SYN
+	DefaultFilter = "default"
+	DNSFilter     = "dns"
+)
 
 type HitFilter interface {
 	Hitter

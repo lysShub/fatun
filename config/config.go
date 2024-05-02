@@ -51,7 +51,7 @@ func (cfg *Config) Config() (*fatun.Config, error) {
 	c := &fatun.Config{
 		Config: scfg,
 		MTU:    cfg.MTU,
-		Logger: slog.NewJSONHandler(fh, nil),
+		Logger: slog.New(slog.NewJSONHandler(fh, nil)),
 	}
 	return c, nil
 }

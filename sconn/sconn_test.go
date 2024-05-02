@@ -151,7 +151,7 @@ func Test_Ctr_Conn(t *testing.T) {
 	c, s := test.NewMockRaw(
 		t, header.TCPProtocolNumber,
 		caddr, saddr,
-		test.ValidAddr, test.ValidChecksum, test.PacketLoss(0.01), test.Delay(time.Millisecond*50),
+		test.ValidAddr, test.ValidChecksum, test.PacketLoss(0.1), test.Delay(time.Millisecond*50),
 	)
 	// wc, err := test.WrapPcap(c, `test.pcap`)
 	// require.NoError(t, err)
@@ -210,7 +210,7 @@ func Test_Conn(t *testing.T) {
 	var (
 		caddr = netip.AddrPortFrom(test.LocIP(), test.RandPort())
 		saddr = netip.AddrPortFrom(test.LocIP(), test.RandPort())
-		sid   = session.ID(1234)
+		sid   = session.ID{}
 		mtu   = 1500
 	)
 

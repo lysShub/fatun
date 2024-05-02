@@ -111,7 +111,7 @@ func (h *mockServer) InitConfig(cfg *Config) error {
 	return nil
 }
 func (h *mockServer) AddSession(s session.Session) (session.ID, error) {
-	return 1, nil
+	return session.ID{}, nil
 }
 func (h *mockServer) DelSession(id session.ID) error {
 	return nil

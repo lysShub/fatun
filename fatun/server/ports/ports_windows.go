@@ -5,5 +5,5 @@ import "syscall"
 func setFilterAll(conn interface {
 	SyscallConn() (syscall.RawConn, error)
 }) error {
-	return nil
+	panic("todo")
 }
