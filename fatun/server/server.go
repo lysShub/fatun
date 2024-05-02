@@ -76,7 +76,7 @@ func NewServer(l *sconn.Listener, cfg *fatun.Config) (*Server, error) {
 		l:             l,
 		laddrChecksum: checksum.Checksum(l.Addr().Addr().AsSlice(), 0),
 
-		m: NewTTLMap(time.Second*90, l.Addr().Addr()),
+		m: NewTTLMap(time.Second*30, l.Addr().Addr()),
 	}
 
 	s.tcpSnder, err = net.ListenIP("ip:tcp", &net.IPAddr{IP: l.Addr().Addr().AsSlice()})

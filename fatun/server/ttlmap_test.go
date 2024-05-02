@@ -34,4 +34,14 @@ func Test_Port(t *testing.T) {
 		require.False(t, p.Idle())
 		require.True(t, p.Idle())
 	}
+
+	{
+		p := server.NewPort(0x12ab)
+		require.Equal(t, uint16(0x12ab), p.Port())
+		require.False(t, p.Idle())
+		require.True(t, p.Idle())
+
+		require.Equal(t, uint16(0x12ab), p.Port())
+		require.False(t, p.Idle())
+	}
 }
