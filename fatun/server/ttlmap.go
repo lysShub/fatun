@@ -6,14 +6,14 @@ import (
 	"time"
 
 	"github.com/lysShub/fatun/fatun"
-	"github.com/lysShub/fatun/fatun/server/adapter"
+	"github.com/lysShub/fatun/fatun/server/ports"
 	"github.com/lysShub/fatun/fatun/server/proxyer"
 	"github.com/lysShub/fatun/session"
 )
 
 type ttlmap struct {
 	addr      netip.Addr
-	ap        *adapter.Ports
+	ap        *ports.Adapter
 	keepalive time.Duration
 
 	// {clinet-addr,proto,server-addr} : local-port
@@ -29,7 +29,7 @@ type ttlmap struct {
 func NewTTLMap(ttl time.Duration, addr netip.Addr) *ttlmap {
 	return &ttlmap{
 		addr:      addr,
-		ap:        adapter.NewPorts(addr),
+		ap:        ports.NewAdapter(addr),
 		keepalive: ttl,
 
 		sndMap: map[session.Session]uint16{},

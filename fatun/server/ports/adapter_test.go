@@ -1,10 +1,10 @@
-package adapter_test
+package ports_test
 
 import (
 	"net/netip"
 	"testing"
 
-	"github.com/lysShub/fatun/fatun/server/adapter"
+	"github.com/lysShub/fatun/fatun/server/ports"
 	"github.com/lysShub/sockit/conn"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 
@@ -18,7 +18,7 @@ var (
 )
 
 func Test_AddrSet(t *testing.T) {
-	var as = &adapter.AddrSet{}
+	var as = &ports.AddrSet{}
 
 	as.Add(addr1)
 	as.Add(addr1)
@@ -36,7 +36,7 @@ func Test_AddrSet(t *testing.T) {
 func Test_Port_Adapter(t *testing.T) {
 
 	t.Run("reuse", func(t *testing.T) {
-		ap := adapter.NewPorts(conn.LocalAddr())
+		ap := ports.NewAdapter(conn.LocalAddr())
 		defer func() {
 			require.NoError(t, ap.Close())
 		}()
@@ -57,7 +57,7 @@ func Test_Port_Adapter(t *testing.T) {
 	})
 
 	t.Run("repead-get", func(t *testing.T) {
-		ap := adapter.NewPorts(conn.LocalAddr())
+		ap := ports.NewAdapter(conn.LocalAddr())
 		defer func() {
 			require.NoError(t, ap.Close())
 		}()
@@ -72,7 +72,7 @@ func Test_Port_Adapter(t *testing.T) {
 	})
 
 	t.Run("add-invalid-proto", func(t *testing.T) {
-		ap := adapter.NewPorts(conn.LocalAddr())
+		ap := ports.NewAdapter(conn.LocalAddr())
 		defer func() {
 			require.NoError(t, ap.Close())
 		}()
@@ -83,7 +83,7 @@ func Test_Port_Adapter(t *testing.T) {
 	})
 
 	t.Run("add-invalid-addr", func(t *testing.T) {
-		ap := adapter.NewPorts(conn.LocalAddr())
+		ap := ports.NewAdapter(conn.LocalAddr())
 		defer func() {
 			require.NoError(t, ap.Close())
 		}()

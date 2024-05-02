@@ -1,18 +1,17 @@
-package adapter
+package ports
 
 import (
 	"net/netip"
 	"sort"
 	"sync"
 
-	"github.com/lysShub/fatun/ports"
 	"github.com/pkg/errors"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
-type Ports struct {
-	mgr *ports.PortMgr
+type Adapter struct {
+	mgr *Manager
 
 	mu sync.RWMutex
 
@@ -24,19 +23,17 @@ type portKey struct {
 	loaclPort uint16
 }
 
-// NewPorts for reuse local machine port, reduce port consume
-// require: one local port can be reused sessions, that has different
-// destination address
-func NewPorts(addr netip.Addr) *Ports {
-	return &Ports{
-		mgr:   ports.NewPortMgr(addr),
+// NewAdapter for reuse local machine port, reduce port consume
+func NewAdapter(addr netip.Addr) *Adapter {
+	return &Adapter{
+		mgr:   NewMgr(addr),
 		ports: make(map[portKey]*AddrSet, 16),
 	}
 }
 
 // GetPort get a local machine port
-func (a *Ports) GetPort(proto tcpip.TransportProtocolNumber, remote netip.AddrPort) (port uint16, err error) {
-	// try reuse alloced port,
+func (a *Adapter) GetPort(proto tcpip.TransportProtocolNumber, remote netip.AddrPort) (port uint16, err error) {
+	// try reuse alloced port, require remote-addr differently
 	a.mu.RLock()
 	for k, v := range a.ports {
 		if k.proto != uint8(proto) {
@@ -87,7 +84,7 @@ func (a *Ports) GetPort(proto tcpip.TransportProtocolNumber, remote netip.AddrPo
 }
 
 // todo: idle timeout delete
-func (a *Ports) DelPort(proto tcpip.TransportProtocolNumber, port uint16, remote netip.AddrPort) error {
+func (a *Adapter) DelPort(proto tcpip.TransportProtocolNumber, port uint16, remote netip.AddrPort) error {
 	pk := portKey{
 		proto:     uint8(proto),
 		loaclPort: port,
@@ -115,7 +112,7 @@ func (a *Ports) DelPort(proto tcpip.TransportProtocolNumber, port uint16, remote
 	return nil
 }
 
-func (a *Ports) Close() (err error) {
+func (a *Adapter) Close() (err error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 

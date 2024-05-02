@@ -15,6 +15,7 @@ import (
 	"github.com/lysShub/fatun/fatun/client"
 	"github.com/lysShub/fatun/sconn"
 	"github.com/lysShub/fatun/sconn/crypto"
+	"github.com/lysShub/sockit/test/debug"
 )
 
 // todo: support config
@@ -25,10 +26,10 @@ func main() {
 	    add launcher.exe
 	   	add aces.exe
 	*/
+	fmt.Println("debug", debug.Debug())
 
 	cfg := &config.Config{
 		// Server: "172.24.131.26:443",
-		Server: "103.94.185.61:443",
 
 		MTU: 1536,
 		Key: &sconn.Sign{
