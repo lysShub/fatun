@@ -18,12 +18,12 @@ import (
 	"github.com/lysShub/fatun/fatun/client/filter"
 	"github.com/lysShub/fatun/sconn"
 	"github.com/lysShub/fatun/session"
-	"github.com/lysShub/sockit/conn"
-	"github.com/lysShub/sockit/conn/tcp"
-	dconn "github.com/lysShub/sockit/conn/tcp/divert"
-	"github.com/lysShub/sockit/errorx"
-	"github.com/lysShub/sockit/packet"
-	"github.com/lysShub/sockit/test"
+	"github.com/lysShub/netkit/errorx"
+	"github.com/lysShub/netkit/packet"
+	"github.com/lysShub/rawsock"
+	"github.com/lysShub/rawsock/tcp"
+	dconn "github.com/lysShub/rawsock/tcp/divert"
+	"github.com/lysShub/rawsock/test"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 
 	"github.com/pkg/errors"
@@ -84,7 +84,7 @@ func Proxy(ctx context.Context, server string, cfg *fatun.Config) (*Client, erro
 	return c, nil
 }
 
-func NewClient(ctx context.Context, raw conn.RawConn, cfg *fatun.Config) (*Client, error) {
+func NewClient(ctx context.Context, raw rawsock.RawConn, cfg *fatun.Config) (*Client, error) {
 	var c = &Client{
 		cfg: cfg,
 		self: session.Session{

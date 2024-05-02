@@ -8,7 +8,7 @@ import (
 	"github.com/lysShub/fatun/fatun"
 	"github.com/lysShub/fatun/sconn"
 	"github.com/lysShub/fatun/sconn/crypto"
-	"github.com/lysShub/sockit/test"
+	"github.com/lysShub/rawsock/test"
 	"github.com/stretchr/testify/require"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )

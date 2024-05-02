@@ -8,7 +8,7 @@ import (
 
 	"github.com/lysShub/fatun/fatun/server/proxyer"
 	"github.com/lysShub/fatun/session"
-	"github.com/lysShub/sockit/packet"
+	"github.com/lysShub/netkit/packet"
 )
 
 type proxyerImpl Server

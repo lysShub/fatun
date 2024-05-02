@@ -9,14 +9,14 @@ import (
 
 	"github.com/lysShub/fatun/sconn/crypto"
 	"github.com/lysShub/fatun/ustack"
+	"github.com/lysShub/rawsock"
 
-	"github.com/lysShub/sockit/conn"
-	"github.com/lysShub/sockit/packet"
-	"github.com/lysShub/sockit/test"
+	"github.com/lysShub/netkit/packet"
+	"github.com/lysShub/rawsock/test"
 	"github.com/stretchr/testify/require"
 )
 
-func UnicomStackAndRaw(t *testing.T, s ustack.Ustack, raw conn.RawConn, pseudoSum1 uint16) {
+func UnicomStackAndRaw(t *testing.T, s ustack.Ustack, raw rawsock.RawConn, pseudoSum1 uint16) {
 	c, err := crypto.NewTCP(crypto.Key{0: 1}, pseudoSum1)
 	require.NoError(t, err)
 

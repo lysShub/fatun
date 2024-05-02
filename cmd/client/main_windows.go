@@ -15,7 +15,7 @@ import (
 	"github.com/lysShub/fatun/fatun/client"
 	"github.com/lysShub/fatun/sconn"
 	"github.com/lysShub/fatun/sconn/crypto"
-	"github.com/lysShub/sockit/test/debug"
+	"github.com/lysShub/netkit/debug"
 )
 
 // todo: support config

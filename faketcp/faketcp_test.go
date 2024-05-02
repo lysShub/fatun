@@ -4,9 +4,9 @@ import (
 	"testing"
 
 	"github.com/lysShub/fatun/faketcp"
-	"github.com/lysShub/sockit/packet"
+	"github.com/lysShub/netkit/packet"
 
-	"github.com/lysShub/sockit/test"
+	"github.com/lysShub/rawsock/test"
 	"github.com/stretchr/testify/require"
 )
 

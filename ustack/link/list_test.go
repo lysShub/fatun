@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lysShub/sockit/packet"
+	"github.com/lysShub/netkit/packet"
 
 	"github.com/stretchr/testify/require"
 	"gvisor.dev/gvisor/pkg/buffer"

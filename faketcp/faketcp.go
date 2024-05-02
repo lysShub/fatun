@@ -5,12 +5,12 @@ import (
 	"sync/atomic"
 
 	"github.com/lysShub/fatun/sconn/crypto"
-	"github.com/lysShub/sockit/errorx"
-	"github.com/lysShub/sockit/packet"
+	"github.com/lysShub/netkit/errorx"
+	"github.com/lysShub/netkit/packet"
 	"github.com/stretchr/testify/require"
 
-	"github.com/lysShub/sockit/test"
-	"github.com/lysShub/sockit/test/debug"
+	"github.com/lysShub/netkit/debug"
+	"github.com/lysShub/rawsock/test"
 	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )

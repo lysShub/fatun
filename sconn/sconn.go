@@ -14,15 +14,15 @@ import (
 	"github.com/lysShub/fatun/session"
 	"github.com/lysShub/fatun/ustack"
 	"github.com/lysShub/fatun/ustack/gonet"
-	"github.com/lysShub/sockit/conn"
-	"github.com/lysShub/sockit/errorx"
-	"github.com/lysShub/sockit/packet"
+	"github.com/lysShub/netkit/errorx"
+	"github.com/lysShub/netkit/packet"
+	"github.com/lysShub/rawsock"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 
-	"github.com/lysShub/sockit/test"
-	"github.com/lysShub/sockit/test/debug"
+	"github.com/lysShub/netkit/debug"
+	"github.com/lysShub/rawsock/test"
 )
 
 const Overhead = session.Overhead + faketcp.Overhead
@@ -38,7 +38,7 @@ type Sconn interface {
 // security datagram conn
 type Conn struct {
 	cfg        *Config
-	raw        conn.RawConn
+	raw        rawsock.RawConn
 	clientPort uint16
 	role       role
 	state      state
@@ -76,7 +76,7 @@ const (
 	closed     uint32 = 4
 )
 
-func newConn(raw conn.RawConn, ep *ustack.LinkEndpoint, role role, cfg *Config) (*Conn, error) {
+func newConn(raw rawsock.RawConn, ep *ustack.LinkEndpoint, role role, cfg *Config) (*Conn, error) {
 	if err := cfg.init(); err != nil {
 		return nil, err
 	}

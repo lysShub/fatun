@@ -5,7 +5,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/lysShub/sockit/packet"
+	"github.com/lysShub/netkit/packet"
 	"github.com/stretchr/testify/require"
 )
 

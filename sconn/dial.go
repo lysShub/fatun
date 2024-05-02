@@ -5,18 +5,18 @@ import (
 
 	"github.com/lysShub/fatun/ustack"
 	"github.com/lysShub/fatun/ustack/link"
-	"github.com/lysShub/sockit/conn"
+	"github.com/lysShub/rawsock"
 )
 
-func Dial(raw conn.RawConn, cfg *Config) (*Conn, error) {
+func Dial(raw rawsock.RawConn, cfg *Config) (*Conn, error) {
 	return DialCtx(context.Background(), raw, cfg)
 }
 
-func DialCtx(ctx context.Context, raw conn.RawConn, cfg *Config) (*Conn, error) {
+func DialCtx(ctx context.Context, raw rawsock.RawConn, cfg *Config) (*Conn, error) {
 	return dial(ctx, raw, cfg)
 }
 
-func dial(ctx context.Context, raw conn.RawConn, cfg *Config) (*Conn, error) {
+func dial(ctx context.Context, raw rawsock.RawConn, cfg *Config) (*Conn, error) {
 	if err := cfg.init(); err != nil {
 		return nil, err
 	}
