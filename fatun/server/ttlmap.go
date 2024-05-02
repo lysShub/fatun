@@ -90,7 +90,7 @@ func (t *ttlmap) cleanup() {
 	}
 	for _, e := range pxrs {
 		if e != nil {
-			e.DecRefs()
+			e.DecSession()
 		}
 	}
 }

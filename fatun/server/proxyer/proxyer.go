@@ -2,11 +2,11 @@ package proxyer
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"net/netip"
 	"os"
 	"sync/atomic"
+	"time"
 
 	"github.com/lysShub/fatun/control"
 	"github.com/lysShub/fatun/fatun"
@@ -14,12 +14,13 @@ import (
 	"github.com/lysShub/fatun/session"
 	"github.com/lysShub/sockit/errorx"
 	"github.com/lysShub/sockit/packet"
+	"github.com/pkg/errors"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
 type Server interface {
-	Config() *fatun.Config
-	// Adapter() *adapter.Ports
+	MTU() int
+	Logger() *slog.Logger
 	AddSession(sess session.Session, pxy IProxyer) error
 	Send(sess session.Session, pkt *packet.Packet) error
 }
@@ -30,25 +31,25 @@ func Proxy(ctx context.Context, srv Server, conn *sconn.Conn) {
 		return
 	}
 
+	client := conn.RemoteAddr()
 	err = p.Proxy(ctx)
 	if err != nil {
-		p.logger.Error(err.Error(), errorx.TraceAttr(err))
+		p.server.Logger().Error(err.Error(), errorx.TraceAttr(err), errorx.TraceAttr(err))
 	} else {
-		p.logger.Info("close")
+		p.server.Logger().Info("close", "client", client.String())
 	}
 }
 
 type IProxyer interface {
 	Downlink(*packet.Packet, session.ID) error
-	DecRefs()
+	DecSession()
 }
 
 type Proxyer struct {
-	conn   *sconn.Conn
-	srv    Server
-	cfg    *fatun.Config
-	logger *slog.Logger
-	refs   atomic.Int32
+	conn     *sconn.Conn
+	server   Server
+	sessions atomic.Int32
+	start    time.Time
 
 	ctr control.Server
 
@@ -58,24 +59,15 @@ type Proxyer struct {
 }
 
 func NewProxyer(srv Server, conn *sconn.Conn) (*Proxyer, error) {
-	cfg := srv.Config()
 	var p = &Proxyer{
-		conn: conn,
-		srv:  srv,
-		cfg:  cfg,
-		logger: slog.New(cfg.Logger.WithGroup("proxyer").WithAttrs([]slog.Attr{
-			{Key: "src", Value: slog.StringValue(conn.RemoteAddr().String())},
-		})),
+		conn:   conn,
+		server: srv,
+		start:  time.Now(),
 	}
 	p.srvCtx, p.srvCancel = context.WithCancel(context.Background())
 
-	// todo: 避免Proxyer没有任何数据包传输导致的协程泄露问题
-	// todo: 现在也不会超时释放proxyer（比如只有一个proxyer时）
-	// sess := session.Session{Src: conn.RemoteAddr(), Proto: header.TCPProtocolNumber}
-	// srv.AddSession(sess, (*serverImpl)(p))
-
 	go p.uplinkService()
-	p.ctr = control.NewServer(conn.TCP(), controlImplPtr(p))
+	p.keepalive()
 	return p, nil
 }
 
@@ -88,13 +80,18 @@ func (p *Proxyer) close(cause error) error {
 		}
 		p.srvCancel()
 
+		if p.conn != nil {
+			if err := p.conn.Close(); err != nil {
+				cause = err
+			}
+		}
+
 		if cause != nil {
 			if errorx.Temporary(cause) {
-				p.logger.Warn(cause.Error())
+				p.server.Logger().Warn(cause.Error())
 			} else {
-				p.logger.Error(cause.Error(), errorx.TraceAttr(cause))
+				p.server.Logger().Error(cause.Error(), errorx.TraceAttr(cause))
 			}
-
 			p.closeErr.Store(&cause)
 		}
 		return cause
@@ -103,21 +100,25 @@ func (p *Proxyer) close(cause error) error {
 }
 
 func (p *Proxyer) Proxy(ctx context.Context) error {
+	// todo: handle hadshake fail
+	p.ctr = control.NewServer(p.conn.TCP(), controlImplPtr(p))
+
 	err := p.ctr.Serve(ctx)
 	return p.close(err)
 }
 
-// todo: add bandwidth limit
 func (p *Proxyer) uplinkService() error {
 	var (
-		pkt = packet.Make(p.cfg.MTU)
+		pkt = packet.Make(p.server.MTU())
 	)
 
 	for {
 		id, err := p.conn.Recv(p.srvCtx, pkt.Sets(0, 0xffff))
 		if err != nil {
 			if errorx.Temporary(err) {
-				p.logger.Warn(err.Error())
+				p.server.Logger().LogAttrs(
+					p.srvCtx, slog.LevelWarn, err.Error(),
+					slog.String("client", p.conn.RemoteAddr().String()))
 				continue
 			} else {
 				return p.close(err)
@@ -131,7 +132,7 @@ func (p *Proxyer) uplinkService() error {
 		case header.UDPProtocolNumber:
 			t = header.UDP(pkt.Bytes())
 		default:
-			panic("")
+			return p.close(errors.Errorf("not support protocol %d", id.Proto))
 		}
 
 		sess := session.Session{
@@ -139,29 +140,33 @@ func (p *Proxyer) uplinkService() error {
 			Proto: id.Proto,
 			Dst:   netip.AddrPortFrom(id.Remote, t.DestinationPort()),
 		}
-		err = p.srv.Send(sess, pkt)
+		err = p.server.Send(sess, pkt)
 		if err != nil {
 			if errors.Is(err, fatun.ErrNotRecord{}) {
-				if err := p.srv.AddSession(sess, (*serverImpl)(p)); err != nil {
-					p.logger.Warn(err.Error(), errorx.TraceAttr(err))
+				if err = p.server.AddSession(sess, (*serverImpl)(p)); err == nil {
+					p.incSession()
+					err = p.server.Send(sess, pkt)
 				}
-				p.incRefs()
-
-				err = p.srv.Send(sess, pkt)
 			}
 
 			if err != nil {
-				p.logger.Warn(err.Error(), errorx.TraceAttr(err))
+				p.server.Logger().LogAttrs(p.srvCtx, slog.LevelError, err.Error(),
+					slog.String("clinet", p.conn.RemoteAddr().String()),
+					errorx.TraceAttr(err))
 			}
 		}
 	}
 }
 
-func (p *Proxyer) incRefs() {
-	p.refs.Add(1)
-}
-func (p *Proxyer) decRefs() {
-	if p.refs.Add(-1) <= 0 {
-		p.close(fatun.ErrkeepaliveExceeded{})
+func (p *Proxyer) keepalive() {
+	if p.sessions.Load() <= 0 && time.Since(p.start) > time.Second {
+		p.close(fatun.ErrNotRecord{})
 	}
+	time.AfterFunc(time.Minute*5, p.keepalive)
+}
+func (p *Proxyer) incSession() {
+	p.sessions.Add(1)
+}
+func (p *Proxyer) decSession() {
+	p.sessions.Add(-1)
 }

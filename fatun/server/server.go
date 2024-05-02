@@ -64,10 +64,6 @@ type Server struct {
 
 	l *sconn.Listener
 
-	// server keepalive
-	// 1. snd/rcv map 的keepalive
-	// 2. rcvVal 支持ref inc/dce, 当cnt为0是， proxyer将关闭自己（accpet时需要add spec Session）
-	// todo: 这两个删除要同步，以上行为准
 	tcpSnder *net.IPConn
 	udpSnder *net.IPConn
 

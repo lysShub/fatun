@@ -16,7 +16,6 @@ func (c *controlImpl) IPv6() bool {
 	return true
 }
 func (c *controlImpl) InitConfig(cfg *control.Config) error {
-	c.logger.Info("inited config")
 	return nil
 }
 func (c *controlImpl) AddSession(sess session.Session) (session.ID, error) {
@@ -39,6 +38,6 @@ func (s *serverImpl) Downlink(pkt *packet.Packet, id session.ID) error {
 	return err
 }
 
-func (s *serverImpl) DecRefs() {
-	(*Proxyer)(s).decRefs()
+func (s *serverImpl) DecSession() {
+	(*Proxyer)(s).decSession()
 }
