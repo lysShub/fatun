@@ -48,6 +48,9 @@ func (h *Heap[T]) Peek() T {
 	return h.vals[h.s]
 }
 
+func (h *Heap[T]) Size() int {
+	return h.n
+}
 func (h *Heap[T]) grow() {
 	tmp := make([]T, len(h.vals)*2)
 

@@ -59,7 +59,6 @@ func ListenAndServe(ctx context.Context, addr string, cfg *fatun.Config) error {
 
 type Server struct {
 	cfg           *fatun.Config
-	logger        *slog.Logger
 	laddrChecksum uint16
 
 	l *sconn.Listener
@@ -73,14 +72,11 @@ type Server struct {
 func NewServer(l *sconn.Listener, cfg *fatun.Config) (*Server, error) {
 	var err error
 	var s = &Server{
-		cfg: cfg,
-		logger: slog.New(cfg.Logger.WithGroup("server").WithAttrs([]slog.Attr{
-			{Key: "addr", Value: slog.StringValue(l.Addr().String())},
-		})),
+		cfg:           cfg,
 		l:             l,
 		laddrChecksum: checksum.Checksum(l.Addr().Addr().AsSlice(), 0),
 
-		m: NewTTLMap(time.Minute*2, l.Addr().Addr()),
+		m: NewTTLMap(time.Second*90, l.Addr().Addr()),
 	}
 
 	s.tcpSnder, err = net.ListenIP("ip:tcp", &net.IPAddr{IP: l.Addr().Addr().AsSlice()})
@@ -107,7 +103,7 @@ func (s *Server) close(cause error) error {
 }
 
 func (s *Server) Serve(ctx context.Context) error {
-	s.logger.Info("start")
+	s.cfg.Logger.Info("start", slog.String("addr", s.l.Addr().String()), slog.Bool("debug", debug.Debug()))
 
 	for {
 		conn, err := s.l.AcceptCtx(ctx)
@@ -115,7 +111,7 @@ func (s *Server) Serve(ctx context.Context) error {
 			return err
 		}
 
-		s.logger.Info("accepted", "client", conn.RemoteAddr().String())
+		s.cfg.Logger.Info("accept", "client", conn.RemoteAddr().String())
 		go proxyer.Proxy(ctx, proxyerImplPtr(s), conn)
 	}
 }

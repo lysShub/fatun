@@ -21,14 +21,14 @@ type captureImpl Client
 type captureImplPtr = *captureImpl
 
 func (c *captureImpl) raw() *Client          { return ((*Client)(c)) }
-func (c *captureImpl) Logger() *slog.Logger  { return c.logger }
+func (c *captureImpl) Logger() *slog.Logger  { return c.cfg.Logger }
 func (c *captureImpl) MTU() int              { return c.cfg.MTU }
 func (c *captureImpl) DivertPriority() int16 { return c.divertPriority - 2 } // capture should read firstly
 func (c *captureImpl) Hit(ip *packet.Packet) bool {
 	hit, err := c.hiter.Hit(ip)
 	if err != nil {
 		if errorx.Temporary(err) {
-			c.logger.Warn(err.Error(), errorx.TraceAttr(err))
+			c.cfg.Logger.Warn(err.Error(), errorx.TraceAttr(err))
 		} else {
 			c.raw().close(err)
 		}
@@ -82,9 +82,9 @@ func (c *captureImpl) Hit(ip *packet.Packet) bool {
 		}
 		if err = c.raw().uplink(c.srvCtx, ip, id); err != nil {
 			if errorx.Temporary(err) {
-				c.logger.Warn(err.Error())
+				c.cfg.Logger.Warn(err.Error())
 			} else {
-				c.logger.Error(err.Error(), errorx.TraceAttr(err))
+				c.cfg.Logger.Error(err.Error(), errorx.TraceAttr(err))
 			}
 		}
 	}

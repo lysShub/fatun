@@ -1,6 +1,8 @@
 package proxyer
 
 import (
+	"log/slog"
+
 	"github.com/lysShub/fatun/control"
 	"github.com/lysShub/fatun/session"
 	"github.com/lysShub/sockit/packet"
@@ -38,6 +40,8 @@ func (s *serverImpl) Downlink(pkt *packet.Packet, id session.ID) error {
 	return err
 }
 
-func (s *serverImpl) DecSession() {
+func (s *serverImpl) DecSession(sess session.Session) {
+	s.server.Logger().Info("del session", slog.String("session", sess.String()))
+
 	(*Proxyer)(s).decSession()
 }

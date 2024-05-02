@@ -30,9 +30,8 @@ import (
 )
 
 type Client struct {
-	cfg    *fatun.Config
-	logger *slog.Logger
-	self   session.Session
+	cfg  *fatun.Config
+	self session.Session
 
 	conn           *sconn.Conn
 	divertPriority int16
@@ -88,10 +87,6 @@ func Proxy(ctx context.Context, server string, cfg *fatun.Config) (*Client, erro
 func NewClient(ctx context.Context, raw conn.RawConn, cfg *fatun.Config) (*Client, error) {
 	var c = &Client{
 		cfg: cfg,
-		logger: slog.New(cfg.Logger.WithGroup("client").WithAttrs([]slog.Attr{
-			{Key: "local", Value: slog.StringValue(raw.LocalAddr().String())},
-			{Key: "proxyer", Value: slog.StringValue(raw.RemoteAddr().String())},
-		})),
 		self: session.Session{
 			Src:   raw.LocalAddr(),
 			Proto: header.TCPProtocolNumber,
@@ -100,7 +95,7 @@ func NewClient(ctx context.Context, raw conn.RawConn, cfg *fatun.Config) (*Clien
 	}
 	c.srvCtx, c.srvCancel = context.WithCancel(context.Background())
 
-	c.logger.Info("dial")
+	c.cfg.Logger.Info("dialing")
 	var err error
 	if c.conn, err = sconn.DialCtx(ctx, raw, cfg.Config); err != nil {
 		return nil, c.close(err)
@@ -109,7 +104,7 @@ func NewClient(ctx context.Context, raw conn.RawConn, cfg *fatun.Config) (*Clien
 			c.divertPriority = 2 // todo: dc.Priority()
 		}
 	}
-	c.logger.Info("connected")
+	c.cfg.Logger.Info("connected", slog.String("proxy-server", c.conn.RemoteAddr().String()))
 
 	if f, err := filter.New(); err != nil {
 		return nil, c.close(err)
@@ -120,7 +115,6 @@ func NewClient(ctx context.Context, raw conn.RawConn, cfg *fatun.Config) (*Clien
 		return nil, c.close(err)
 	}
 
-	// raw.LocalAddr().Addr()
 	if c.inject, err = NewInject(test.LocIP()); err != nil {
 		return nil, c.close(err)
 	}
@@ -128,11 +122,9 @@ func NewClient(ctx context.Context, raw conn.RawConn, cfg *fatun.Config) (*Clien
 	go c.downlinkService()
 	c.ctr = control.NewClient(c.conn.TCP())
 
-	// todo: init config
 	if err := c.ctr.InitConfig(ctx, &control.Config{}); err != nil {
 		return nil, c.close(err)
 	}
-	c.logger.Info("inited")
 
 	return c, nil
 }
@@ -154,9 +146,9 @@ func (c *Client) close(cause error) error {
 
 		if cause != nil {
 			if errorx.Temporary(cause) {
-				c.logger.Info(errors.WithMessage(cause, "session close").Error())
+				c.cfg.Logger.Warn(errors.WithMessage(cause, "session close").Error())
 			} else {
-				c.logger.Warn(cause.Error(), errorx.TraceAttr(errors.WithStack(cause)))
+				c.cfg.Logger.Error(cause.Error(), errorx.TraceAttr(errors.WithStack(cause)))
 			}
 			c.closeErr.Store(&cause)
 		}
@@ -174,7 +166,7 @@ func (c *Client) downlinkService() error {
 		id, err := c.conn.Recv(c.srvCtx, tcp.Sets(32, 0xfff))
 		if err != nil {
 			if errorx.Temporary(err) {
-				c.logger.Warn(err.Error())
+				c.cfg.Logger.Warn(err.Error())
 				continue
 			} else {
 				return c.close(err)

@@ -3,6 +3,7 @@ package server
 import (
 	"net/netip"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/lysShub/fatun/fatun"
@@ -12,14 +13,14 @@ import (
 )
 
 type ttlmap struct {
-	addr      netip.Addr
-	ap        *ports.Adapter
-	keepalive time.Duration
+	addr     netip.Addr
+	ap       *ports.Adapter
+	duration time.Duration
 
 	// {clinet-addr,proto,server-addr} : local-port
-	sndMap map[session.Session]uint16
-	sndMu  sync.RWMutex
+	sndMap map[session.Session]*port
 	ttl    *fatun.Heap[ttlkey]
+	sndMu  sync.RWMutex
 
 	// {server-addr,proto,local-addr} : Proxyer
 	rcvMap map[session.Session]rcvkey
@@ -27,16 +28,18 @@ type ttlmap struct {
 }
 
 func NewTTLMap(ttl time.Duration, addr netip.Addr) *ttlmap {
-	return &ttlmap{
-		addr:      addr,
-		ap:        ports.NewAdapter(addr),
-		keepalive: ttl,
+	var m = &ttlmap{
+		addr:     addr,
+		ap:       ports.NewAdapter(addr),
+		duration: ttl,
 
-		sndMap: map[session.Session]uint16{},
+		sndMap: map[session.Session]*port{},
 		ttl:    fatun.NewHeap[ttlkey](16),
 
 		rcvMap: map[session.Session]rcvkey{},
 	}
+
+	return m
 }
 
 type ttlkey struct {
@@ -49,9 +52,26 @@ func (t ttlkey) valid() bool {
 }
 
 type rcvkey struct {
-	proxyer.IProxyer
+	proxyer    proxyer.IProxyer
 	clinetPort uint16
 }
+
+type port atomic.Uint64
+
+func NewPort(p uint16) *port {
+	var a = &atomic.Uint64{}
+	a.Store(uint64(p) << 48)
+	return (*port)(a)
+}
+func (p *port) p() *atomic.Uint64 { return (*atomic.Uint64)(p) }
+func (p *port) Idle() bool {
+	d := p.p().Load()
+	const flags uint64 = 0xffff000000000000
+
+	p.p().Store(d & flags)
+	return d&(^flags) == 0
+}
+func (p *port) Port() uint16 { return uint16(p.p().Add(1) >> 48) }
 
 func (t *ttlmap) cleanup() {
 	var (
@@ -59,15 +79,19 @@ func (t *ttlmap) cleanup() {
 		lports []uint16
 	)
 	t.sndMu.Lock()
-	for {
-		i := t.ttl.Peek()
-		if i.valid() && time.Since(i.t) > t.keepalive {
-			i = t.ttl.Pop()
-
-			ss = append(ss, i.s)
-			lports = append(lports, t.sndMap[i.s])
-			delete(t.sndMap, i.s)
+	for i := 0; i < t.ttl.Size(); i++ {
+		i := t.ttl.Pop()
+		if i.valid() && time.Since(i.t) > t.duration {
+			p := t.sndMap[i.s]
+			if p.Idle() {
+				ss = append(ss, i.s)
+				lports = append(lports, p.Port())
+				delete(t.sndMap, i.s)
+			} else {
+				t.ttl.Put(ttlkey{i.s, time.Now()})
+			}
 		} else {
+			t.ttl.Put(ttlkey{i.s, time.Now()})
 			break
 		}
 	}
@@ -79,8 +103,8 @@ func (t *ttlmap) cleanup() {
 	var pxrs []proxyer.IProxyer
 	t.rcvMu.Lock()
 	for i, e := range ss {
-		s := session.Session{Src: netip.AddrPortFrom(t.addr, lports[i]), Proto: e.Proto, Dst: e.Dst}
-		pxrs = append(pxrs, t.rcvMap[s].IProxyer)
+		s := session.Session{Src: e.Dst, Proto: e.Proto, Dst: netip.AddrPortFrom(t.addr, lports[i])}
+		pxrs = append(pxrs, t.rcvMap[s].proxyer)
 		delete(t.rcvMap, s)
 	}
 	t.rcvMu.Unlock()
@@ -88,9 +112,9 @@ func (t *ttlmap) cleanup() {
 	for i, e := range ss {
 		t.ap.DelPort(e.Proto, lports[i], e.Dst)
 	}
-	for _, e := range pxrs {
+	for i, e := range pxrs {
 		if e != nil {
-			e.DecSession()
+			e.DecSession(ss[i])
 		}
 	}
 }
@@ -104,7 +128,7 @@ func (t *ttlmap) Add(s session.Session, pxy proxyer.IProxyer) error {
 	}
 
 	t.sndMu.Lock()
-	t.sndMap[s] = locPort
+	t.sndMap[s] = NewPort(locPort)
 	t.ttl.Put(ttlkey{s: s, t: time.Now()})
 	t.sndMu.Unlock()
 
@@ -114,7 +138,7 @@ func (t *ttlmap) Add(s session.Session, pxy proxyer.IProxyer) error {
 		Proto: s.Proto,
 		Dst:   netip.AddrPortFrom(t.addr, locPort),
 	}] = rcvkey{
-		IProxyer:   pxy,
+		proxyer:    pxy,
 		clinetPort: s.Src.Port(),
 	}
 	t.rcvMu.Unlock()
@@ -125,9 +149,11 @@ func (t *ttlmap) Add(s session.Session, pxy proxyer.IProxyer) error {
 func (t *ttlmap) Uplink(s session.Session) (localPort uint16, has bool) {
 	t.sndMu.RLock()
 	defer t.sndMu.RUnlock()
-
-	localPort, has = t.sndMap[s]
-	return
+	p, has := t.sndMap[s]
+	if !has {
+		return 0, false
+	}
+	return p.Port(), true
 }
 
 func (t *ttlmap) Downlink(s session.Session) (pxy proxyer.IProxyer, clientPort uint16, has bool) {
@@ -138,5 +164,5 @@ func (t *ttlmap) Downlink(s session.Session) (pxy proxyer.IProxyer, clientPort u
 	if !has {
 		return nil, 0, false
 	}
-	return key.IProxyer, key.clinetPort, true
+	return key.proxyer, key.clinetPort, true
 }

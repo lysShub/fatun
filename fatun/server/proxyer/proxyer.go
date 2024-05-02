@@ -42,7 +42,7 @@ func Proxy(ctx context.Context, srv Server, conn *sconn.Conn) {
 
 type IProxyer interface {
 	Downlink(*packet.Packet, session.ID) error
-	DecSession()
+	DecSession(session.Session)
 }
 
 type Proxyer struct {
@@ -144,6 +144,8 @@ func (p *Proxyer) uplinkService() error {
 		if err != nil {
 			if errors.Is(err, fatun.ErrNotRecord{}) {
 				if err = p.server.AddSession(sess, (*serverImpl)(p)); err == nil {
+					p.server.Logger().Info("add session", slog.String("session", sess.String()))
+
 					p.incSession()
 					err = p.server.Send(sess, pkt)
 				}

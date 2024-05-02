@@ -16,7 +16,7 @@ type proxyerImpl Server
 type proxyerImplPtr = *proxyerImpl
 
 func (s *proxyerImpl) MTU() int             { return s.cfg.MTU }
-func (s *proxyerImpl) Logger() *slog.Logger { return s.logger }
+func (s *proxyerImpl) Logger() *slog.Logger { return s.cfg.Logger }
 func (s *proxyerImpl) AddSession(sess session.Session, pxy proxyer.IProxyer) error {
 	err := s.m.Add(sess, pxy)
 	return err
