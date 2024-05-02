@@ -66,20 +66,6 @@ func proto(b []byte) tcpip.TransportProtocolNumber {
 	}
 }
 
-// type ErrInvalidID ID
-
-// func (e ErrInvalidID) Error() string {
-// 	return fmt.Sprintf("invalid session id %d", e)
-// }
-// func (e ErrInvalidID) Temporary() bool { return true }
-
-// type ErrExistID ID
-
-// func (e ErrExistID) Error() string {
-// 	return fmt.Sprintf("exist session id %d", e)
-// }
-// func (e ErrExistID) Temporary() bool { return true }
-
 var CtrSessID ID = ID{Remote: netip.IPv4Unspecified(), Proto: header.TCPProtocolNumber}
 
 const (

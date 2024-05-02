@@ -4,7 +4,6 @@
 package client
 
 import (
-	"fmt"
 	"net/netip"
 
 	"github.com/lysShub/divert-go"
@@ -45,7 +44,7 @@ func NewInject(addr netip.Addr) (*Inject, error) {
 		return nil, errors.WithStack(err)
 	}
 	if e := t.Match(addr); !e.Valid() {
-		panic(fmt.Sprintf("invalid addr %s", addr.String()))
+		return nil, errors.Errorf("invalid addr %s", addr.String())
 	} else {
 		i.injectAddr.Network().IfIdx = e.Interface
 	}

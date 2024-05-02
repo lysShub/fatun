@@ -42,6 +42,7 @@ type Conn struct {
 	clientPort uint16
 	role       role
 	state      state
+	tinyCnt    int
 
 	handshakedTime    time.Time
 	handshakedNotify  sync.WaitGroup
@@ -216,7 +217,6 @@ func (c *Conn) Recv(ctx context.Context, pkt *packet.Packet) (id session.ID, err
 
 	head := pkt.Head()
 	for {
-		// todo: 如果peer直接中断，似乎会无限读取到RST数据包
 		err = c.recv(ctx, pkt.SetHead(head))
 		if err != nil {
 			return session.ID{}, err
@@ -227,7 +227,9 @@ func (c *Conn) Recv(ctx context.Context, pkt *packet.Packet) (id session.ID, err
 			if time.Since(c.handshakedTime) < time.Second*3 {
 				continue
 			}
-			// todo: too many error should shutdonw
+			if c.tinyCnt++; c.tinyCnt > c.cfg.RecvErrLimit {
+				return session.ID{}, errors.WithStack(&ErrRecvTooManyErrors{err})
+			}
 			return session.ID{}, errorx.WrapTemp(err)
 		}
 
@@ -242,6 +244,13 @@ func (c *Conn) Recv(ctx context.Context, pkt *packet.Packet) (id session.ID, err
 		return id, nil
 	}
 }
+
+type ErrRecvTooManyErrors struct{ error }
+
+func (e *ErrRecvTooManyErrors) Error() string {
+	return fmt.Sprintf("sconn recv too many error: %s", e.error.Error())
+}
+
 func (c *Conn) inboundControlPacket(pkt *packet.Packet) {
 	// if the data packet passes through the NAT gateway, on handshake
 	// step, the client port will be change automatically, after handshake, need manually
