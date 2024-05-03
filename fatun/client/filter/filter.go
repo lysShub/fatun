@@ -31,11 +31,6 @@ type HitFilter interface {
 	Close() error
 }
 
-type ErrNotRecord struct{}
-
-func (ErrNotRecord) Error() string   { return "filter not record" }
-func (ErrNotRecord) Temporary() bool { return true }
-
 func New() (HitFilter, error) {
 	var err error
 	GlobalOnce.Do(func() {

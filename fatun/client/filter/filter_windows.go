@@ -85,7 +85,7 @@ func (f *filter) Hit(ip *packet.Packet) (bool, error) {
 		if err != nil {
 			return false, err
 		} else if name == "" {
-			return false, errors.WithStack(ErrNotRecord{})
+			return false, errors.WithStack(fatun.ErrNotRecord{})
 		}
 
 		f.processMu.RLock()

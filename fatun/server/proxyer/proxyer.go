@@ -162,7 +162,7 @@ func (p *Proxyer) uplinkService() error {
 
 func (p *Proxyer) keepalive() {
 	if p.sessions.Load() <= 0 && time.Since(p.start) > time.Second {
-		p.close(fatun.ErrNotRecord{})
+		p.close(fatun.ErrkeepaliveExceeded{})
 	}
 	time.AfterFunc(time.Minute*5, p.keepalive)
 }

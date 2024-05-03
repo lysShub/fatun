@@ -15,7 +15,6 @@ import (
 	"github.com/lysShub/fatun/fatun/client"
 	"github.com/lysShub/fatun/sconn"
 	"github.com/lysShub/fatun/sconn/crypto"
-	"github.com/lysShub/netkit/debug"
 )
 
 // todo: support config
@@ -26,7 +25,6 @@ func main() {
 	    add launcher.exe
 	   	add aces.exe
 	*/
-	fmt.Println("debug", debug.Debug())
 
 	cfg := &config.Config{
 		// Server: "172.24.131.26:443",

@@ -29,6 +29,7 @@ func (c *captureImpl) Hit(ip *packet.Packet) bool {
 	if err != nil {
 		if errorx.Temporary(err) {
 			c.cfg.Logger.Warn(err.Error(), errorx.TraceAttr(err))
+			// todo: should proxy on strict mode
 		} else {
 			c.raw().close(err)
 		}
