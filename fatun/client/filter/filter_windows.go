@@ -9,12 +9,12 @@ import (
 
 	"github.com/lysShub/fatun/fatun"
 	"github.com/lysShub/netkit/mapping/process"
+	"github.com/pkg/errors"
 
 	"github.com/lysShub/fatun/session"
 	"github.com/lysShub/netkit/debug"
 	"github.com/lysShub/netkit/packet"
 	"github.com/lysShub/rawsock/test"
-	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
@@ -85,7 +85,7 @@ func (f *filter) Hit(ip *packet.Packet) (bool, error) {
 		if err != nil {
 			return false, err
 		} else if name == "" {
-			return false, errors.WithStack(fatun.ErrNotRecord{})
+			return false, errors.WithMessage(fatun.ErrNotRecord{}, id.String())
 		}
 
 		f.processMu.RLock()

@@ -36,11 +36,11 @@ type Client struct {
 	conn           *sconn.Conn
 	divertPriority int16
 
-	hiter filter.Hitter
-	filter.Filter
-	capture capture.Capture
-	inject  *Inject
-	ctr     control.Client
+	hiter         filter.Hitter
+	filter.Filter // todo: if Client closed, Filter operate should return error
+	capture       capture.Capture
+	inject        *Inject
+	ctr           control.Client
 
 	srvCtx    context.Context
 	srvCancel context.CancelFunc
@@ -72,12 +72,12 @@ func Proxy(ctx context.Context, server string, cfg *fatun.Config) (*Client, erro
 		return nil, err
 	}
 
-	// wraw, err := test.WrapPcap(raw, "client-raw.pcap")
-	// if err != nil {
-	// 	panic(err)
-	// }
+	wraw, err := test.WrapPcap(raw, "client-raw.pcap")
+	if err != nil {
+		panic(err)
+	}
 
-	c, err := NewClient(ctx, raw, cfg)
+	c, err := NewClient(ctx, wraw, cfg)
 	if err != nil {
 		return nil, err
 	}

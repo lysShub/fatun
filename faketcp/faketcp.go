@@ -1,6 +1,7 @@
 package faketcp
 
 import (
+	"math"
 	"math/rand"
 	"sync/atomic"
 
@@ -15,7 +16,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
-// todo: maybe tcp payload start with tls packet
+// todo: maybe tcp payload start with tls Application-Data Header: 0x17, 0x03, 0x03
 
 const Overhead = 20 + crypto.Bytes
 
@@ -28,6 +29,7 @@ type FakeTCP struct {
 
 	pseudoSum1 *uint16
 	crypto     crypto.Crypto
+	speed      *speed
 }
 
 // PseudoSum1 if set, will calc tcp header checksum
@@ -44,11 +46,13 @@ func New(localPort, remotePort uint16, opts ...func(*FakeTCP)) *FakeTCP {
 	var f = &FakeTCP{
 		lport: localPort,
 		rport: remotePort,
+
+		speed: NewSpeed(0xffff),
 	}
 	f.sndNxt.Store(rand.Uint32())
 	f.rcvNxt.Store(rand.Uint32())
-	for _, e := range opts {
-		e(f)
+	for _, opt := range opts {
+		opt(f)
 	}
 
 	return f
@@ -59,9 +63,26 @@ func (f *FakeTCP) InitNxt(snd, rcv uint32) {
 	f.rcvNxt.Store(rcv)
 }
 
+// calcWnd reverse calc tcp window-size by speed(B/s)
+func calcWnd(speed float64) uint16 {
+	const rtt = 100 // ms
+
+	const n = float64(1000) / float64(rtt)
+	wnd := int(math.Round(speed / n))
+	if wnd >= 0xffff {
+		wnd = 0xffff
+	}
+	if wnd < 1024 {
+		wnd = 1024
+	}
+	return uint16(wnd)
+}
+
 // AttachSend input tcp payload, attach tcp header, and return
 // tcp packet.
 func (f *FakeTCP) AttachSend(seg *packet.Packet) {
+	f.speed.Add(uint32(seg.Data()))
+
 	payload := seg.Data()
 	var hdr = make(header.TCP, header.TCPMinimumSize)
 	hdr.Encode(&header.TCPFields{
@@ -72,7 +93,7 @@ func (f *FakeTCP) AttachSend(seg *packet.Packet) {
 		DataOffset: header.TCPMinimumSize,
 		// todo: if ACK not increase，not set ack，otherwise: TCP segment of a reassembled PDU
 		Flags:         header.TCPFlagPsh | header.TCPFlagAck,
-		WindowSize:    0xff32, // todo: mock
+		WindowSize:    calcWnd(f.speed.Speed()),
 		Checksum:      0,
 		UrgentPointer: 0,
 	})
