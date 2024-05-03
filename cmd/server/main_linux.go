@@ -13,6 +13,7 @@ import (
 	"github.com/lysShub/fatun/sconn/crypto"
 )
 
+// go run -tags  debug  .
 func main() {
 
 	cfg := &config.Config{

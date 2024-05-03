@@ -5,7 +5,7 @@ import (
 	"net/netip"
 	"time"
 
-	"github.com/lysShub/sockit/packet"
+	"github.com/lysShub/netkit/packet"
 
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"

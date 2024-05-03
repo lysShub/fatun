@@ -9,7 +9,7 @@ import (
 	"sync/atomic"
 
 	"github.com/lysShub/divert-go"
-	"github.com/lysShub/sockit/packet"
+	"github.com/lysShub/netkit/packet"
 )
 
 type capture struct {

@@ -31,7 +31,7 @@ func (ErrkeepaliveExceeded) Temporary() bool { return true }
 
 type ErrNotRecord struct{}
 
-func (ErrNotRecord) Error() string   { return "filter not record" }
+func (ErrNotRecord) Error() string   { return "not record" }
 func (ErrNotRecord) Temporary() bool { return true }
 
 func UpdateMSS(hdr header.TCP, delta int) error {

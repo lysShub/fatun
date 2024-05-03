@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/lysShub/fatun/fatun/server/ports"
-	"github.com/lysShub/sockit/conn"
+	"github.com/lysShub/rawsock/test"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 
 	"github.com/stretchr/testify/require"
@@ -36,7 +36,7 @@ func Test_AddrSet(t *testing.T) {
 func Test_Port_Adapter(t *testing.T) {
 
 	t.Run("reuse", func(t *testing.T) {
-		ap := ports.NewAdapter(conn.LocalAddr())
+		ap := ports.NewAdapter(test.LocIP())
 		defer func() {
 			require.NoError(t, ap.Close())
 		}()
@@ -57,7 +57,7 @@ func Test_Port_Adapter(t *testing.T) {
 	})
 
 	t.Run("repead-get", func(t *testing.T) {
-		ap := ports.NewAdapter(conn.LocalAddr())
+		ap := ports.NewAdapter(test.LocIP())
 		defer func() {
 			require.NoError(t, ap.Close())
 		}()
@@ -72,7 +72,7 @@ func Test_Port_Adapter(t *testing.T) {
 	})
 
 	t.Run("add-invalid-proto", func(t *testing.T) {
-		ap := ports.NewAdapter(conn.LocalAddr())
+		ap := ports.NewAdapter(test.LocIP())
 		defer func() {
 			require.NoError(t, ap.Close())
 		}()
@@ -83,7 +83,7 @@ func Test_Port_Adapter(t *testing.T) {
 	})
 
 	t.Run("add-invalid-addr", func(t *testing.T) {
-		ap := ports.NewAdapter(conn.LocalAddr())
+		ap := ports.NewAdapter(test.LocIP())
 		defer func() {
 			require.NoError(t, ap.Close())
 		}()

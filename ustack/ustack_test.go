@@ -13,11 +13,11 @@ import (
 	"github.com/lysShub/fatun/ustack"
 	"github.com/lysShub/fatun/ustack/gonet"
 	"github.com/lysShub/fatun/ustack/link"
+	"github.com/lysShub/rawsock"
 
-	"github.com/lysShub/sockit/conn"
-	"github.com/lysShub/sockit/packet"
-	"github.com/lysShub/sockit/test"
-	"github.com/lysShub/sockit/test/debug"
+	"github.com/lysShub/netkit/debug"
+	"github.com/lysShub/netkit/packet"
+	"github.com/lysShub/rawsock/test"
 	"github.com/stretchr/testify/require"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -220,7 +220,7 @@ func Test_Conn_Clients(t *testing.T) {
 	t.Log(<-rets, "retrun")
 }
 
-func UnicomStackAndRaw(t *testing.T, s ustack.Ustack, raw conn.RawConn) {
+func UnicomStackAndRaw(t *testing.T, s ustack.Ustack, raw rawsock.RawConn) {
 	go func() {
 		var pkt = packet.Make(64, s.MTU())
 
@@ -261,7 +261,7 @@ func UnicomStackAndRaw(t *testing.T, s ustack.Ustack, raw conn.RawConn) {
 	}()
 }
 
-func UnicomStackAndRawBy(t *testing.T, s ustack.Ustack, raw conn.RawConn, dst netip.AddrPort) {
+func UnicomStackAndRawBy(t *testing.T, s ustack.Ustack, raw rawsock.RawConn, dst netip.AddrPort) {
 	go func() {
 		var p = packet.Make(64, s.MTU())
 

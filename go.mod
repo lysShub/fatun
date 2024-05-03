@@ -2,11 +2,12 @@ module github.com/lysShub/fatun
 
 go 1.21
 
-require golang.org/x/sys v0.18.0
+require golang.org/x/sys v0.19.0
 
 require (
 	github.com/lysShub/divert-go v0.0.0-20240415114628-03a432d8c814
-	github.com/lysShub/sockit v0.0.0-20240429080453-63509c64a04d
+	github.com/lysShub/netkit v0.0.0-20240502161710-8c1530e4591a
+	github.com/lysShub/rawsock v0.0.0-20240502182936-70d43694b24d
 	github.com/stretchr/testify v1.9.0
 	golang.org/x/net v0.20.0
 	golang.org/x/sync v0.5.0
@@ -39,12 +40,10 @@ require (
 	github.com/lysShub/wintun-go v0.0.0-20240410130619-383598c11ea1 // indirect
 	github.com/pkg/errors v0.9.1
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	github.com/shirou/gopsutil/v3 v3.24.3
+	github.com/shirou/gopsutil/v3 v3.24.4 // indirect
 	golang.org/x/time v0.5.0 // indirect
 	golang.zx2c4.com/wireguard/windows v0.5.3 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-// replace github.com/lysShub/sockit => D:\OneDrive\code\go\sockit
 
 // replace github.com/lysShub/divert-go => D:\OneDrive\code\go\divert-go

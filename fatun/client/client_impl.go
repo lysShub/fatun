@@ -10,8 +10,8 @@ import (
 	"github.com/lysShub/fatun/fatun"
 	"github.com/lysShub/fatun/sconn"
 	"github.com/lysShub/fatun/session"
-	"github.com/lysShub/sockit/errorx"
-	"github.com/lysShub/sockit/packet"
+	"github.com/lysShub/netkit/errorx"
+	"github.com/lysShub/netkit/packet"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -29,6 +29,7 @@ func (c *captureImpl) Hit(ip *packet.Packet) bool {
 	if err != nil {
 		if errorx.Temporary(err) {
 			c.cfg.Logger.Warn(err.Error(), errorx.TraceAttr(err))
+			// todo: should proxy on strict mode
 		} else {
 			c.raw().close(err)
 		}

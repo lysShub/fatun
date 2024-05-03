@@ -8,11 +8,12 @@ import (
 	"time"
 
 	"github.com/lysShub/fatun/fatun"
-	"github.com/lysShub/fatun/fatun/client/filter/mapping"
+	"github.com/lysShub/netkit/mapping/process"
+
 	"github.com/lysShub/fatun/session"
-	"github.com/lysShub/sockit/packet"
-	"github.com/lysShub/sockit/test"
-	"github.com/lysShub/sockit/test/debug"
+	"github.com/lysShub/netkit/debug"
+	"github.com/lysShub/netkit/packet"
+	"github.com/lysShub/rawsock/test"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -80,11 +81,11 @@ func (f *filter) Hit(ip *packet.Packet) (bool, error) {
 	}
 
 	if f.processEnable.Load() {
-		name, err := Global.Name(mapping.Endpoint{Local: id.Src, Proto: id.Proto})
+		name, err := Global.Name(process.ID{Local: id.Src, Proto: id.Proto})
 		if err != nil {
 			return false, err
 		} else if name == "" {
-			return false, errors.WithStack(ErrNotRecord{})
+			return false, errors.WithStack(fatun.ErrNotRecord{})
 		}
 
 		f.processMu.RLock()

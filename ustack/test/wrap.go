@@ -5,8 +5,8 @@ import (
 	"net/netip"
 
 	"github.com/lysShub/fatun/ustack"
-	"github.com/lysShub/sockit/packet"
-	"github.com/lysShub/sockit/test"
+	"github.com/lysShub/netkit/packet"
+	"github.com/lysShub/rawsock/test"
 )
 
 type UstackPcapWrap struct {

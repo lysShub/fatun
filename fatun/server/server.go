@@ -14,10 +14,10 @@ import (
 	"github.com/lysShub/fatun/fatun/server/proxyer"
 	"github.com/lysShub/fatun/sconn"
 	"github.com/lysShub/fatun/session"
-	"github.com/lysShub/sockit/conn/tcp"
-	"github.com/lysShub/sockit/packet"
-	"github.com/lysShub/sockit/test"
-	"github.com/lysShub/sockit/test/debug"
+	"github.com/lysShub/netkit/debug"
+	"github.com/lysShub/netkit/packet"
+	"github.com/lysShub/rawsock/tcp"
+	"github.com/lysShub/rawsock/test"
 	"github.com/pkg/errors"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checksum"
@@ -76,7 +76,7 @@ func NewServer(l *sconn.Listener, cfg *fatun.Config) (*Server, error) {
 		l:             l,
 		laddrChecksum: checksum.Checksum(l.Addr().Addr().AsSlice(), 0),
 
-		m: NewTTLMap(time.Second*90, l.Addr().Addr()),
+		m: NewTTLMap(time.Second*30, l.Addr().Addr()),
 	}
 
 	s.tcpSnder, err = net.ListenIP("ip:tcp", &net.IPAddr{IP: l.Addr().Addr().AsSlice()})

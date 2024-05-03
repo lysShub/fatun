@@ -12,8 +12,8 @@ import (
 	"github.com/lysShub/fatun/fatun"
 	"github.com/lysShub/fatun/sconn"
 	"github.com/lysShub/fatun/session"
-	"github.com/lysShub/sockit/errorx"
-	"github.com/lysShub/sockit/packet"
+	"github.com/lysShub/netkit/errorx"
+	"github.com/lysShub/netkit/packet"
 	"github.com/pkg/errors"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
@@ -162,7 +162,7 @@ func (p *Proxyer) uplinkService() error {
 
 func (p *Proxyer) keepalive() {
 	if p.sessions.Load() <= 0 && time.Since(p.start) > time.Second {
-		p.close(fatun.ErrNotRecord{})
+		p.close(fatun.ErrkeepaliveExceeded{})
 	}
 	time.AfterFunc(time.Minute*5, p.keepalive)
 }

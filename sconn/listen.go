@@ -9,7 +9,7 @@ import (
 	"github.com/lysShub/fatun/ustack"
 	"github.com/lysShub/fatun/ustack/gonet"
 	"github.com/lysShub/fatun/ustack/link"
-	"github.com/lysShub/sockit/conn"
+	"github.com/lysShub/rawsock"
 	"github.com/pkg/errors"
 
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -17,7 +17,7 @@ import (
 
 type Listener struct {
 	cfg *Config
-	raw conn.Listener
+	raw rawsock.Listener
 
 	stack ustack.Ustack
 	l     *gonet.TCPListener
@@ -25,7 +25,7 @@ type Listener struct {
 	closeErr atomic.Pointer[error]
 }
 
-func NewListener(l conn.Listener, cfg *Config) (*Listener, error) {
+func NewListener(l rawsock.Listener, cfg *Config) (*Listener, error) {
 	if err := cfg.init(); err != nil {
 		return nil, err
 	}

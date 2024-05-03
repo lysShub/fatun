@@ -3,8 +3,8 @@ package filter
 import (
 	"sync"
 
-	"github.com/lysShub/fatun/fatun/client/filter/mapping"
-	"github.com/lysShub/sockit/packet"
+	"github.com/lysShub/netkit/mapping/process"
+	"github.com/lysShub/netkit/packet"
 )
 
 type Hitter interface {
@@ -31,15 +31,10 @@ type HitFilter interface {
 	Close() error
 }
 
-type ErrNotRecord struct{}
-
-func (ErrNotRecord) Error() string   { return "filter not record" }
-func (ErrNotRecord) Temporary() bool { return true }
-
 func New() (HitFilter, error) {
 	var err error
 	GlobalOnce.Do(func() {
-		Global, err = mapping.New()
+		Global, err = process.New()
 	})
 	if err != nil {
 		return nil, err
@@ -49,6 +44,6 @@ func New() (HitFilter, error) {
 }
 
 var (
-	Global     mapping.Mapping
+	Global     process.Mapping
 	GlobalOnce sync.Once
 )

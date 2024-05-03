@@ -1,6 +1,6 @@
 package crypto
 
-import "github.com/lysShub/sockit/packet"
+import "github.com/lysShub/netkit/packet"
 
 type Key = [Bytes]byte
 

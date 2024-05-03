@@ -5,7 +5,7 @@ import (
 
 	"github.com/lysShub/fatun/control"
 	"github.com/lysShub/fatun/session"
-	"github.com/lysShub/sockit/packet"
+	"github.com/lysShub/netkit/packet"
 )
 
 type controlImpl Proxyer

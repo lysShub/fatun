@@ -9,11 +9,11 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/lysShub/fatun/ustack/link"
-	"github.com/lysShub/sockit/helper/ipstack"
-	"github.com/lysShub/sockit/packet"
+	"github.com/lysShub/netkit/packet"
+	"github.com/lysShub/rawsock/helper/ipstack"
 
-	"github.com/lysShub/sockit/test"
-	"github.com/lysShub/sockit/test/debug"
+	"github.com/lysShub/netkit/debug"
+	"github.com/lysShub/rawsock/test"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
