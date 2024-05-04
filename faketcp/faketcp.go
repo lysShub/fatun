@@ -16,8 +16,6 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
-// todo: maybe tcp payload start with tls Application-Data Header: 0x17, 0x03, 0x03
-
 const Overhead = 20 + crypto.Bytes
 
 // record tcp seq/ack, not care handshake/clode, etc.
@@ -165,6 +163,6 @@ func ToNot(tcp *packet.Packet) *packet.Packet {
 var opts = []byte{1, 1, 1, 0}
 var deltaSum = checksum.Checksum(
 	opts,
-	1<<(4+8)+ // data-offset update
+	1<<(4+8)+ // data-offset
 		4, // pseudo-header totalLen
 )
