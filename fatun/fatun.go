@@ -23,11 +23,11 @@ func (e ErrRecvTooManyError) Error() string {
 	return "recv too many invalid packet"
 }
 
-type ErrkeepaliveExceeded struct{}
+type ErrKeepaliveExceeded struct{}
 
-func (ErrkeepaliveExceeded) Error() string   { return "keepalive exceeded" }
-func (ErrkeepaliveExceeded) Timeout() bool   { return true }
-func (ErrkeepaliveExceeded) Temporary() bool { return true }
+func (ErrKeepaliveExceeded) Error() string   { return "keepalive exceeded" }
+func (ErrKeepaliveExceeded) Timeout() bool   { return true }
+func (ErrKeepaliveExceeded) Temporary() bool { return true }
 
 type ErrNotRecord struct{}
 

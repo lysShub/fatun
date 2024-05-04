@@ -158,13 +158,9 @@ func (c *Conn) outboundService() error {
 				return c.close(err)
 			}
 		} else {
-			err = c.raw.Write(context.Background(), pkt)
+			err = c.raw.Write(context.Background(), faketcp.ToNot(pkt))
 			if err != nil {
 				return c.close(err)
-			}
-
-			if debug.Debug() {
-				test.ValidIP(test.T(), pkt.SetHead(64).Bytes())
 			}
 		}
 	}
