@@ -1,10 +1,12 @@
 package faketcp_test
 
 import (
+	"net/netip"
 	"testing"
 
 	"github.com/lysShub/fatun/faketcp"
 	"github.com/lysShub/netkit/packet"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 
 	"github.com/lysShub/rawsock/test"
 	"github.com/stretchr/testify/require"
@@ -28,4 +30,28 @@ func Test_FakeTCP(t *testing.T) {
 	f.DetachRecv(p)
 	require.False(t, faketcp.Is(p.Bytes()))
 	require.Equal(t, 16, p.Data())
+}
+
+func Test_ToNot(t *testing.T) {
+
+	var (
+		laddr = netip.AddrPortFrom(test.RandIP(), test.RandPort())
+		raddr = netip.AddrPortFrom(test.RandIP(), test.RandPort())
+		psum1 = header.PseudoHeaderChecksum(
+			header.TCPProtocolNumber,
+			test.Address(laddr.Addr()), test.Address(raddr.Addr()),
+			0,
+		)
+	)
+
+	{
+		tcp := packet.From(test.BuildTCPSync(t, laddr, raddr))
+		test.ValidTCP(t, tcp.Bytes(), psum1)
+
+		tcp = faketcp.ToNot(tcp)
+
+		require.False(t, faketcp.Is(tcp.Bytes()))
+		test.ValidTCP(t, tcp.Bytes(), psum1)
+		require.Equal(t, laddr.Port(), header.TCP(tcp.Bytes()).SourcePort())
+	}
 }

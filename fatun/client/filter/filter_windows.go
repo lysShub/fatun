@@ -3,6 +3,7 @@ package filter
 import (
 	"net/netip"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -98,11 +99,12 @@ func (f *filter) Hit(ip *packet.Packet) (bool, error) {
 }
 
 func (f *filter) Add(filter string) error {
+	filter = strings.TrimSpace(filter)
 	switch filter {
 	case DefaultFilter:
 		f.defaultEnable.Store(true)
 	case DNSFilter:
-		f.defaultEnable.Store(true)
+		f.dnsEnable.Store(true)
 	default: // process name
 		f.processMu.Lock()
 		defer f.processMu.Unlock()
@@ -116,9 +118,10 @@ func (f *filter) Add(filter string) error {
 	return nil
 }
 func (f *filter) Del(filter string) error {
+	filter = strings.TrimSpace(filter)
 	switch filter {
 	case DefaultFilter:
-		f.processEnable.Store(false)
+		f.defaultEnable.Store(false)
 	case DNSFilter:
 		f.dnsEnable.Store(false)
 	default:

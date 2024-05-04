@@ -97,7 +97,6 @@ func (f *FakeTCP) AttachSend(seg *packet.Packet) {
 		Checksum:      0,
 		UrgentPointer: 0,
 	})
-	hdr[fakeFlagOffset] |= fakeFlag
 	seg.Attach(hdr)
 
 	if f.crypto != nil {
@@ -142,13 +141,30 @@ func (f *FakeTCP) DetachRecv(tcp *packet.Packet) error {
 	return nil
 }
 
-const (
-	// todo: 区分fakeFlag采用tcp MSS option, 有为fake packet
+const ()
 
-	fakeFlagOffset = header.TCPDataOffset
-	fakeFlag       = 0b10
-)
-
-func Is(tcphdr header.TCP) bool {
-	return tcphdr[fakeFlagOffset]&fakeFlag == fakeFlag
+func Is(tcp header.TCP) bool {
+	return tcp.DataOffset() == header.TCPMinimumSize
 }
+
+// ToNot make to not-fack tcp packet, requir tcp with correct tcp checksume.
+func ToNot(tcp *packet.Packet) *packet.Packet {
+	if Is(tcp.Bytes()) {
+		b := header.TCP(tcp.AttachN(4).Bytes())
+		copy(b[:header.TCPMinimumSize], b[4:])
+		copy(b[header.TCPMinimumSize:], opts)
+
+		b.SetDataOffset(b.DataOffset() + 4)
+		b.SetChecksum(^checksum.Combine(^b.Checksum(), deltaSum))
+	}
+
+	return tcp
+}
+
+// useless tcp option
+var opts = []byte{1, 1, 1, 0}
+var deltaSum = checksum.Checksum(
+	opts,
+	1<<(4+8)+ // data-offset update
+		4, // pseudo-header totalLen
+)
