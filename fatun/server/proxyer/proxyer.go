@@ -19,7 +19,7 @@ import (
 )
 
 type Server interface {
-	MTU() int
+	MaxRecvBuffSize() int
 	Logger() *slog.Logger
 	AddSession(sess session.Session, pxy IProxyer) error
 	Send(sess session.Session, pkt *packet.Packet) error
@@ -100,16 +100,19 @@ func (p *Proxyer) close(cause error) error {
 }
 
 func (p *Proxyer) Proxy(ctx context.Context) error {
-	// todo: handle hadshake fail
-	p.ctr = control.NewServer(p.conn.TCP(), controlImplPtr(p))
+	tcp, err := p.conn.TCP(ctx)
+	if err != nil {
+		return p.close(err)
+	}
 
-	err := p.ctr.Serve(ctx)
+	p.ctr = control.NewServer(tcp, controlImplPtr(p))
+	err = p.ctr.Serve(ctx)
 	return p.close(err)
 }
 
 func (p *Proxyer) uplinkService() error {
 	var (
-		pkt = packet.Make(p.server.MTU())
+		pkt = packet.Make(p.server.MaxRecvBuffSize())
 	)
 
 	for {

@@ -16,8 +16,8 @@ import (
 )
 
 type Listener struct {
-	cfg *Config
-	raw rawsock.Listener
+	config *Config
+	raw    rawsock.Listener
 
 	stack ustack.Ustack
 	l     *gonet.TCPListener
@@ -25,15 +25,15 @@ type Listener struct {
 	closeErr atomic.Pointer[error]
 }
 
-func NewListener(l rawsock.Listener, cfg *Config) (*Listener, error) {
-	if err := cfg.init(); err != nil {
+func NewListener(l rawsock.Listener, config *Config) (*Listener, error) {
+	if err := config.Init(); err != nil {
 		return nil, err
 	}
-	var li = &Listener{cfg: cfg, raw: l}
+	var li = &Listener{config: config, raw: l}
 
 	var err error
 	if li.stack, err = ustack.NewUstack(
-		link.NewList(64, cfg.MTU), l.Addr().Addr(),
+		link.NewList(64, config.MTU-Overhead), l.Addr().Addr(),
 	); err != nil {
 		return nil, li.close(err)
 	}
@@ -89,7 +89,7 @@ func (l *Listener) AcceptCtx(ctx context.Context) (*Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	conn, err := newConn(raw, ep, server, l.cfg)
+	conn, err := newConn(raw, ep, server, l.config)
 	if err != nil {
 		return nil, err
 	}

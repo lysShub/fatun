@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/lysShub/fatun/faketcp"
+	"github.com/lysShub/fatun/sconn/crypto"
 	"github.com/lysShub/fatun/session"
 	"github.com/lysShub/fatun/ustack"
 	"github.com/lysShub/fatun/ustack/gonet"
@@ -37,7 +38,7 @@ type Sconn interface {
 
 // security datagram conn
 type Conn struct {
-	cfg        *Config
+	config     *Config
 	raw        rawsock.RawConn
 	clientPort uint16
 	role       role
@@ -76,15 +77,15 @@ const (
 	closed     uint32 = 4
 )
 
-func newConn(raw rawsock.RawConn, ep *ustack.LinkEndpoint, role role, cfg *Config) (*Conn, error) {
-	if err := cfg.init(); err != nil {
+func newConn(raw rawsock.RawConn, ep *ustack.LinkEndpoint, role role, config *Config) (*Conn, error) {
+	if err := config.Init(); err != nil {
 		return nil, err
 	}
 
 	var c = &Conn{
-		cfg:  cfg,
-		raw:  raw,
-		role: role,
+		config: config,
+		raw:    raw,
+		role:   role,
 
 		handshakeRecvSegs: &heap{},
 		ep:                ep,
@@ -142,14 +143,16 @@ func (c *Conn) close(cause error) error {
 }
 
 func (c *Conn) outboundService() error {
-	var (
-		pkt = packet.Make(64, c.cfg.MTU)
-	)
+	var pkt = packet.Make(c.config.MaxRecvBuffSize)
 
 	for {
-		err := c.ep.Outbound(c.srvCtx, pkt.SetHead(64))
+		err := c.ep.Outbound(c.srvCtx, pkt.Sets(Overhead, 0xffff))
 		if err != nil {
 			return c.close(err)
+		}
+		if debug.Debug() {
+			require.GreaterOrEqual(test.T(), pkt.Head(), Overhead)
+			require.GreaterOrEqual(test.T(), pkt.Tail(), crypto.Overhead)
 		}
 
 		if c.state.Load() == transmit {
@@ -166,9 +169,12 @@ func (c *Conn) outboundService() error {
 	}
 }
 
-func (c *Conn) TCP() net.Conn {
-	c.handshakedNotify.Wait()
-	return c.tcp
+// TCP get builtin tcp conn, require call c.Recv async, otherwise the tcp no work.
+func (c *Conn) TCP(ctx context.Context) (net.Conn, error) {
+	if err := c.handshake(ctx); err != nil {
+		return nil, err
+	}
+	return c.tcp, nil
 }
 
 type ErrOverflowMTU int
@@ -183,17 +189,11 @@ func (c *Conn) Send(ctx context.Context, pkt *packet.Packet, id session.ID) (err
 		return err
 	}
 
-	if pkt.Data() > c.cfg.MTU { // todo: mss
-		return errors.WithStack(ErrOverflowMTU(pkt.Data()))
-	}
 	session.Encode(pkt, id)
 	c.fake.AttachSend(pkt)
 
 	if debug.Debug() {
 		require.True(test.T(), id.Valid())
-
-		require.True(test.T(), c.LocalAddr().Addr().Is4())
-		require.LessOrEqual(test.T(), pkt.Data()+header.IPv4MinimumSize, c.cfg.MTU)
 	}
 	err = c.raw.Write(ctx, pkt)
 	return err
@@ -203,7 +203,7 @@ func (c *Conn) recv(ctx context.Context, pkt *packet.Packet) error {
 	if c.handshakeRecvSegs.pop(pkt) {
 		return nil
 	}
-	return c.raw.Read(ctx, pkt)
+	return c.raw.Read(ctx, pkt.SetData(0xffff))
 }
 
 func (c *Conn) Recv(ctx context.Context, pkt *packet.Packet) (id session.ID, err error) {
@@ -223,7 +223,7 @@ func (c *Conn) Recv(ctx context.Context, pkt *packet.Packet) (id session.ID, err
 			if time.Since(c.handshakedTime) < time.Second*3 {
 				continue
 			}
-			if c.tinyCnt++; c.tinyCnt > c.cfg.RecvErrLimit {
+			if c.tinyCnt++; c.tinyCnt > c.config.RecvErrLimit {
 				return session.ID{}, errors.WithStack(&ErrRecvTooManyErrors{err})
 			}
 			return session.ID{}, errorx.WrapTemp(err)

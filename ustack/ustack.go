@@ -138,6 +138,7 @@ func NewLinkEndpoint(stack Ustack, localPort uint16, remoteAddr netip.AddrPort) 
 
 func (e *LinkEndpoint) Close() error  { return nil }
 func (e *LinkEndpoint) Stack() Ustack { return e.stack }
+func (e *LinkEndpoint) MTU() int      { return e.stack.MTU() }
 func (e *LinkEndpoint) LocalAddr() netip.AddrPort {
 	return netip.AddrPortFrom(e.stack.Addr(), e.localPort)
 }

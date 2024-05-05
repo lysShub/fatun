@@ -91,30 +91,17 @@ func (l *List) outboundBy(ctx context.Context, dst netip.AddrPort, tcp *packet.P
 	if pkb.IsNil() {
 		return errors.WithStack(ctx.Err())
 	}
-
 	defer pkb.DecRef()
+
 	tcp.SetData(0)
+	if debug.Debug() {
+		require.LessOrEqual(test.T(), pkb.Size(), l.mtu)
+		require.GreaterOrEqual(test.T(), tcp.Tail(), pkb.Size())
+	}
 	for _, e := range pkb.AsSlices() {
 		tcp.Append(e)
 	}
-
-	if debug.Debug() {
-		test.ValidIP(test.T(), tcp.Bytes())
-
-		ip := header.IPv4(tcp.Bytes())
-		tcp := header.TCP(ip.Payload())
-		dst := netip.AddrPortFrom(netip.MustParseAddr(ip.DestinationAddress().String()), tcp.DestinationPort())
-		require.Equal(test.T(), dst, dst)
-	}
-	switch pkb.NetworkProtocolNumber {
-	case header.IPv4ProtocolNumber:
-		hdrLen := header.IPv4(tcp.Bytes()).HeaderLength()
-		tcp.SetHead(tcp.Head() + int(hdrLen))
-	case header.IPv6ProtocolNumber:
-		tcp.SetHead(tcp.Head() + header.IPv6MinimumSize)
-	default:
-		panic("")
-	}
+	tcp.SetHead(tcp.Head() + len(pkb.NetworkHeader().Slice()))
 
 	return nil
 }
@@ -141,22 +128,13 @@ func (l *List) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) {
 		return 0, &tcpip.ErrClosedForSend{}
 	}
 
-	n := 0
 	for i, pkb := range pkts.AsSlice() {
-		if debug.Debug() {
-			require.Greater(test.T(), pkb.Size(), 0)
-		}
-
 		ok := l.list.Put(pkb)
 		if !ok {
-			if i == 0 {
-				return 0, &tcpip.ErrNoBufferSpace{}
-			}
-			break
+			return i, &tcpip.ErrNoBufferSpace{}
 		}
-		n++
 	}
-	return n, nil
+	return pkts.Len(), nil
 }
 
 func (l *List) ARPHardwareType() header.ARPHardwareType { return header.ARPHardwareNone }
@@ -215,7 +193,7 @@ func (s *slice) Put(pkb *stack.PacketBuffer) (ok bool) {
 
 	if len(s.s) == cap(s.s) {
 		if debug.Debug() {
-			println("slice link cap too small")
+			println("link endpoint buff too small")
 		}
 		return false
 	} else {
@@ -302,6 +280,8 @@ func (s *slice) getBy(dst netip.AddrPort) (pkb *stack.PacketBuffer) {
 }
 
 func (s *slice) Size() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	return len(s.s)
 }
 

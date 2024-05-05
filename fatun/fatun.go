@@ -3,7 +3,6 @@ package fatun
 import (
 	"encoding/binary"
 	"encoding/hex"
-	"log/slog"
 
 	"github.com/lysShub/fatun/sconn"
 	"github.com/pkg/errors"
@@ -11,11 +10,8 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
-type Config struct {
-	*sconn.Config
-	MTU    int
-	Logger *slog.Logger
-}
+// todo: add rawsock.Overhead
+const Overhead = sconn.Overhead + 20
 
 type ErrRecvTooManyError struct{}
 

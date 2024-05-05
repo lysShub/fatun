@@ -14,7 +14,7 @@ type Capture interface {
 
 type Client interface {
 	Logger() *slog.Logger
-	MTU() int
+	MaxRecvBuffSize() int
 	DivertPriority() int16
 	Hit(ip *packet.Packet) bool
 }
