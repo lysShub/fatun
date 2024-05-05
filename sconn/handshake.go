@@ -78,9 +78,9 @@ func (c *Conn) handshake(ctx context.Context) (err error) {
 		return nil
 	}
 
-	inctx, cancel := context.WithCancel(ctx)
+	srvCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	go c.handshakeInboundService(inctx)
+	go c.handshakeInboundService(srvCtx)
 
 	tcp, err := c.factory.factory(ctx)
 	if err != nil {
@@ -89,18 +89,17 @@ func (c *Conn) handshake(ctx context.Context) (err error) {
 
 	var key crypto.Key
 	if c.role == server {
-		// todo: require tcp NoDelay
-		if err := c.cfg.PSS.Server(ctx, tcp); err != nil {
+		if err := c.config.PSS.Server(ctx, tcp); err != nil {
 			return err
 		}
-		if key, err = c.cfg.Key.Server(ctx, tcp); err != nil {
+		if key, err = c.config.Key.Server(ctx, tcp); err != nil {
 			return err
 		}
 	} else if c.role == client {
-		if err := c.cfg.PSS.Client(ctx, tcp); err != nil {
+		if err := c.config.PSS.Client(ctx, tcp); err != nil {
 			return err
 		}
-		if key, err = c.cfg.Key.Client(ctx, tcp); err != nil {
+		if key, err = c.config.Key.Client(ctx, tcp); err != nil {
 			return err
 		}
 	} else {
@@ -140,11 +139,11 @@ func (c *Conn) handshake(ctx context.Context) (err error) {
 
 func (c *Conn) handshakeInboundService(ctx context.Context) error {
 	var (
-		pkt = packet.Make(64, c.cfg.MTU)
+		pkt = packet.Make(c.config.MaxRecvBuffSize)
 	)
 
 	for {
-		err := c.raw.Read(ctx, pkt.SetHead(64))
+		err := c.raw.Read(ctx, pkt.SetHead(0))
 		if err != nil {
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				return nil
@@ -154,7 +153,7 @@ func (c *Conn) handshakeInboundService(ctx context.Context) error {
 
 		if debug.Debug() {
 			old := pkt.Head()
-			pkt.SetHead(64)
+			pkt.SetHead(0)
 			test.ValidIP(test.T(), pkt.Bytes())
 			pkt.SetHead(old)
 		}
@@ -169,7 +168,6 @@ func (c *Conn) handshakeInboundService(ctx context.Context) error {
 				c.inboundControlPacket(seg)
 			} else {
 				c.handshakeRecvSegs.put(pkt)
-				// todo：log
 			}
 
 			if c.state.Load() == transmit {
@@ -182,7 +180,7 @@ func (c *Conn) handshakeInboundService(ctx context.Context) error {
 }
 
 // heap simple heap buff, only support concurrent pop,
-// and not support cross pop/put opeate.
+// and not support cross pop/put operate.
 type heap struct {
 	data [heapsize]*packet.Packet // desc operate
 	idx  atomic.Int32

@@ -7,11 +7,12 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"slices"
 	"strings"
 
-	"github.com/lysShub/fatun/config"
+	"github.com/lysShub/fatun/fatun"
 	"github.com/lysShub/fatun/fatun/client"
 	"github.com/lysShub/fatun/sconn"
 	"github.com/lysShub/fatun/sconn/crypto"
@@ -26,26 +27,39 @@ func main() {
 	   	add aces.exe
 	*/
 
-	cfg := &config.Config{
-		// Server: "172.24.131.26:443",
-
-		MTU: 1536,
-		Key: &sconn.Sign{
-			Sign: []byte("0123456789abcdef"),
-			Parser: func(sign []byte) (crypto.Key, error) {
-				return crypto.Key{9: 1}, nil
-			},
-		},
-		PSS: "a.pss",
-		Log: "client.log",
-	}
-
-	acfg, err := cfg.Config()
+	fh, err := os.Create("client.log")
 	if err != nil {
 		panic(err)
 	}
+	defer fh.Close()
 
-	c, err := client.Proxy(context.Background(), cfg.Server, acfg)
+	var (
+		proxy = "172.24.131.26:443"
+
+		cfg = &fatun.Config{
+			Config: &sconn.Config{
+				Key: &sconn.Sign{
+					Sign: []byte("0123456789abcdef"),
+					Parser: func(ctx context.Context, sign []byte) (crypto.Key, error) {
+						return crypto.Key{9: 1}, nil
+					},
+				},
+				PSS: func() sconn.PrevSegmets {
+					var pss sconn.PrevSegmets
+					if err := pss.Unmarshal("a.pss"); err != nil {
+						panic(err)
+					}
+					return pss
+				}(),
+				MaxRecvBuffSize: 1536,
+				MTU:             1500,
+			},
+
+			Logger: slog.New(slog.NewJSONHandler(fh, nil)),
+		}
+	)
+
+	c, err := client.Proxy(context.Background(), proxy, cfg)
 	if err != nil {
 		panic(err)
 	}

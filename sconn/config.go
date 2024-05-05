@@ -25,18 +25,27 @@ type Config struct {
 	// exchange secret key
 	Key KeyExchange
 
+	// fatun read from rawsock.RawConn with MaxRecvBuffSize bytes capacity,
+	// RawConn will merge MF ip packet automaticly, so mss possible greater than mtu sometimes.
+	// generally set it to mtu is sufficient.
+	MaxRecvBuffSize int
+
+	// only use by gvisor LinkEndpoint
 	MTU int
 
 	RecvErrLimit int
 }
 
-func (c *Config) init() error {
+func (c *Config) Init() error {
 	if c == nil {
-		return errors.New("xx")
+		panic("nil config")
 	}
 
+	if c.MaxRecvBuffSize <= 0 {
+		c.MaxRecvBuffSize = 1536
+	}
 	if c.MTU <= 0 {
-		return errors.New("invalid mtu")
+		c.MTU = 1360
 	}
 	if c.RecvErrLimit == 0 {
 		c.RecvErrLimit = 8
@@ -190,8 +199,10 @@ type KeyExchange interface {
 // Sign sign can't guarantee transport security
 type Sign struct {
 	Sign   []byte
-	Parser func(sign []byte) (crypto.Key, error)
+	Parser Parser
 }
+
+type Parser func(context.Context, []byte) (crypto.Key, error)
 
 func (t *Sign) Client(ctx context.Context, conn net.Conn) (crypto.Key, error) {
 	stop := context.AfterFunc(ctx, func() {
@@ -199,7 +210,7 @@ func (t *Sign) Client(ctx context.Context, conn net.Conn) (crypto.Key, error) {
 	})
 	defer stop()
 
-	key, err := t.Parser(t.Sign)
+	key, err := t.Parser(ctx, t.Sign)
 	if err != nil {
 		return crypto.Key{}, err
 	}
@@ -234,5 +245,5 @@ func (t *Sign) Server(ctx context.Context, conn net.Conn) (crypto.Key, error) {
 		}
 	}
 
-	return t.Parser(sign)
+	return t.Parser(ctx, sign)
 }

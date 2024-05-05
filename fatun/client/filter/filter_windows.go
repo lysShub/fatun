@@ -13,10 +13,7 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/lysShub/fatun/session"
-	"github.com/lysShub/netkit/debug"
 	"github.com/lysShub/netkit/packet"
-	"github.com/lysShub/rawsock/test"
-	"github.com/stretchr/testify/require"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
@@ -43,11 +40,6 @@ func (f *filter) Close() error { return nil }
 
 func (f *filter) Hit(ip *packet.Packet) (bool, error) {
 	id := session.FromIP(ip.Bytes())
-	if debug.Debug() {
-		require.True(test.T(),
-			id.Src.Addr().IsPrivate() || id.Src.Addr().IsUnspecified() || id.Src.Addr().IsLoopback(),
-		)
-	}
 	if id.Dst.Addr().IsLoopback() || id.Dst.Addr().IsMulticast() {
 		return false, nil
 	}

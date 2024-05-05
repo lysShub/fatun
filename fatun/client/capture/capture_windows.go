@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 
 	"github.com/lysShub/divert-go"
+	"github.com/lysShub/fatun/fatun"
 	"github.com/lysShub/netkit/packet"
 )
 
@@ -62,10 +63,10 @@ func (s *capture) close(cause error) error {
 }
 
 func (c *capture) captureService() error {
-	var ip = packet.Make(32, c.c.MTU())
+	var ip = packet.Make(c.c.MaxRecvBuffSize())
 
 	for {
-		n, err := c.handle.RecvCtx(c.srvCtx, ip.Sets(32, 0xffff).Bytes(), &c.addr)
+		n, err := c.handle.RecvCtx(c.srvCtx, ip.Sets(fatun.Overhead, 0xffff).Bytes(), &c.addr)
 		if err != nil {
 			return c.close(err)
 		}

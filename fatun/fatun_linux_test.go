@@ -5,33 +5,23 @@ package fatun_test
 
 import (
 	"context"
+	"log/slog"
+	"os"
 	"testing"
 
-	"github.com/lysShub/fatun/config"
+	"github.com/lysShub/fatun/fatun"
 	"github.com/lysShub/fatun/fatun/server"
-	"github.com/lysShub/fatun/sconn"
-	"github.com/lysShub/fatun/sconn/crypto"
 	"github.com/stretchr/testify/require"
 )
 
 func TestXxxx(t *testing.T) {
 	// monkey.Patch(debug.Debug, func() bool { return false })
 
-	cfg := &config.Config{
-		MTU: 1536,
-		PSS: `./a.pss`,
-		Key: &sconn.Sign{
-			Sign: []byte("0123456789abcdef"),
-			Parser: func(sign []byte) (crypto.Key, error) {
-				return crypto.Key{9: 1}, nil
-			},
-		},
-		// Log: "stdout",
+	cfg := &fatun.Config{
+		Config: cfg,
+		Logger: slog.New(slog.NewJSONHandler(os.Stdout, nil)),
 	}
 
-	c, err := cfg.Config()
-	require.NoError(t, err)
-
-	err = server.ListenAndServe(context.Background(), ":443", c)
+	err := server.ListenAndServe(context.Background(), ":443", cfg)
 	require.NoError(t, err)
 }

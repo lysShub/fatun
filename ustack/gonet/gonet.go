@@ -336,7 +336,7 @@ type opErrorer interface {
 func commonRead(ctx context.Context, b []byte, ep tcpip.Endpoint, wq *waiter.Queue, deadline <-chan struct{}, addr *tcpip.FullAddress, errorer opErrorer) (int, error) {
 	select {
 	case <-deadline:
-		return 0, errorer.newOpError("read", os.ErrDeadlineExceeded)
+		return 0, errorer.newOpError("read", errors.WithStack(os.ErrDeadlineExceeded))
 	case <-ctx.Done():
 		return 0, errors.WithStack(ctx.Err())
 	default:
@@ -358,7 +358,7 @@ func commonRead(ctx context.Context, b []byte, ep tcpip.Endpoint, wq *waiter.Que
 			}
 			select {
 			case <-deadline:
-				return 0, errorer.newOpError("read", os.ErrDeadlineExceeded)
+				return 0, errorer.newOpError("read", errors.WithStack(os.ErrDeadlineExceeded))
 			case <-ctx.Done():
 				return 0, errors.WithStack(ctx.Err())
 			case <-notifyCh:
@@ -370,7 +370,7 @@ func commonRead(ctx context.Context, b []byte, ep tcpip.Endpoint, wq *waiter.Que
 		return 0, io.EOF
 	}
 	if _, ok := err.(*tcpip.ErrConnectionReset); ok {
-		return 0, errorer.newOpError("read", ErrConnectReset)
+		return 0, errorer.newOpError("read", errors.WithStack(ErrConnectReset))
 	}
 
 	if err != nil {
@@ -403,7 +403,7 @@ func (c *TCPConn) Write(b []byte) (int, error) {
 	// Check if deadlineTimer has already expired.
 	select {
 	case <-deadline:
-		return 0, c.newOpError("write", os.ErrDeadlineExceeded)
+		return 0, c.newOpError("write", errors.WithStack(os.ErrDeadlineExceeded))
 	default:
 	}
 
@@ -441,7 +441,7 @@ func (c *TCPConn) Write(b []byte) (int, error) {
 				// the notification.
 				select {
 				case <-deadline:
-					return nbytes, c.newOpError("write", os.ErrDeadlineExceeded)
+					return nbytes, c.newOpError("write", errors.WithStack(os.ErrDeadlineExceeded))
 				case <-ch:
 					continue
 				}
@@ -572,13 +572,13 @@ func (c *TCPConn) WaitBeforeDataTransmitted(ctx context.Context) (sndnxt, rcvnxt
 }
 
 func (c *TCPConn) newOpError(op string, err error) error {
-	return errors.WithStack(&net.OpError{
+	return &net.OpError{
 		Op:     op,
 		Net:    "tcp",
 		Source: c.LocalAddr(),
 		Addr:   c.RemoteAddr(),
 		Err:    err,
-	})
+	}
 }
 
 func fullToTCPAddr(addr tcpip.FullAddress) *net.TCPAddr {

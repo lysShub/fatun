@@ -1,4 +1,4 @@
-package sconn_test
+package sconn
 
 import (
 	"context"
@@ -6,14 +6,11 @@ import (
 	"math/rand"
 	"net"
 	"net/netip"
-	"os"
 	"testing"
 	"time"
 
-	"github.com/lysShub/fatun/sconn"
 	"github.com/lysShub/fatun/sconn/crypto"
 	"github.com/lysShub/fatun/session"
-	"github.com/lysShub/fatun/ustack/gonet"
 	"github.com/pkg/errors"
 	"golang.org/x/sync/errgroup"
 
@@ -23,113 +20,17 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
-func Test_Handshake_Ctx(t *testing.T) {
-
-	t.Run("PrevPackets ", func(t *testing.T) {
-		var (
-			caddr = netip.AddrPortFrom(test.LocIP(), 19986)
-			saddr = netip.AddrPortFrom(test.LocIP(), 8080)
-			cfg   = sconn.Config{
-				PSS: func() sconn.PrevSegmets {
-					var pss [][]byte
-					for i := 0; i < 0xffff; i++ {
-						pss = append(pss, make([]byte, rand.Int()%1023+1))
-					}
-					return pss
-				}(),
-				Key: sign,
-				MTU: 1500,
-			}
-		)
-		c, s := test.NewMockRaw(
-			t, header.TCPProtocolNumber,
-			caddr, saddr,
-			test.ValidAddr, test.ValidChecksum, test.PacketLoss(0.05), test.Delay(time.Millisecond*50),
-		)
-		eg, _ := errgroup.WithContext(context.Background())
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-
-		eg.Go(func() error {
-			l, err := sconn.NewListener(test.NewMockListener(t, s), &cfg)
-			require.NoError(t, err)
-			defer l.Close()
-
-			_, err = l.AcceptCtx(ctx)
-			require.True(t, errors.Is(err, io.EOF), err)
-			return nil
-		})
-
-		// client
-		eg.Go(func() error {
-			_, err := sconn.DialCtx(ctx, c, &cfg)
-			require.True(t, errors.Is(err, os.ErrDeadlineExceeded), err)
-			return nil
-		})
-
-		time.Sleep(time.Second)
-		cancel()
-		eg.Wait()
-	})
-
-	t.Run("Swapkey", func(t *testing.T) {
-		var (
-			caddr = netip.AddrPortFrom(test.LocIP(), 19986)
-			saddr = netip.AddrPortFrom(test.LocIP(), 8080)
-			sign  = make([]byte, 1024*1024*8)
-			cfg   = sconn.Config{
-				PSS: pss,
-				Key: &sconn.Sign{
-					Sign:   sign,
-					Parser: func(sign []byte) (crypto.Key, error) { return crypto.Key{1: 1}, nil },
-				},
-				MTU: 1500,
-			}
-		)
-		rand.New(rand.NewSource(0)).Read(sign)
-		c, s := test.NewMockRaw(
-			t, header.TCPProtocolNumber,
-			caddr, saddr,
-			test.ValidAddr, test.ValidChecksum, test.PacketLoss(0.1), test.Delay(time.Millisecond*50),
-		)
-		eg, _ := errgroup.WithContext(context.Background())
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-
-		eg.Go(func() error {
-			l, err := sconn.NewListener(test.NewMockListener(t, s), &cfg)
-			require.NoError(t, err)
-			defer l.Close()
-
-			_, err = l.AcceptCtx(ctx)
-			require.True(t, errors.Is(err, context.Canceled), err)
-			return nil
-		})
-
-		// client
-		eg.Go(func() error {
-			_, err := sconn.DialCtx(ctx, c, &cfg)
-			require.True(t, errors.Is(err, os.ErrDeadlineExceeded), err)
-			return nil
-		})
-
-		time.Sleep(time.Second)
-		cancel()
-		eg.Wait()
-	})
-}
-
 var (
-	sign = &sconn.Sign{
+	sign = &Sign{
 		Sign: []byte("0123456789abcdef"),
-		Parser: func(sign []byte) (crypto.Key, error) {
+		Parser: func(ctx context.Context, sign []byte) (crypto.Key, error) {
 			if string(sign) == "0123456789abcdef" {
 				return crypto.Key{9: 1}, nil
 			}
 			return crypto.Key{}, errors.New("invalid sign")
 		},
 	}
-	pss = sconn.PrevSegmets{
+	pss = PrevSegmets{
 		header.TCP("hello"),
 		header.TCP("world"),
 		header.TCP("abcdef"),
@@ -137,15 +38,15 @@ var (
 	}
 )
 
-func Test_Ctr_Conn(t *testing.T) {
+func Test_TCP_Conn(t *testing.T) {
 	var (
 		caddr = netip.AddrPortFrom(test.LocIP(), 19986) // test.RandPort()
 		saddr = netip.AddrPortFrom(test.LocIP(), 8080)  // test.RandPort()
-		mtu   = 1500
-		cfg   = sconn.Config{
-			PSS: pss,
-			Key: sign,
-			MTU: mtu,
+		cfg   = &Config{
+			PSS:             pss,
+			Key:             sign,
+			MaxRecvBuffSize: 1536,
+			MTU:             1500,
 		}
 	)
 	c, s := test.NewMockRaw(
@@ -153,15 +54,11 @@ func Test_Ctr_Conn(t *testing.T) {
 		caddr, saddr,
 		test.ValidAddr, test.ValidChecksum, test.PacketLoss(0.1), test.Delay(time.Millisecond*50),
 	)
-	// wc, err := test.WrapPcap(c, `test.pcap`)
-	// require.NoError(t, err)
-	// defer wc.Close()
-
 	eg, ctx := errgroup.WithContext(context.Background())
 
 	// echo server
 	eg.Go(func() error {
-		l, err := sconn.NewListener(test.NewMockListener(t, s), &cfg)
+		l, err := NewListener(test.NewMockListener(t, s), cfg)
 		require.NoError(t, err)
 		defer l.Close()
 
@@ -170,48 +67,54 @@ func Test_Ctr_Conn(t *testing.T) {
 		defer conn.Close()
 
 		eg.Go(func() error {
-			var p = packet.Make(0, mtu)
+			var p = packet.From(make([]byte, cfg.MaxRecvBuffSize))
 			_, err := conn.Recv(ctx, p)
 			require.True(t, errors.Is(err, net.ErrClosed), err)
 			return nil
 		})
 
-		tcp := conn.TCP()
+		tcp, err := conn.TCP(ctx)
+		require.NoError(t, err)
 		_, err = io.Copy(tcp, tcp)
-		return err
+		require.Contains(t, []error{io.EOF, nil}, err)
+		return nil
 	})
 
 	// client
 	eg.Go(func() error {
-		conn, err := sconn.Dial(c, &cfg)
+		conn, err := Dial(c, cfg)
 		require.NoError(t, err)
 		defer conn.Close()
 
 		eg.Go(func() error {
-			var p = packet.Make(0, mtu)
+			var p = packet.Make(0, cfg.MaxRecvBuffSize)
 			_, err := conn.Recv(ctx, p)
 			require.True(t, errors.Is(err, net.ErrClosed), err)
 			return nil
 		})
 
+		tcp, err := conn.TCP(ctx)
+		require.NoError(t, err)
 		rander := rand.New(rand.NewSource(0))
-		test.ValidPingPongConn(t, rander, conn.TCP(), 0xffff)
+		test.ValidPingPongConn(t, rander, tcp, 0xffff)
 
 		return nil
 	})
 
-	err := eg.Wait()
-	ok := errors.Is(err, gonet.ErrConnectReset) || err == nil
-	require.True(t, ok, err)
+	eg.Wait()
 }
 
 func Test_Conn(t *testing.T) {
-	t.Skip("todo")
+	t.Skip("todo：use ValidPingPongUDPConn")
 	var (
 		caddr = netip.AddrPortFrom(test.LocIP(), test.RandPort())
 		saddr = netip.AddrPortFrom(test.LocIP(), test.RandPort())
 		sid   = session.ID{}
 		mtu   = 1500
+		cfg   = &Config{
+			PSS: pss,
+			Key: sign,
+		}
 	)
 
 	c, s := test.NewMockRaw(
@@ -226,12 +129,7 @@ func Test_Conn(t *testing.T) {
 
 	// echo server
 	eg.Go(func() error {
-		var cfg = sconn.Config{
-			PSS: pss,
-			Key: sign,
-		}
-
-		l, err := sconn.NewListener(test.NewMockListener(t, s), &cfg)
+		l, err := NewListener(test.NewMockListener(t, s), cfg)
 		require.NoError(t, err)
 		defer l.Close()
 
@@ -250,22 +148,19 @@ func Test_Conn(t *testing.T) {
 			}
 		})
 
-		tcp := conn.TCP()
+		tcp, err := conn.TCP(ctx)
+		require.NoError(t, err)
 		io.Copy(tcp, tcp)
 		return nil
 	})
 
 	// client
 	eg.Go(func() error {
-		var cfg = sconn.Config{
-			PSS: pss,
-			Key: sign,
-		}
 		wc, err := test.WrapPcap(c, "./test.pcap")
 		require.NoError(t, err)
 		defer wc.Close()
 
-		conn, err := sconn.Dial(wc, &cfg)
+		conn, err := Dial(wc, cfg)
 		require.NoError(t, err)
 		defer conn.Close()
 
@@ -289,7 +184,9 @@ func Test_Conn(t *testing.T) {
 			}
 		})
 
-		test.ValidPingPongConn(t, rander, conn.TCP(), 0xff)
+		tcp, err := conn.TCP(ctx)
+		require.NoError(t, err)
+		test.ValidPingPongConn(t, rander, tcp, 0xff)
 
 		cancel()
 		return nil

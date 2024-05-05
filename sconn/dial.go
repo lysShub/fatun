@@ -8,21 +8,21 @@ import (
 	"github.com/lysShub/rawsock"
 )
 
-func Dial(raw rawsock.RawConn, cfg *Config) (*Conn, error) {
-	return DialCtx(context.Background(), raw, cfg)
+func Dial(raw rawsock.RawConn, config *Config) (*Conn, error) {
+	return DialCtx(context.Background(), raw, config)
 }
 
-func DialCtx(ctx context.Context, raw rawsock.RawConn, cfg *Config) (*Conn, error) {
-	return dial(ctx, raw, cfg)
+func DialCtx(ctx context.Context, raw rawsock.RawConn, config *Config) (*Conn, error) {
+	return dial(ctx, raw, config)
 }
 
-func dial(ctx context.Context, raw rawsock.RawConn, cfg *Config) (*Conn, error) {
-	if err := cfg.init(); err != nil {
+func dial(ctx context.Context, raw rawsock.RawConn, config *Config) (*Conn, error) {
+	if err := config.Init(); err != nil {
 		return nil, err
 	}
 
 	stack, err := ustack.NewUstack(
-		link.NewList(8, cfg.MTU-Overhead),
+		link.NewList(8, config.MTU-Overhead),
 		raw.LocalAddr().Addr(),
 	)
 	if err != nil {
@@ -35,7 +35,7 @@ func dial(ctx context.Context, raw rawsock.RawConn, cfg *Config) (*Conn, error) 
 		return nil, err
 	}
 
-	conn, err := newConn(raw, ep, client, cfg)
+	conn, err := newConn(raw, ep, client, config)
 	if err != nil {
 		return nil, conn.close(err)
 	}

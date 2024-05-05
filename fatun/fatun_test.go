@@ -1,8 +1,8 @@
 package fatun_test
 
 import (
+	"context"
 	"encoding/binary"
-	"net/netip"
 	"testing"
 
 	"github.com/lysShub/fatun/fatun"
@@ -13,28 +13,20 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
-var (
-	caddr = netip.AddrPortFrom(netip.AddrFrom4([4]byte{
-		// 172, 25, 32, 1,
-		172, 24, 128, 1,
-	}), 19986)
-
-	saddr = netip.AddrPortFrom(netip.AddrFrom4([4]byte{
-		// 172, 25, 38, 4,
-		172, 24, 131, 26,
-	}), 8080)
-)
-
-var sign = &sconn.Sign{
-	Sign: []byte("0123456789abcdef"),
-	Parser: func(sign []byte) (crypto.Key, error) {
-		return crypto.Key{9: 1}, nil
+var cfg = &sconn.Config{
+	Key: &sconn.Sign{
+		Sign: []byte("0123456789abcdef"),
+		Parser: func(ctx context.Context, sign []byte) (crypto.Key, error) {
+			return crypto.Key{9: 1}, nil
+		},
 	},
-}
-
-var pss = sconn.PrevSegmets{
-	header.TCP("hello"),
-	header.TCP("world"),
+	PSS: func() sconn.PrevSegmets {
+		var pss sconn.PrevSegmets
+		if err := pss.Unmarshal("a.pss"); err != nil {
+			panic(err)
+		}
+		return pss
+	}(),
 }
 
 func Test_UpdateMSS(t *testing.T) {

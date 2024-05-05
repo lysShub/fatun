@@ -24,7 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
-func ListenAndServe(ctx context.Context, addr string, cfg *fatun.Config) error {
+func ListenAndServe(ctx context.Context, addr string, config *fatun.Config) error {
 	var laddr netip.AddrPort
 	if addr, err := net.ResolveTCPAddr("tcp", addr); err != nil {
 		return errors.WithStack(err)
@@ -44,12 +44,12 @@ func ListenAndServe(ctx context.Context, addr string, cfg *fatun.Config) error {
 		return err
 	}
 	defer raw.Close()
-	l, err := sconn.NewListener(raw, cfg.Config)
+	l, err := sconn.NewListener(raw, config.Config)
 	if err != nil {
 		return err
 	}
 
-	s, err := NewServer(l, cfg)
+	s, err := NewServer(l, config)
 	if err != nil {
 		return err
 	}
@@ -58,7 +58,7 @@ func ListenAndServe(ctx context.Context, addr string, cfg *fatun.Config) error {
 }
 
 type Server struct {
-	cfg           *fatun.Config
+	config        *fatun.Config
 	laddrChecksum uint16
 
 	l *sconn.Listener
@@ -69,10 +69,10 @@ type Server struct {
 	m *ttlmap
 }
 
-func NewServer(l *sconn.Listener, cfg *fatun.Config) (*Server, error) {
+func NewServer(l *sconn.Listener, config *fatun.Config) (*Server, error) {
 	var err error
 	var s = &Server{
-		cfg:           cfg,
+		config:        config,
 		l:             l,
 		laddrChecksum: checksum.Checksum(l.Addr().Addr().AsSlice(), 0),
 
@@ -103,7 +103,7 @@ func (s *Server) close(cause error) error {
 }
 
 func (s *Server) Serve(ctx context.Context) error {
-	s.cfg.Logger.Info("start", slog.String("addr", s.l.Addr().String()), slog.Bool("debug", debug.Debug()))
+	s.config.Logger.Info("start", slog.String("addr", s.l.Addr().String()), slog.Bool("debug", debug.Debug()))
 
 	for {
 		conn, err := s.l.AcceptCtx(ctx)
@@ -111,16 +111,16 @@ func (s *Server) Serve(ctx context.Context) error {
 			return err
 		}
 
-		s.cfg.Logger.Info("accept", "client", conn.RemoteAddr().String())
+		s.config.Logger.Info("accept", "client", conn.RemoteAddr().String())
 		go proxyer.Proxy(ctx, proxyerImplPtr(s), conn)
 	}
 }
 
 func (s *Server) recvService(conn *net.IPConn) error {
-	var pkt = packet.Make(32, s.cfg.MTU)
+	var pkt = packet.Make(s.config.MaxRecvBuffSize)
 
 	for {
-		n, err := conn.Read(pkt.Sets(32, 0xffff).Bytes())
+		n, err := conn.Read(pkt.Sets(fatun.Overhead, 0xffff).Bytes())
 		if err != nil {
 			return s.close(err)
 		}
