@@ -5,9 +5,10 @@ go 1.21
 require golang.org/x/sys v0.19.0
 
 require (
-	github.com/lysShub/divert-go v0.0.0-20240415114628-03a432d8c814
+	github.com/google/gopacket v1.1.19
+	github.com/lysShub/divert-go v0.0.0-20240505203543-cdad175fca17
 	github.com/lysShub/netkit v0.0.0-20240502161710-8c1530e4591a
-	github.com/lysShub/rawsock v0.0.0-20240502182936-70d43694b24d
+	github.com/lysShub/rawsock v0.0.0-20240505211008-89817715024d
 	github.com/stretchr/testify v1.9.0
 	golang.org/x/net v0.20.0
 	golang.org/x/sync v0.5.0
@@ -17,7 +18,6 @@ require (
 require (
 	github.com/go-ole/go-ole v1.2.6 // indirect
 	github.com/go-ping/ping v1.1.0 // indirect
-	github.com/google/gopacket v1.1.19 // indirect
 	github.com/google/uuid v1.4.0 // indirect
 	github.com/josharian/native v1.0.0 // indirect
 	github.com/kr/text v0.2.0 // indirect
