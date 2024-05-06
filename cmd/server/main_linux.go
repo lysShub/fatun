@@ -15,7 +15,8 @@ import (
 	"github.com/lysShub/fatun/sconn/crypto"
 )
 
-// go run -tags  debug  .
+// go run -tags "-race debug"  .
+// nohup go run -tags "-race debug" . &
 func main() {
 
 	var (

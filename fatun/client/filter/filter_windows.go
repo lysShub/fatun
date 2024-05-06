@@ -1,7 +1,6 @@
 package filter
 
 import (
-	"net/netip"
 	"slices"
 	"strings"
 	"sync"
@@ -20,7 +19,7 @@ import (
 type filter struct {
 	// default rule
 	defaultEnable atomic.Bool
-	tcps          *tcpSyn
+	def           *defaultFilter
 
 	dnsEnable atomic.Bool
 
@@ -32,7 +31,7 @@ type filter struct {
 
 func newFilter() *filter {
 	return &filter{
-		tcps: newAddrSyn(time.Second * 15),
+		def: NewDefaultFiler(3, time.Second*30),
 	}
 }
 
@@ -54,13 +53,8 @@ func (f *filter) Hit(ip *packet.Packet) (bool, error) {
 				tcp = header.IPv6(ip.Bytes()).Payload()
 			}
 
-			if tcp.Flags() == header.TCPFlagSyn {
-				// todo: from config
-				const maxsyn = 3
-				n := f.tcps.Upgrade(id.Src)
-				if n >= maxsyn {
-					return true, nil
-				}
+			if f.def.Filter(id.Src, tcp.Flags()) {
+				return true, nil
 			}
 		default:
 		}
@@ -142,47 +136,4 @@ func (f *filter) Filters() []string {
 		fs = append([]string{DNSFilter}, fs...)
 	}
 	return fs
-}
-
-type tcpSyn struct {
-	mu        sync.RWMutex
-	addrs     map[netip.AddrPort]uint8
-	times     *fatun.Heap[info]
-	keepalive time.Duration
-}
-
-func newAddrSyn(keepalive time.Duration) *tcpSyn {
-	return &tcpSyn{
-		addrs:     map[netip.AddrPort]uint8{},
-		times:     fatun.NewHeap[info](64),
-		keepalive: keepalive,
-	}
-}
-
-func (t *tcpSyn) Upgrade(addr netip.AddrPort) uint8 {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	// clear expired addr
-	i := t.times.Peek()
-	for i.valid() && time.Since(i.Time) > t.keepalive {
-		delete(t.addrs, t.times.Pop().AddrPort)
-		i = t.times.Peek()
-	}
-
-	n, has := t.addrs[addr]
-	t.addrs[addr] = n + 1
-	if !has {
-		t.times.Put(info{addr, time.Now()})
-	}
-	return n + 1
-}
-
-type info struct {
-	netip.AddrPort
-	time.Time
-}
-
-func (i info) valid() bool {
-	return i.Time != time.Time{} && i.AddrPort.IsValid()
 }

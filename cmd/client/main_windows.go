@@ -20,7 +20,7 @@ import (
 
 // todo: support config
 
-// go run -tags  debug  .
+// go run -tags "-race debug"  .
 func main() {
 	/*
 	    add launcher.exe
