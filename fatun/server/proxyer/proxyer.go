@@ -88,9 +88,9 @@ func (p *Proxyer) close(cause error) error {
 
 		if cause != nil {
 			if errorx.Temporary(cause) {
-				p.server.Logger().Warn(cause.Error())
+				p.server.Logger().Warn(cause.Error(), slog.String("client", p.conn.RemoteAddr().String()))
 			} else {
-				p.server.Logger().Error(cause.Error(), errorx.TraceAttr(cause))
+				p.server.Logger().Error(cause.Error(), slog.String("client", p.conn.RemoteAddr().String()), errorx.TraceAttr(cause))
 			}
 			p.closeErr.Store(&cause)
 		}

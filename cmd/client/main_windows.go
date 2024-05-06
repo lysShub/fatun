@@ -34,7 +34,7 @@ func main() {
 	defer fh.Close()
 
 	var (
-		// proxy = "172.24.131.26:443"
+		proxy = "172.24.131.26:443"
 
 		cfg = &fatun.Config{
 			Config: &sconn.Config{
