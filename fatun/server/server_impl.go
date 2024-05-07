@@ -5,6 +5,7 @@ package server
 
 import (
 	"log/slog"
+	"net/netip"
 
 	"github.com/lysShub/fatun/fatun/server/proxyer"
 	"github.com/lysShub/fatun/session"
@@ -21,7 +22,9 @@ func (s *proxyerImpl) AddSession(sess session.Session, pxy proxyer.Proxyer) erro
 	err := s.m.Add(sess, pxy)
 	return err
 }
-
 func (s *proxyerImpl) Send(sess session.Session, pkt *packet.Packet) error {
 	return (*Server)(s).send(sess, pkt)
+}
+func (s *proxyerImpl) Close(client netip.AddrPort) {
+	// ttlkey add clientPort
 }

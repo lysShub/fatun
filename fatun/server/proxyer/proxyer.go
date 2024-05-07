@@ -23,7 +23,7 @@ type Server interface {
 	Logger() *slog.Logger
 	AddSession(sess session.Session, pxy Proxyer) error
 	Send(sess session.Session, pkt *packet.Packet) error
-	// Close(client netip.AddrPort) todo
+	Close(client netip.AddrPort)
 }
 
 type Proxyer interface {
@@ -75,6 +75,10 @@ func New(srv Server, conn *sconn.Conn) (*Proxy, error) {
 
 func (p *Proxy) close(cause error) error {
 	if p.closeErr.CompareAndSwap(nil, &os.ErrClosed) {
+		if p.server != nil {
+			p.server.Close(p.conn.RemoteAddr())
+		}
+
 		if p.ctr != nil {
 			if err := p.ctr.Close(); err != nil {
 				cause = err
