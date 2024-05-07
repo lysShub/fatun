@@ -125,9 +125,9 @@ func (s *Server) close(cause error) error {
 
 		if cause != nil {
 			if errorx.Temporary(cause) {
-				s.config.Logger.Warn(cause.Error(), errorx.TraceAttr(nil))
+				s.config.Logger.Warn(cause.Error(), errorx.Trace(nil))
 			} else {
-				s.config.Logger.Error(cause.Error(), errorx.TraceAttr(cause))
+				s.config.Logger.Error(cause.Error(), errorx.Trace(cause))
 			}
 			s.closeErr.Store(&cause)
 		}
@@ -157,7 +157,7 @@ func (s *Server) recvService(conn *net.IPConn) error {
 		n, err := conn.Read(pkt.Sets(fatun.Overhead, 0xffff).Bytes())
 		if err != nil {
 			if errorx.Temporary(err) {
-				s.config.Logger.Warn(err.Error(), errorx.TraceAttr(nil))
+				s.config.Logger.Warn(err.Error(), errorx.Trace(nil))
 			}
 			return s.close(err)
 		} else if n < header.IPv4MinimumSize {
@@ -165,7 +165,7 @@ func (s *Server) recvService(conn *net.IPConn) error {
 		}
 		pkt.SetData(n)
 		if _, err := helper.IntegrityCheck(pkt.Bytes()); err != nil {
-			s.config.Logger.Warn(err.Error(), errorx.TraceAttr(nil))
+			s.config.Logger.Warn(err.Error(), errorx.Trace(nil))
 			continue
 		}
 
@@ -186,7 +186,7 @@ func (s *Server) recvService(conn *net.IPConn) error {
 			err = p.Downlink(pkt, session.ID{Remote: sess.Src.Addr(), Proto: sess.Proto})
 			if err != nil {
 				if !p.Closed() {
-					s.config.Logger.Error(err.Error(), errorx.TraceAttr(err))
+					s.config.Logger.Error(err.Error(), errorx.Trace(err))
 				}
 
 				// todo: send RST

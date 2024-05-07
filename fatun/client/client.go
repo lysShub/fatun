@@ -154,7 +154,7 @@ func (c *Client) close(cause error) error {
 			if errorx.Temporary(cause) {
 				c.config.Logger.Warn(errors.WithMessage(cause, "session close").Error())
 			} else {
-				c.config.Logger.Error(cause.Error(), errorx.TraceAttr(errors.WithStack(cause)))
+				c.config.Logger.Error(cause.Error(), errorx.Trace(errors.WithStack(cause)))
 			}
 			c.closeErr.Store(&cause)
 		}

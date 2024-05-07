@@ -41,7 +41,7 @@ func ProxyAndServe(ctx context.Context, srv Server, conn *sconn.Conn) {
 	client := conn.RemoteAddr()
 	err = p.Proxy(ctx)
 	if err != nil {
-		p.server.Logger().Error(err.Error(), errorx.TraceAttr(err), errorx.TraceAttr(err))
+		p.server.Logger().Error(err.Error(), errorx.Trace(err), errorx.Trace(err))
 	} else {
 		p.server.Logger().Info("close", "client", client.String())
 	}
@@ -96,7 +96,7 @@ func (p *Proxy) close(cause error) error {
 			if errorx.Temporary(cause) {
 				p.server.Logger().Warn(cause.Error(), slog.String("client", p.conn.RemoteAddr().String()))
 			} else {
-				p.server.Logger().Error(cause.Error(), slog.String("client", p.conn.RemoteAddr().String()), errorx.TraceAttr(cause))
+				p.server.Logger().Error(cause.Error(), slog.String("client", p.conn.RemoteAddr().String()), errorx.Trace(cause))
 			}
 			p.closeErr.Store(&cause)
 		}
@@ -163,7 +163,7 @@ func (p *Proxy) uplinkService() error {
 			if err != nil {
 				p.server.Logger().LogAttrs(p.srvCtx, slog.LevelError, err.Error(),
 					slog.String("clinet", p.conn.RemoteAddr().String()),
-					errorx.TraceAttr(err))
+					errorx.Trace(err))
 			}
 		}
 	}
