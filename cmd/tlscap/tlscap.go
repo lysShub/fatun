@@ -62,7 +62,7 @@ func main() {
 		path = v
 	}
 
-	pss, err := tools.CaptureTLSWithGolang(context.Background(), url, size, mssDelta)
+	pss, err := tools.TLSCap(context.Background(), url, size, mssDelta)
 	if err != nil {
 		fmt.Println("capture:", err.Error())
 		return

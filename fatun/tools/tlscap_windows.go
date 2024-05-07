@@ -21,7 +21,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
-func CaptureTLSWithGolang(partenCtx context.Context, url string, totalSzie, mssDelta int) (sconn.PrevSegmets, error) {
+func TLSCap(partenCtx context.Context, url string, totalSzie, mssDelta int) (sconn.PrevSegmets, error) {
 	u, err := nurl.Parse(url)
 	if err != nil {
 		return nil, err

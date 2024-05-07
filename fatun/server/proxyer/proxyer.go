@@ -21,12 +21,19 @@ import (
 type Server interface {
 	MaxRecvBuffSize() int
 	Logger() *slog.Logger
-	AddSession(sess session.Session, pxy IProxyer) error
+	AddSession(sess session.Session, pxy Proxyer) error
 	Send(sess session.Session, pkt *packet.Packet) error
+	// Close(client netip.AddrPort) todo
 }
 
-func Proxy(ctx context.Context, srv Server, conn *sconn.Conn) {
-	p, err := NewProxyer(srv, conn)
+type Proxyer interface {
+	DelSession(session.Session)
+	Downlink(*packet.Packet, session.ID) error
+	Closed() bool
+}
+
+func ProxyAndServe(ctx context.Context, srv Server, conn *sconn.Conn) {
+	p, err := New(srv, conn)
 	if err != nil {
 		return
 	}
@@ -40,12 +47,7 @@ func Proxy(ctx context.Context, srv Server, conn *sconn.Conn) {
 	}
 }
 
-type IProxyer interface {
-	Downlink(*packet.Packet, session.ID) error
-	DecSession(session.Session)
-}
-
-type Proxyer struct {
+type Proxy struct {
 	conn     *sconn.Conn
 	server   Server
 	sessions atomic.Int32
@@ -58,8 +60,8 @@ type Proxyer struct {
 	closeErr  atomic.Pointer[error]
 }
 
-func NewProxyer(srv Server, conn *sconn.Conn) (*Proxyer, error) {
-	var p = &Proxyer{
+func New(srv Server, conn *sconn.Conn) (*Proxy, error) {
+	var p = &Proxy{
 		conn:   conn,
 		server: srv,
 		start:  time.Now(),
@@ -71,7 +73,7 @@ func NewProxyer(srv Server, conn *sconn.Conn) (*Proxyer, error) {
 	return p, nil
 }
 
-func (p *Proxyer) close(cause error) error {
+func (p *Proxy) close(cause error) error {
 	if p.closeErr.CompareAndSwap(nil, &os.ErrClosed) {
 		if p.ctr != nil {
 			if err := p.ctr.Close(); err != nil {
@@ -99,7 +101,7 @@ func (p *Proxyer) close(cause error) error {
 	return *p.closeErr.Load()
 }
 
-func (p *Proxyer) Proxy(ctx context.Context) error {
+func (p *Proxy) Proxy(ctx context.Context) error {
 	tcp, err := p.conn.TCP(ctx)
 	if err != nil {
 		return p.close(err)
@@ -110,7 +112,7 @@ func (p *Proxyer) Proxy(ctx context.Context) error {
 	return p.close(err)
 }
 
-func (p *Proxyer) uplinkService() error {
+func (p *Proxy) uplinkService() error {
 	var (
 		pkt = packet.Make(p.server.MaxRecvBuffSize())
 	)
@@ -163,15 +165,15 @@ func (p *Proxyer) uplinkService() error {
 	}
 }
 
-func (p *Proxyer) keepalive() {
+func (p *Proxy) keepalive() {
 	if p.sessions.Load() <= 0 && time.Since(p.start) > time.Second {
 		p.close(fatun.ErrKeepaliveExceeded{})
 	}
 	time.AfterFunc(time.Minute*5, p.keepalive)
 }
-func (p *Proxyer) incSession() {
+func (p *Proxy) incSession() {
 	p.sessions.Add(1)
 }
-func (p *Proxyer) decSession() {
+func (p *Proxy) decSession() {
 	p.sessions.Add(-1)
 }

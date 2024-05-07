@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"net/netip"
+	"sync/atomic"
 	"time"
 
 	"github.com/lysShub/fatun/fatun"
@@ -15,7 +16,9 @@ import (
 	"github.com/lysShub/fatun/sconn"
 	"github.com/lysShub/fatun/session"
 	"github.com/lysShub/netkit/debug"
+	"github.com/lysShub/netkit/errorx"
 	"github.com/lysShub/netkit/packet"
+	"github.com/lysShub/rawsock/helper"
 	"github.com/lysShub/rawsock/tcp"
 	"github.com/lysShub/rawsock/test"
 	"github.com/pkg/errors"
@@ -67,6 +70,8 @@ type Server struct {
 	udpSnder *net.IPConn
 
 	m *ttlmap
+
+	closeErr atomic.Pointer[error]
 }
 
 func NewServer(l *sconn.Listener, config *fatun.Config) (*Server, error) {
@@ -99,7 +104,36 @@ func NewServer(l *sconn.Listener, config *fatun.Config) (*Server, error) {
 }
 
 func (s *Server) close(cause error) error {
-	return cause
+	if s.closeErr.CompareAndSwap(nil, &net.ErrClosed) {
+		if s.l != nil {
+			if err := s.l.Close(); err != nil {
+				cause = err
+			}
+		}
+
+		if s.tcpSnder != nil {
+			if err := s.tcpSnder.Close(); err != nil {
+				cause = err
+			}
+		}
+
+		if s.udpSnder != nil {
+			if err := s.udpSnder.Close(); err != nil {
+				cause = err
+			}
+		}
+
+		if cause != nil {
+			if errorx.Temporary(cause) {
+				s.config.Logger.Warn(cause.Error(), errorx.TraceAttr(nil))
+			} else {
+				s.config.Logger.Error(cause.Error(), errorx.TraceAttr(cause))
+			}
+			s.closeErr.Store(&cause)
+		}
+		return cause
+	}
+	return *s.closeErr.Load()
 }
 
 func (s *Server) Serve(ctx context.Context) error {
@@ -112,7 +146,7 @@ func (s *Server) Serve(ctx context.Context) error {
 		}
 
 		s.config.Logger.Info("accept", "client", conn.RemoteAddr().String())
-		go proxyer.Proxy(ctx, proxyerImplPtr(s), conn)
+		go proxyer.ProxyAndServe(ctx, proxyerImplPtr(s), conn)
 	}
 }
 
@@ -122,9 +156,18 @@ func (s *Server) recvService(conn *net.IPConn) error {
 	for {
 		n, err := conn.Read(pkt.Sets(fatun.Overhead, 0xffff).Bytes())
 		if err != nil {
+			if errorx.Temporary(err) {
+				s.config.Logger.Warn(err.Error(), errorx.TraceAttr(nil))
+			}
 			return s.close(err)
+		} else if n < header.IPv4MinimumSize {
+			continue
 		}
 		pkt.SetData(n)
+		if _, err := helper.IntegrityCheck(pkt.Bytes()); err != nil {
+			s.config.Logger.Warn(err.Error(), errorx.TraceAttr(nil))
+			continue
+		}
 
 		sess := session.StripIP(pkt)
 		p, clientPort, has := s.m.Downlink(sess)
@@ -142,7 +185,11 @@ func (s *Server) recvService(conn *net.IPConn) error {
 
 			err = p.Downlink(pkt, session.ID{Remote: sess.Src.Addr(), Proto: sess.Proto})
 			if err != nil {
-				return s.close(err)
+				if !p.Closed() {
+					s.config.Logger.Error(err.Error(), errorx.TraceAttr(err))
+				}
+
+				// todo: send RST
 			}
 		}
 	}

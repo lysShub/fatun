@@ -52,7 +52,7 @@ func (t ttlkey) valid() bool {
 }
 
 type rcvkey struct {
-	proxyer    proxyer.IProxyer
+	proxyer    proxyer.Proxyer
 	clinetPort uint16
 }
 
@@ -100,7 +100,7 @@ func (t *ttlmap) cleanup() {
 		return
 	}
 
-	var pxrs []proxyer.IProxyer
+	var pxrs []proxyer.Proxyer
 	t.rcvMu.Lock()
 	for i, e := range ss {
 		s := session.Session{Src: e.Dst, Proto: e.Proto, Dst: netip.AddrPortFrom(t.addr, lports[i])}
@@ -114,12 +114,12 @@ func (t *ttlmap) cleanup() {
 	}
 	for i, e := range pxrs {
 		if e != nil {
-			e.DecSession(ss[i])
+			e.DelSession(ss[i])
 		}
 	}
 }
 
-func (t *ttlmap) Add(s session.Session, pxy proxyer.IProxyer) error {
+func (t *ttlmap) Add(s session.Session, p proxyer.Proxyer) error {
 	t.cleanup()
 
 	locPort, err := t.ap.GetPort(s.Proto, s.Dst)
@@ -138,7 +138,7 @@ func (t *ttlmap) Add(s session.Session, pxy proxyer.IProxyer) error {
 		Proto: s.Proto,
 		Dst:   netip.AddrPortFrom(t.addr, locPort),
 	}] = rcvkey{
-		proxyer:    pxy,
+		proxyer:    p,
 		clinetPort: s.Src.Port(),
 	}
 	t.rcvMu.Unlock()
@@ -156,7 +156,7 @@ func (t *ttlmap) Uplink(s session.Session) (localPort uint16, has bool) {
 	return p.Port(), true
 }
 
-func (t *ttlmap) Downlink(s session.Session) (pxy proxyer.IProxyer, clientPort uint16, has bool) {
+func (t *ttlmap) Downlink(s session.Session) (pxy proxyer.Proxyer, clientPort uint16, has bool) {
 	t.rcvMu.RLock()
 	defer t.rcvMu.RUnlock()
 

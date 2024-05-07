@@ -13,14 +13,14 @@ import (
 )
 
 func Test_Default_Filter(t *testing.T) {
-	fh, err := os.Open("./default_test.pcap")
+	fh, err := os.Open("./default_test.data")
 	if os.IsNotExist(err) {
-		t.Skip("not exist pcap file")
+		t.Skip("not exist test file")
 	}
 	require.NoError(t, err)
 	defer fh.Close()
 
-	r, err := pcapgo.NewNgReader(fh, pcapgo.NgReaderOptions{})
+	r, err := pcapgo.NewReader(fh)
 	require.NoError(t, err)
 
 	var hits = map[uint16]bool{ // local-port:exist

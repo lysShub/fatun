@@ -8,7 +8,7 @@ import (
 	"github.com/lysShub/netkit/packet"
 )
 
-type controlImpl Proxyer
+type controlImpl Proxy
 
 type controlImplPtr = *controlImpl
 
@@ -33,15 +33,17 @@ func (c *controlImpl) Ping() {
 
 }
 
-type serverImpl Proxyer
+type serverImpl Proxy
 
 func (s *serverImpl) Downlink(pkt *packet.Packet, id session.ID) error {
 	err := s.conn.Send(s.srvCtx, pkt, id)
 	return err
 }
 
-func (s *serverImpl) DecSession(sess session.Session) {
+func (s *serverImpl) DelSession(sess session.Session) {
 	s.server.Logger().Info("del session", slog.String("session", sess.String()))
 
-	(*Proxyer)(s).decSession()
+	(*Proxy)(s).decSession()
 }
+
+func (s *serverImpl) Closed() bool { return s.closeErr.Load() != nil }

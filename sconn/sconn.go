@@ -226,6 +226,10 @@ func (c *Conn) Recv(ctx context.Context, pkt *packet.Packet) (id session.ID, err
 			if c.tinyCnt++; c.tinyCnt > c.config.RecvErrLimit {
 				return session.ID{}, errors.WithStack(&ErrRecvTooManyErrors{err})
 			}
+
+			// todo: temporary
+			err = errors.WithMessage(err, fmt.Sprintf("ip id %d", header.IPv4(pkt.SetHead(head).Bytes()).ID()))
+
 			return session.ID{}, errorx.WrapTemp(err)
 		}
 
