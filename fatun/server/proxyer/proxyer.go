@@ -21,12 +21,19 @@ import (
 type Server interface {
 	MaxRecvBuffSize() int
 	Logger() *slog.Logger
-	AddSession(sess session.Session, pxy IProxyer) error
+	AddSession(sess session.Session, pxy Proxyer) error
 	Send(sess session.Session, pkt *packet.Packet) error
+	Close(client netip.AddrPort)
 }
 
-func Proxy(ctx context.Context, srv Server, conn *sconn.Conn) {
-	p, err := NewProxyer(srv, conn)
+type Proxyer interface {
+	DelSession(session.Session)
+	Downlink(*packet.Packet, session.ID) error
+	Closed() bool
+}
+
+func ProxyAndServe(ctx context.Context, srv Server, conn *sconn.Conn) {
+	p, err := New(srv, conn)
 	if err != nil {
 		return
 	}
@@ -34,18 +41,13 @@ func Proxy(ctx context.Context, srv Server, conn *sconn.Conn) {
 	client := conn.RemoteAddr()
 	err = p.Proxy(ctx)
 	if err != nil {
-		p.server.Logger().Error(err.Error(), errorx.TraceAttr(err), errorx.TraceAttr(err))
+		p.server.Logger().Error(err.Error(), errorx.Trace(err), errorx.Trace(err))
 	} else {
 		p.server.Logger().Info("close", "client", client.String())
 	}
 }
 
-type IProxyer interface {
-	Downlink(*packet.Packet, session.ID) error
-	DecSession(session.Session)
-}
-
-type Proxyer struct {
+type Proxy struct {
 	conn     *sconn.Conn
 	server   Server
 	sessions atomic.Int32
@@ -58,8 +60,8 @@ type Proxyer struct {
 	closeErr  atomic.Pointer[error]
 }
 
-func NewProxyer(srv Server, conn *sconn.Conn) (*Proxyer, error) {
-	var p = &Proxyer{
+func New(srv Server, conn *sconn.Conn) (*Proxy, error) {
+	var p = &Proxy{
 		conn:   conn,
 		server: srv,
 		start:  time.Now(),
@@ -71,8 +73,12 @@ func NewProxyer(srv Server, conn *sconn.Conn) (*Proxyer, error) {
 	return p, nil
 }
 
-func (p *Proxyer) close(cause error) error {
+func (p *Proxy) close(cause error) error {
 	if p.closeErr.CompareAndSwap(nil, &os.ErrClosed) {
+		if p.server != nil {
+			p.server.Close(p.conn.RemoteAddr())
+		}
+
 		if p.ctr != nil {
 			if err := p.ctr.Close(); err != nil {
 				cause = err
@@ -90,7 +96,7 @@ func (p *Proxyer) close(cause error) error {
 			if errorx.Temporary(cause) {
 				p.server.Logger().Warn(cause.Error(), slog.String("client", p.conn.RemoteAddr().String()))
 			} else {
-				p.server.Logger().Error(cause.Error(), slog.String("client", p.conn.RemoteAddr().String()), errorx.TraceAttr(cause))
+				p.server.Logger().Error(cause.Error(), slog.String("client", p.conn.RemoteAddr().String()), errorx.Trace(cause))
 			}
 			p.closeErr.Store(&cause)
 		}
@@ -99,7 +105,7 @@ func (p *Proxyer) close(cause error) error {
 	return *p.closeErr.Load()
 }
 
-func (p *Proxyer) Proxy(ctx context.Context) error {
+func (p *Proxy) Proxy(ctx context.Context) error {
 	tcp, err := p.conn.TCP(ctx)
 	if err != nil {
 		return p.close(err)
@@ -110,7 +116,7 @@ func (p *Proxyer) Proxy(ctx context.Context) error {
 	return p.close(err)
 }
 
-func (p *Proxyer) uplinkService() error {
+func (p *Proxy) uplinkService() error {
 	var (
 		pkt = packet.Make(p.server.MaxRecvBuffSize())
 	)
@@ -157,21 +163,21 @@ func (p *Proxyer) uplinkService() error {
 			if err != nil {
 				p.server.Logger().LogAttrs(p.srvCtx, slog.LevelError, err.Error(),
 					slog.String("clinet", p.conn.RemoteAddr().String()),
-					errorx.TraceAttr(err))
+					errorx.Trace(err))
 			}
 		}
 	}
 }
 
-func (p *Proxyer) keepalive() {
+func (p *Proxy) keepalive() {
 	if p.sessions.Load() <= 0 && time.Since(p.start) > time.Second {
 		p.close(fatun.ErrKeepaliveExceeded{})
 	}
 	time.AfterFunc(time.Minute*5, p.keepalive)
 }
-func (p *Proxyer) incSession() {
+func (p *Proxy) incSession() {
 	p.sessions.Add(1)
 }
-func (p *Proxyer) decSession() {
+func (p *Proxy) decSession() {
 	p.sessions.Add(-1)
 }

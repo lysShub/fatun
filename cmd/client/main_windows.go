@@ -34,7 +34,8 @@ func main() {
 	defer fh.Close()
 
 	var (
-		proxy = "172.24.131.26:443"
+		// proxy = "172.24.131.26:443"
+		proxy = "103.94.185.61:443"
 
 		cfg = &fatun.Config{
 			Config: &sconn.Config{
@@ -91,6 +92,16 @@ func main() {
 			}
 		case "show":
 			fmt.Println("filters: ", strings.Join(c.Filters(), ", "))
+		case "pcap":
+			if ss[1] == "del" {
+				if err := c.DelPcap(); err != nil {
+					fmt.Println("Error: ", err.Error())
+				}
+			} else {
+				if err := c.AddPcap(ss[1]); err != nil {
+					fmt.Println("Error:", err.Error())
+				}
+			}
 		default:
 			fmt.Println("无效参数", ctr)
 		}

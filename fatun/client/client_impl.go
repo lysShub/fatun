@@ -81,6 +81,12 @@ func (c *captureImpl) Hit(ip *packet.Packet) bool {
 			Remote: netip.AddrFrom4(hdr.DestinationAddress().As4()),
 			Proto:  hdr.TransportProtocol(),
 		}
+		if p := c.pcap.Load(); p != nil {
+			if err := p.Outbound(id.Remote, id.Proto, ip.Bytes()); err != nil {
+				panic(err)
+			}
+		}
+
 		if err = c.raw().uplink(c.srvCtx, ip, id); err != nil {
 			if errorx.Temporary(err) {
 				c.config.Logger.Warn(err.Error())

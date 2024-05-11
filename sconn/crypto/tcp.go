@@ -95,7 +95,7 @@ func nonce(tcp []byte) []byte {
 // Deprecated: useless
 func (g *TCP) EncryptRaw(ip *packet.Packet) {
 	if debug.Debug() {
-		test.ValidIP(test.T(), ip.Bytes())
+		test.ValidIP(test.P(), ip.Bytes())
 	}
 
 	var hdrLen int
@@ -124,14 +124,14 @@ func (g *TCP) EncryptRaw(ip *packet.Packet) {
 	}
 
 	if debug.Debug() {
-		test.ValidIP(test.T(), ip.Bytes())
+		test.ValidIP(test.P(), ip.Bytes())
 	}
 }
 
 // Deprecated: useless
 func (g *TCP) DecryptRaw(ip *packet.Packet) error {
 	if debug.Debug() {
-		test.ValidIP(test.T(), ip.Bytes())
+		test.ValidIP(test.P(), ip.Bytes())
 	}
 
 	var hdrLen int
@@ -162,7 +162,7 @@ func (g *TCP) DecryptRaw(ip *packet.Packet) error {
 	}
 
 	if debug.Debug() {
-		test.ValidIP(test.T(), ip.Bytes())
+		test.ValidIP(test.P(), ip.Bytes())
 	}
 	return nil
 }

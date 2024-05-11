@@ -17,14 +17,14 @@ type ttlmap struct {
 	ap       *ports.Adapter
 	duration time.Duration
 
-	// {clinet-addr,proto,server-addr} : local-port
-	sndMap map[session.Session]*port
-	ttl    *fatun.Heap[ttlkey]
-	sndMu  sync.RWMutex
+	// {Src: process-addr, Dst: request-addr} : local-port
+	uplinkMap map[session.Session]*port
+	ttl       *fatun.Heap[ttlkey]
+	uplinkMu  sync.RWMutex
 
-	// {server-addr,proto,local-addr} : Proxyer
-	rcvMap map[session.Session]rcvkey
-	rcvMu  sync.RWMutex
+	// {Src: request-addr, Dst: local-addr} : Proxyer
+	downlinkMap map[session.Session]rcvkey
+	donwlinkMu  sync.RWMutex
 }
 
 func NewTTLMap(ttl time.Duration, addr netip.Addr) *ttlmap {
@@ -33,17 +33,17 @@ func NewTTLMap(ttl time.Duration, addr netip.Addr) *ttlmap {
 		ap:       ports.NewAdapter(addr),
 		duration: ttl,
 
-		sndMap: map[session.Session]*port{},
-		ttl:    fatun.NewHeap[ttlkey](16),
+		uplinkMap: map[session.Session]*port{},
+		ttl:       fatun.NewHeap[ttlkey](16),
 
-		rcvMap: map[session.Session]rcvkey{},
+		downlinkMap: map[session.Session]rcvkey{},
 	}
 
 	return m
 }
 
 type ttlkey struct {
-	s session.Session // {clinet-addr,proto,server-addr}
+	s session.Session // {Src: process-addr, Dst: request-addr}
 	t time.Time
 }
 
@@ -52,7 +52,7 @@ func (t ttlkey) valid() bool {
 }
 
 type rcvkey struct {
-	proxyer    proxyer.IProxyer
+	proxyer    proxyer.Proxyer
 	clinetPort uint16
 }
 
@@ -78,15 +78,15 @@ func (t *ttlmap) cleanup() {
 		ss     []session.Session
 		lports []uint16
 	)
-	t.sndMu.Lock()
+	t.uplinkMu.Lock()
 	for i := 0; i < t.ttl.Size(); i++ {
 		i := t.ttl.Pop()
 		if i.valid() && time.Since(i.t) > t.duration {
-			p := t.sndMap[i.s]
+			p := t.uplinkMap[i.s]
 			if p.Idle() {
 				ss = append(ss, i.s)
 				lports = append(lports, p.Port())
-				delete(t.sndMap, i.s)
+				delete(t.uplinkMap, i.s)
 			} else {
 				t.ttl.Put(ttlkey{i.s, time.Now()})
 			}
@@ -95,31 +95,32 @@ func (t *ttlmap) cleanup() {
 			break
 		}
 	}
-	t.sndMu.Unlock()
+	t.uplinkMu.Unlock()
 	if len(ss) == 0 {
 		return
 	}
 
-	var pxrs []proxyer.IProxyer
-	t.rcvMu.Lock()
+	var pxrs []proxyer.Proxyer
+	t.donwlinkMu.Lock()
 	for i, e := range ss {
 		s := session.Session{Src: e.Dst, Proto: e.Proto, Dst: netip.AddrPortFrom(t.addr, lports[i])}
-		pxrs = append(pxrs, t.rcvMap[s].proxyer)
-		delete(t.rcvMap, s)
+		pxrs = append(pxrs, t.downlinkMap[s].proxyer)
+		delete(t.downlinkMap, s)
 	}
-	t.rcvMu.Unlock()
+	t.donwlinkMu.Unlock()
 
 	for i, e := range ss {
 		t.ap.DelPort(e.Proto, lports[i], e.Dst)
 	}
 	for i, e := range pxrs {
 		if e != nil {
-			e.DecSession(ss[i])
+			e.DelSession(ss[i])
 		}
 	}
 }
 
-func (t *ttlmap) Add(s session.Session, pxy proxyer.IProxyer) error {
+// Add add proxy session, s: {Src: process-addr, Dst: request-addr}
+func (t *ttlmap) Add(s session.Session, p proxyer.Proxyer) error {
 	t.cleanup()
 
 	locPort, err := t.ap.GetPort(s.Proto, s.Dst)
@@ -127,40 +128,42 @@ func (t *ttlmap) Add(s session.Session, pxy proxyer.IProxyer) error {
 		return err
 	}
 
-	t.sndMu.Lock()
-	t.sndMap[s] = NewPort(locPort)
+	t.uplinkMu.Lock()
+	t.uplinkMap[s] = NewPort(locPort)
 	t.ttl.Put(ttlkey{s: s, t: time.Now()})
-	t.sndMu.Unlock()
+	t.uplinkMu.Unlock()
 
-	t.rcvMu.Lock()
-	t.rcvMap[session.Session{
+	t.donwlinkMu.Lock()
+	t.downlinkMap[session.Session{
 		Src:   s.Dst,
 		Proto: s.Proto,
 		Dst:   netip.AddrPortFrom(t.addr, locPort),
 	}] = rcvkey{
-		proxyer:    pxy,
+		proxyer:    p,
 		clinetPort: s.Src.Port(),
 	}
-	t.rcvMu.Unlock()
+	t.donwlinkMu.Unlock()
 
 	return nil
 }
 
+// Uplink get uplink packet local port, s: {Src: process-addr, Dst: request-addr}
 func (t *ttlmap) Uplink(s session.Session) (localPort uint16, has bool) {
-	t.sndMu.RLock()
-	defer t.sndMu.RUnlock()
-	p, has := t.sndMap[s]
+	t.uplinkMu.RLock()
+	defer t.uplinkMu.RUnlock()
+	p, has := t.uplinkMap[s]
 	if !has {
 		return 0, false
 	}
 	return p.Port(), true
 }
 
-func (t *ttlmap) Downlink(s session.Session) (pxy proxyer.IProxyer, clientPort uint16, has bool) {
-	t.rcvMu.RLock()
-	defer t.rcvMu.RUnlock()
+// Downlink get donwlink packet proxyer and client port, s: {Src: request-addr, Dst: local-addr}
+func (t *ttlmap) Downlink(s session.Session) (p proxyer.Proxyer, clientPort uint16, has bool) {
+	t.donwlinkMu.RLock()
+	defer t.donwlinkMu.RUnlock()
 
-	key, has := t.rcvMap[s]
+	key, has := t.downlinkMap[s]
 	if !has {
 		return nil, 0, false
 	}

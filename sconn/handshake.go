@@ -154,7 +154,7 @@ func (c *Conn) handshakeInboundService(ctx context.Context) error {
 		if debug.Debug() {
 			old := pkt.Head()
 			pkt.SetHead(0)
-			test.ValidIP(test.T(), pkt.Bytes())
+			test.ValidIP(test.P(), pkt.Bytes())
 			pkt.SetHead(old)
 		}
 

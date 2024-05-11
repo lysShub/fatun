@@ -2,7 +2,9 @@ package sconn
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/netip"
 	"os"
@@ -226,6 +228,11 @@ func (c *Conn) Recv(ctx context.Context, pkt *packet.Packet) (id session.ID, err
 			if c.tinyCnt++; c.tinyCnt > c.config.RecvErrLimit {
 				return session.ID{}, errors.WithStack(&ErrRecvTooManyErrors{err})
 			}
+
+			// todo: temporary
+			var attr = slog.String("ip", hex.EncodeToString(pkt.SetHead(head).Bytes()))
+			slog.Error(err.Error(), attr)
+
 			return session.ID{}, errorx.WrapTemp(err)
 		}
 

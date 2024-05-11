@@ -20,6 +20,7 @@ import (
 	"github.com/lysShub/fatun/session"
 	"github.com/lysShub/netkit/errorx"
 	"github.com/lysShub/netkit/packet"
+	"github.com/lysShub/netkit/pcap"
 	"github.com/lysShub/rawsock"
 	"github.com/lysShub/rawsock/tcp"
 	dconn "github.com/lysShub/rawsock/tcp/divert"
@@ -42,6 +43,7 @@ type Client struct {
 	inject        *Inject
 	ctr           control.Client
 
+	pcap      atomic.Pointer[pcap.BindPcap]
 	srvCtx    context.Context
 	srvCancel context.CancelFunc
 	closeErr  atomic.Pointer[error]
@@ -152,7 +154,7 @@ func (c *Client) close(cause error) error {
 			if errorx.Temporary(cause) {
 				c.config.Logger.Warn(errors.WithMessage(cause, "session close").Error())
 			} else {
-				c.config.Logger.Error(cause.Error(), errorx.TraceAttr(errors.WithStack(cause)))
+				c.config.Logger.Error(cause.Error(), errorx.Trace(errors.WithStack(cause)))
 			}
 			c.closeErr.Store(&cause)
 		}
@@ -163,11 +165,11 @@ func (c *Client) close(cause error) error {
 
 func (c *Client) downlinkService() error {
 	var (
-		tcp = packet.Make(0, c.config.MaxRecvBuffSize)
+		pkt = packet.Make(0, c.config.MaxRecvBuffSize)
 	)
 
 	for {
-		id, err := c.conn.Recv(c.srvCtx, tcp.SetHead(0))
+		id, err := c.conn.Recv(c.srvCtx, pkt.SetHead(0))
 		if err != nil {
 			if errorx.Temporary(err) {
 				c.config.Logger.Warn(err.Error())
@@ -176,8 +178,22 @@ func (c *Client) downlinkService() error {
 				return c.close(err)
 			}
 		}
+		if p := c.pcap.Load(); p != nil {
 
-		err = c.inject.Inject(tcp, id)
+			switch id.Proto {
+			case header.UDPProtocolNumber:
+				udp := header.UDP(pkt.Bytes())
+				if int(udp.Length()) != len(udp) {
+					panic("abcdefg")
+				}
+			}
+
+			if err := p.Inbound(id.Remote, id.Proto, pkt.Bytes()); err != nil {
+				panic(err)
+			}
+		}
+
+		err = c.inject.Inject(pkt, id)
 		if err != nil {
 			return c.close(err)
 		}
@@ -186,6 +202,32 @@ func (c *Client) downlinkService() error {
 
 func (c *Client) uplink(ctx context.Context, pkt *packet.Packet, id session.ID) error {
 	return c.conn.Send(ctx, pkt, id)
+}
+
+func (c *Client) AddPcap(file string) error {
+	p, err := pcap.File(file)
+	if err != nil {
+		return err
+	}
+
+	b, err := pcap.Bind(p, c.self.Src.Addr())
+	if err != nil {
+		return err
+	}
+
+	if !c.pcap.CompareAndSwap(nil, b) {
+		b.Close()
+		return errors.New("one pcap already exist")
+	}
+	return nil
+}
+
+func (c *Client) DelPcap() error {
+	p := c.pcap.Swap(nil)
+	if p != nil {
+		p.Close()
+	}
+	return nil
 }
 
 func (c *Client) Close() error { return c.close(nil) }

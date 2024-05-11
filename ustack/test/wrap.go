@@ -6,16 +6,16 @@ import (
 
 	"github.com/lysShub/fatun/ustack"
 	"github.com/lysShub/netkit/packet"
-	"github.com/lysShub/rawsock/test"
+	"github.com/lysShub/netkit/pcap"
 )
 
 type UstackPcapWrap struct {
 	ustack.Ustack
-	pcap *test.Pcap
+	pcap *pcap.Pcap
 }
 
 func WrapPcap(file string, child ustack.Ustack) (ustack.Ustack, error) {
-	p, err := test.NewPcap(file)
+	p, err := pcap.File(file)
 	if err != nil {
 		return nil, err
 	}
