@@ -6,8 +6,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/lysShub/fatcp/ports"
 	"github.com/lysShub/fatun"
-	"github.com/lysShub/fatun/server/ports"
 	"github.com/lysShub/fatun/server/proxyer"
 )
 
