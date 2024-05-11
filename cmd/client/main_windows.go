@@ -12,10 +12,11 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/lysShub/fatun/fatun"
-	"github.com/lysShub/fatun/fatun/client"
-	"github.com/lysShub/fatun/sconn"
-	"github.com/lysShub/fatun/sconn/crypto"
+	"github.com/lysShub/fatcp"
+	sconn "github.com/lysShub/fatcp"
+	"github.com/lysShub/fatcp/crypto"
+	"github.com/lysShub/fatun"
+	"github.com/lysShub/fatun/client"
 )
 
 // todo: support config
@@ -38,20 +39,23 @@ func main() {
 		proxy = "103.94.185.61:443"
 
 		cfg = &fatun.Config{
-			Config: &sconn.Config{
-				Key: &sconn.Sign{
-					Sign: []byte("0123456789abcdef"),
-					Parser: func(ctx context.Context, sign []byte) (crypto.Key, error) {
-						return crypto.Key{9: 1}, nil
+			Config: &fatcp.Config{
+				Handshake: &fatun.Sign{
+					Sign: &sconn.Sign{
+						Sign: []byte("0123456789abcdef"),
+						Parser: func(ctx context.Context, sign []byte) (crypto.Key, error) {
+							return crypto.Key{9: 1}, nil
+						},
 					},
+					PSS: func() fatun.PrevSegmets {
+						var pss fatun.PrevSegmets
+						if err := pss.Unmarshal("a.pss"); err != nil {
+							panic(err)
+						}
+						return pss
+					}(),
 				},
-				PSS: func() sconn.PrevSegmets {
-					var pss sconn.PrevSegmets
-					if err := pss.Unmarshal("a.pss"); err != nil {
-						panic(err)
-					}
-					return pss
-				}(),
+
 				MaxRecvBuffSize: 1536,
 				MTU:             1500,
 			},

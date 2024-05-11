@@ -1,7 +1,8 @@
 package internal
 
 import (
-	"github.com/lysShub/fatun/session"
+	sconn "github.com/lysShub/fatcp"
+	"github.com/lysShub/fatun"
 	"github.com/pkg/errors"
 )
 
@@ -33,13 +34,13 @@ type IPv6Resp bool
 type EndConfigReq struct{}
 type EndConfigResp struct{}
 
-type AddSessionReq = session.Session
+type AddSessionReq = fatun.Session
 type AddSessionResp struct {
-	ID  session.ID
+	ID  sconn.Peer
 	Err string
 }
 
-type DelSessionReq = session.ID
+type DelSessionReq = sconn.Peer
 type DelSessionResp struct{}
 
 type PackLossReq struct{}

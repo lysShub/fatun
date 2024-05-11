@@ -12,7 +12,7 @@ import (
 	"strconv"
 
 	"github.com/docker/go-units"
-	"github.com/lysShub/fatun/fatun/tools"
+	"github.com/lysShub/fatun/tools"
 )
 
 func main() {

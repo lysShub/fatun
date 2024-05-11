@@ -8,7 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lysShub/fatun/session"
+	sconn "github.com/lysShub/fatcp"
+	"github.com/lysShub/fatun"
 	"github.com/lysShub/rawsock/test"
 	"github.com/stretchr/testify/require"
 )
@@ -110,10 +111,10 @@ func (h *mockServer) InitConfig(cfg *Config) error {
 	h.InitedCfg = true
 	return nil
 }
-func (h *mockServer) AddSession(s session.Session) (session.ID, error) {
-	return session.ID{}, nil
+func (h *mockServer) AddSession(s fatun.Session) (sconn.Peer, error) {
+	return sconn.Peer{}, nil
 }
-func (h *mockServer) DelSession(id session.ID) error {
+func (h *mockServer) DelSession(id sconn.Peer) error {
 	return nil
 }
 func (h *mockServer) PackLoss() float32 { return 0.01 }

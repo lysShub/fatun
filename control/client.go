@@ -5,8 +5,9 @@ import (
 	"encoding/gob"
 	"net"
 
+	sconn "github.com/lysShub/fatcp"
+	"github.com/lysShub/fatun"
 	"github.com/lysShub/fatun/control/internal"
-	"github.com/lysShub/fatun/session"
 )
 
 // todo: support ctx, e.g: ctr.IPv6(ctx)
@@ -48,7 +49,7 @@ func (c *gobClient) InitConfig(ctx context.Context, cfg *Config) error {
 
 type AddSession internal.AddSessionResp
 
-func (c *gobClient) AddSession(ctx context.Context, s session.Session) (*AddSession, error) {
+func (c *gobClient) AddSession(ctx context.Context, s fatun.Session) (*AddSession, error) {
 	if err := c.nextType(internal.AddSession); err != nil {
 		return nil, err
 	}
@@ -60,7 +61,7 @@ func (c *gobClient) AddSession(ctx context.Context, s session.Session) (*AddSess
 	return (*AddSession)(resp), err
 }
 
-func (c *gobClient) DelSession(ctx context.Context, id session.ID) error {
+func (c *gobClient) DelSession(ctx context.Context, id sconn.Peer) error {
 	if err := c.nextType(internal.DelSession); err != nil {
 		return err
 	}

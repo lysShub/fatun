@@ -4,13 +4,14 @@ import (
 	"context"
 	"net"
 
-	"github.com/lysShub/fatun/session"
+	sconn "github.com/lysShub/fatcp"
+	"github.com/lysShub/fatun"
 )
 
 type Handler interface {
 	InitConfig(cfg *Config) error
-	AddSession(s session.Session) (session.ID, error)
-	DelSession(id session.ID) error
+	AddSession(s fatun.Session) (sconn.Peer, error)
+	DelSession(id sconn.Peer) error
 	PackLoss() float32
 	Ping()
 }
@@ -23,8 +24,8 @@ type Client interface {
 	Close() error
 
 	InitConfig(ctx context.Context, cfg *Config) error
-	AddSession(ctx context.Context, s session.Session) (*AddSession, error)
-	DelSession(ctx context.Context, id session.ID) error
+	AddSession(ctx context.Context, s fatun.Session) (*AddSession, error)
+	DelSession(ctx context.Context, id sconn.Peer) error
 	PackLoss(ctx context.Context) (float32, error)
 	Ping(ctx context.Context) error
 }
