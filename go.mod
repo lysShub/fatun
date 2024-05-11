@@ -7,7 +7,8 @@ require golang.org/x/sys v0.19.0
 require (
 	github.com/google/gopacket v1.1.19
 	github.com/lysShub/divert-go v0.0.0-20240505203543-cdad175fca17
-	github.com/lysShub/netkit v0.0.0-20240507111019-35b7cef4e0e0
+	github.com/lysShub/fatcp v0.0.0-20240511073352-b3ff078abf58
+	github.com/lysShub/netkit v0.0.0-20240511060502-7ea50993e062
 	github.com/lysShub/rawsock v0.0.0-20240506193751-9f04d87014a9
 	github.com/stretchr/testify v1.9.0
 	golang.org/x/net v0.20.0

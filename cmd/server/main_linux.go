@@ -9,10 +9,11 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/lysShub/fatun/fatun"
-	"github.com/lysShub/fatun/fatun/server"
-	"github.com/lysShub/fatun/sconn"
-	"github.com/lysShub/fatun/sconn/crypto"
+	"github.com/lysShub/fatcp"
+	sconn "github.com/lysShub/fatcp"
+	"github.com/lysShub/fatcp/crypto"
+	"github.com/lysShub/fatun"
+	"github.com/lysShub/fatun/server"
 )
 
 // go run -tags "-race debug"  .
@@ -25,20 +26,23 @@ func main() {
 
 		// tood: from config file
 		cfg = &fatun.Config{
-			Config: &sconn.Config{
-				Key: &sconn.Sign{
-					Sign: []byte("0123456789abcdef"),
-					Parser: func(ctx context.Context, sign []byte) (crypto.Key, error) {
-						return crypto.Key{9: 1}, nil
+			Config: &fatcp.Config{
+				Handshake: &fatun.Sign{
+					PSS: func() fatun.PrevSegmets {
+						var pss fatun.PrevSegmets
+						if err := pss.Unmarshal("a.pss"); err != nil {
+							panic(err)
+						}
+						return pss
+					}(),
+
+					Sign: &sconn.Sign{
+						Sign: []byte("0123456789abcdef"),
+						Parser: func(ctx context.Context, sign []byte) (crypto.Key, error) {
+							return crypto.Key{9: 1}, nil
+						},
 					},
 				},
-				PSS: func() sconn.PrevSegmets {
-					var pss sconn.PrevSegmets
-					if err := pss.Unmarshal("a.pss"); err != nil {
-						panic(err)
-					}
-					return pss
-				}(),
 			},
 
 			Logger: slog.New(slog.NewJSONHandler(os.Stdout, nil)),
