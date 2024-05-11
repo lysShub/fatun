@@ -50,7 +50,6 @@ func (s *Sign) Client(ctx context.Context, tcp net.Conn) (crypto.Key, error) {
 	if err := s.PSS.Client(ctx, tcp); err != nil {
 		return crypto.Key{}, err
 	}
-
 	return s.Sign.Client(ctx, tcp)
 }
 
@@ -63,7 +62,6 @@ func (s *Sign) Server(ctx context.Context, tcp net.Conn) (crypto.Key, error) {
 	if err := s.PSS.Server(ctx, tcp); err != nil {
 		return crypto.Key{}, err
 	}
-
 	return s.Sign.Server(ctx, tcp)
 }
 

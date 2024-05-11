@@ -75,7 +75,7 @@ func Proxy(ctx context.Context, server string, cfg *fatun.Config) (*Client, erro
 		return nil, err
 	}
 
-	wraw, err := test.WrapPcap(raw, fmt.Sprintf("client-raw-%s.pcap", time.Now().Format("2006-01-02-15:04:05")))
+	wraw, err := test.WrapPcap(raw, fmt.Sprintf("client-raw-%s.pcap", time.Now().Format("2006-01-02T15")))
 	if err != nil {
 		panic(err)
 	}
