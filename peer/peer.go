@@ -18,7 +18,6 @@ import (
 type Peer interface {
 	fatcp.Attacher
 
-	New() Peer
 	Reset(proto tcpip.TransportProtocolNumber, remote netip.Addr)
 	Protocol() tcpip.TransportProtocolNumber
 	Peer() netip.Addr

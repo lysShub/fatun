@@ -27,20 +27,21 @@ type Capture interface {
 	Close() error
 }
 
-type Client[P peer.Peer] struct {
+type Client struct {
 	Logger *slog.Logger
 
-	Conn fatcp.Conn[P]
+	Conn fatcp.Conn[peer.Peer]
 
 	Capture Capture
 
+	peer     peer.Peer
 	srvCtx   context.Context
 	cancel   context.CancelFunc
 	closeErr errorx.CloseErr
 }
 
-func NewClient[P peer.Peer](opts ...func(*Client[P])) (*Client[P], error) {
-	var c = &Client[P]{}
+func NewClient(opts ...func(*Client)) (*Client, error) {
+	var c = &Client{}
 	for _, opt := range opts {
 		opt(c)
 	}
@@ -61,14 +62,15 @@ func NewClient[P peer.Peer](opts ...func(*Client[P])) (*Client[P], error) {
 	return c, nil
 }
 
-func (c *Client[P]) Run(peer peer.Peer) (err error) {
+func (c *Client) Run(any peer.Peer) (err error) {
+	c.peer = any
 	c.srvCtx, c.cancel = context.WithCancel(context.Background())
 	go c.uplinkService()
 	go c.downlinkServic()
 	return nil
 }
 
-func (c *Client[P]) close(cause error) (_ error) {
+func (c *Client) close(cause error) (_ error) {
 	return c.closeErr.Close(func() (errs []error) {
 		errs = append(errs, cause)
 
@@ -85,11 +87,11 @@ func (c *Client[P]) close(cause error) (_ error) {
 	})
 }
 
-func (c *Client[P]) uplinkService() (_ error) {
+func (c *Client) uplinkService() (_ error) {
 	var (
 		overhead = c.Conn.Overhead()
 		ip       = packet.Make(c.Conn.MTU())
-		peer     = (*new(P)).New().(P)
+		peer     = c.peer.Clone()
 	)
 
 	for {
@@ -112,10 +114,10 @@ func (c *Client[P]) uplinkService() (_ error) {
 	}
 }
 
-func (c *Client[P]) downlinkServic() error {
+func (c *Client) downlinkServic() error {
 	var (
 		pkt  = packet.Make(0, c.Conn.MTU())
-		peer = (*new(P)).New().(P)
+		peer = c.peer.Clone()
 	)
 
 	for {
@@ -145,7 +147,7 @@ func (c *Client[P]) downlinkServic() error {
 	}
 }
 
-func (c *Client[P]) Close() error { return c.close(nil) }
+func (c *Client) Close() error { return c.close(nil) }
 
 func rechecksum(ip header.IPv4) {
 	ip.SetChecksum(0)

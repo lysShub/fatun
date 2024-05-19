@@ -9,32 +9,32 @@ import (
 	"github.com/lysShub/fatun/peer"
 )
 
-type connManager[P peer.Peer] struct {
-	conns  map[id]*refConn[P]
+type connManager struct {
+	conns  map[id]*refConn
 	connMu sync.RWMutex
 }
 
-func newConnManager[P peer.Peer]() *connManager[P] {
-	return &connManager[P]{conns: map[id]*refConn[P]{}}
+func newConnManager() *connManager {
+	return &connManager{conns: map[id]*refConn{}}
 }
 
 type id struct {
 	src, dst netip.AddrPort
 }
 
-type refConn[P peer.Peer] struct {
-	fatcp.Conn[P]
+type refConn struct {
+	fatcp.Conn[peer.Peer]
 	refs atomic.Int32
 }
 
-func (c *connManager[P]) Inc(conn fatcp.Conn[P]) int32 {
+func (c *connManager) Inc(conn fatcp.Conn[peer.Peer]) int32 {
 	id := id{src: conn.LocalAddr(), dst: conn.RemoteAddr()}
 
 	c.connMu.RLock()
 	v, has := c.conns[id]
 	c.connMu.RUnlock()
 	if !has {
-		v = &refConn[P]{Conn: conn}
+		v = &refConn{Conn: conn}
 		c.connMu.Lock()
 		c.conns[id] = v
 		c.connMu.Unlock()
@@ -43,7 +43,7 @@ func (c *connManager[P]) Inc(conn fatcp.Conn[P]) int32 {
 	return v.refs.Add(1)
 }
 
-func (c *connManager[P]) Dec(conn fatcp.Conn[P]) int32 {
+func (c *connManager) Dec(conn fatcp.Conn[peer.Peer]) int32 {
 	id := id{src: conn.LocalAddr(), dst: conn.RemoteAddr()}
 
 	c.connMu.RLock()

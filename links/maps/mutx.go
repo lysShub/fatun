@@ -11,42 +11,42 @@ import (
 )
 
 // mutx by server ip address last byte
-type mutxLinkManager[P peer.Peer] struct {
+type mutxLinkManager struct {
 	ap    *ports.Adapter
-	conns *connManager[P]
+	conns *connManager
 	mutx  uint8
-	mgrs  []*linkManager[P]
+	mgrs  []*linkManager
 }
 
-var _ links.LinksManager[peer.Peer] = (*mutxLinkManager[peer.Peer])(nil)
+var _ links.LinksManager = (*mutxLinkManager)(nil)
 
-func NewMutxLinkManager[P peer.Peer](mutx uint8, ttl time.Duration, addr netip.Addr) *mutxLinkManager[P] {
-	var m = &mutxLinkManager[P]{
+func NewMutxLinkManager(mutx uint8, ttl time.Duration, addr netip.Addr) *mutxLinkManager {
+	var m = &mutxLinkManager{
 		ap:    ports.NewAdapter(addr),
-		conns: newConnManager[P](),
+		conns: newConnManager(),
 		mutx:  mutx,
-		mgrs:  make([]*linkManager[P], max(mutx, 4)),
+		mgrs:  make([]*linkManager, max(mutx, 4)),
 	}
 	for i := range m.mgrs {
-		m.mgrs[i] = newLinkManager[P](m.ap, m.conns, ttl)
+		m.mgrs[i] = newLinkManager(m.ap, m.conns, ttl)
 	}
 	return m
 }
 
-func (m *mutxLinkManager[P]) Downlink(link links.Downlink) (conn fatcp.Conn[P], clientPort uint16, has bool) {
+func (m *mutxLinkManager) Downlink(link links.Downlink) (conn fatcp.Conn[peer.Peer], clientPort uint16, has bool) {
 	return m.get(link.Server.Addr()).Downlink(link)
 }
-func (m *mutxLinkManager[P]) Add(link links.Uplink, conn fatcp.Conn[P]) (localPort uint16, err error) {
+func (m *mutxLinkManager) Add(link links.Uplink, conn fatcp.Conn[peer.Peer]) (localPort uint16, err error) {
 	return m.get(link.Server.Addr()).Add(link, conn)
 }
-func (m *mutxLinkManager[P]) Uplink(link links.Uplink) (localPort uint16, has bool) {
+func (m *mutxLinkManager) Uplink(link links.Uplink) (localPort uint16, has bool) {
 	return m.get(link.Server.Addr()).Uplink(link)
 }
-func (m *mutxLinkManager[P]) Close() error {
+func (m *mutxLinkManager) Close() error {
 	return m.ap.Close()
 }
 
-func (m *mutxLinkManager[P]) get(server netip.Addr) *linkManager[P] {
+func (m *mutxLinkManager) get(server netip.Addr) *linkManager {
 	s := server.AsSlice()
 	return m.mgrs[s[len(s)-1]%m.mutx]
 }

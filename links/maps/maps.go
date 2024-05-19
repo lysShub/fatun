@@ -12,28 +12,28 @@ import (
 	"github.com/lysShub/fatun/ports"
 )
 
-type linkManager[P peer.Peer] struct {
+type linkManager struct {
 	addr     netip.Addr
 	ap       *ports.Adapter
-	conns    *connManager[P]
+	conns    *connManager
 	duration time.Duration
 
 	uplinkMap map[links.Uplink]*port
 	ttl       *links.Heap[ttlkey]
 	uplinkMu  sync.RWMutex
 
-	downlinkMap map[links.Downlink]downkey[P]
+	downlinkMap map[links.Downlink]downkey
 	donwlinkMu  sync.RWMutex
 }
 
-var _ links.LinksManager[peer.Peer] = (*linkManager[peer.Peer])(nil)
+var _ links.LinksManager = (*linkManager)(nil)
 
-func NewLinkManager[P peer.Peer](ttl time.Duration, addr netip.Addr) *linkManager[P] {
-	return newLinkManager[P](ports.NewAdapter(addr), newConnManager[P](), ttl)
+func NewLinkManager(ttl time.Duration, addr netip.Addr) *linkManager {
+	return newLinkManager(ports.NewAdapter(addr), newConnManager(), ttl)
 }
 
-func newLinkManager[P peer.Peer](ap *ports.Adapter, conns *connManager[P], ttl time.Duration) *linkManager[P] {
-	return &linkManager[P]{
+func newLinkManager(ap *ports.Adapter, conns *connManager, ttl time.Duration) *linkManager {
+	return &linkManager{
 		addr:     ap.Addr(),
 		ap:       ap,
 		conns:    conns,
@@ -42,7 +42,7 @@ func newLinkManager[P peer.Peer](ap *ports.Adapter, conns *connManager[P], ttl t
 		uplinkMap: map[links.Uplink]*port{},
 		ttl:       links.NewHeap[ttlkey](64),
 
-		downlinkMap: map[links.Downlink]downkey[P]{},
+		downlinkMap: map[links.Downlink]downkey{},
 	}
 }
 
@@ -72,12 +72,12 @@ func (p *port) Idle() bool {
 }
 func (p *port) Port() uint16 { return uint16(p.p().Add(1) >> 48) }
 
-type downkey[P peer.Peer] struct {
-	conn       fatcp.Conn[P]
+type downkey struct {
+	conn       fatcp.Conn[peer.Peer]
 	clientPort uint16
 }
 
-func (t *linkManager[P]) cleanup() {
+func (t *linkManager) cleanup() {
 	var (
 		ls     []links.Uplink
 		lports []uint16
@@ -104,7 +104,7 @@ func (t *linkManager[P]) cleanup() {
 		return
 	}
 
-	var conns []fatcp.Conn[P]
+	var conns []fatcp.Conn[peer.Peer]
 	t.donwlinkMu.Lock()
 	for i, e := range ls {
 		s := links.Downlink{Server: e.Server, Proto: e.Proto, Local: netip.AddrPortFrom(t.addr, lports[i])}
@@ -123,7 +123,7 @@ func (t *linkManager[P]) cleanup() {
 	}
 }
 
-func (t *linkManager[P]) Add(s links.Uplink, conn fatcp.Conn[P]) (localPort uint16, err error) {
+func (t *linkManager) Add(s links.Uplink, conn fatcp.Conn[peer.Peer]) (localPort uint16, err error) {
 	t.cleanup()
 
 	localPort, err = t.ap.GetPort(s.Proto, s.Server)
@@ -141,7 +141,7 @@ func (t *linkManager[P]) Add(s links.Uplink, conn fatcp.Conn[P]) (localPort uint
 		Server: s.Server,
 		Proto:  s.Proto,
 		Local:  netip.AddrPortFrom(t.addr, localPort),
-	}] = downkey[P]{
+	}] = downkey{
 		conn:       conn,
 		clientPort: s.Process.Port(),
 	}
@@ -151,7 +151,7 @@ func (t *linkManager[P]) Add(s links.Uplink, conn fatcp.Conn[P]) (localPort uint
 }
 
 // Uplink get uplink packet local port
-func (t *linkManager[P]) Uplink(s links.Uplink) (localPort uint16, has bool) {
+func (t *linkManager) Uplink(s links.Uplink) (localPort uint16, has bool) {
 	t.uplinkMu.RLock()
 	defer t.uplinkMu.RUnlock()
 	p, has := t.uplinkMap[s]
@@ -162,7 +162,7 @@ func (t *linkManager[P]) Uplink(s links.Uplink) (localPort uint16, has bool) {
 }
 
 // Downlink get donwlink packet proxyer and client port
-func (t *linkManager[P]) Downlink(s links.Downlink) (conn fatcp.Conn[P], clientPort uint16, has bool) {
+func (t *linkManager) Downlink(s links.Downlink) (conn fatcp.Conn[peer.Peer], clientPort uint16, has bool) {
 	t.donwlinkMu.RLock()
 	defer t.donwlinkMu.RUnlock()
 
@@ -173,6 +173,6 @@ func (t *linkManager[P]) Downlink(s links.Downlink) (conn fatcp.Conn[P], clientP
 	return key.conn, key.clientPort, true
 }
 
-func (t *linkManager[P]) Close() error {
+func (t *linkManager) Close() error {
 	return t.ap.Close()
 }

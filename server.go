@@ -29,21 +29,22 @@ type Sender interface {
 	Close() error
 }
 
-type Server[P peer.Peer] struct {
+type Server struct {
 	Logger *slog.Logger
 
-	Listener fatcp.Listener[P]
-	Links    links.LinksManager[P]
+	Listener fatcp.Listener[peer.Peer]
+	Links    links.LinksManager
 
 	Sender Sender
 
+	peer     peer.Peer
 	srvCtx   context.Context
 	cancel   context.CancelFunc
 	closeErr errorx.CloseErr
 }
 
-func NewServer[P peer.Peer](opts ...func(*Server[P])) (*Server[P], error) {
-	var s = &Server[P]{}
+func NewServer(opts ...func(*Server)) (*Server, error) {
+	var s = &Server{}
 	for _, opt := range opts {
 		opt(s)
 	}
@@ -54,13 +55,13 @@ func NewServer[P peer.Peer](opts ...func(*Server[P])) (*Server[P], error) {
 	var err error
 	if s.Listener == nil {
 		addr := net.JoinHostPort("", strconv.Itoa(DefaultPort))
-		s.Listener, err = fatcp.Listen[P](addr, &fatcp.Config{})
+		s.Listener, err = fatcp.Listen[peer.Peer](addr, &fatcp.Config{})
 		if err != nil {
 			return nil, s.close(err)
 		}
 	}
 	if s.Links == nil {
-		s.Links = maps.NewLinkManager[P](time.Second*30, s.Listener.Addr().Addr())
+		s.Links = maps.NewLinkManager(time.Second*30, s.Listener.Addr().Addr())
 	}
 
 	if s.Sender == nil {
@@ -73,14 +74,15 @@ func NewServer[P peer.Peer](opts ...func(*Server[P])) (*Server[P], error) {
 	return s, nil
 }
 
-func (s *Server[P]) Run() (err error) {
+func (s *Server) Run(any peer.Peer) (err error) {
+	s.peer = any
 	s.srvCtx, s.cancel = context.WithCancel(context.Background())
 	go s.acceptService()
 	go s.recvService()
 	return nil
 }
 
-func (s *Server[P]) close(cause error) error {
+func (s *Server) close(cause error) error {
 	return s.closeErr.Close(func() (errs []error) {
 		errs = append(errs, cause)
 
@@ -100,7 +102,7 @@ func (s *Server[P]) close(cause error) error {
 	})
 }
 
-func (s *Server[P]) acceptService() (_ error) {
+func (s *Server) acceptService() (_ error) {
 	for {
 		conn, err := s.Listener.AcceptCtx(s.srvCtx)
 		if err != nil {
@@ -116,12 +118,12 @@ func (s *Server[P]) acceptService() (_ error) {
 	}
 }
 
-func (s *Server[P]) serveConn(conn fatcp.Conn[P]) (_ error) {
+func (s *Server) serveConn(conn fatcp.Conn[peer.Peer]) (_ error) {
 	var (
 		client = conn.RemoteAddr()
 		pkt    = packet.Make(0, s.Listener.MTU())
 		t      header.Transport
-		peer   = (*new(P)).New().(P)
+		peer   = s.peer.Clone()
 	)
 
 	for {
@@ -174,7 +176,7 @@ func (s *Server[P]) serveConn(conn fatcp.Conn[P]) (_ error) {
 	}
 }
 
-func (s *Server[P]) recvService() (_ error) {
+func (s *Server) recvService() (_ error) {
 	// todo: 现在go的conn read/write cancel 有两种方式：
 	//  1. 传入ctx(通常一些上层协议使用),   2. 支持deadline(标准库)
 	//
@@ -191,7 +193,7 @@ func (s *Server[P]) recvService() (_ error) {
 	var (
 		ip       = packet.Make(0, s.Listener.MTU())
 		overhead = s.Listener.Overhead()
-		peer     = (*new(P)).New().(P)
+		peer     = s.peer.Clone()
 	)
 	for {
 		err := s.Sender.Recv(s.srvCtx, ip.Sets(overhead, 0xffff))
