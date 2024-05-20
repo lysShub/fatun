@@ -8,7 +8,7 @@ require (
 	github.com/lysShub/divert-go v0.0.0-20240505203543-cdad175fca17
 	github.com/lysShub/fatcp v0.0.0-20240520065704-f47d356b5a1b
 	github.com/lysShub/netkit v0.0.0-20240519151952-15d541a71acb
-	github.com/lysShub/rawsock v0.0.0-20240518130622-a7d8187069b0
+	github.com/lysShub/rawsock v0.0.0-20240520072652-019d5ed9acce
 	github.com/mdlayher/arp v0.0.0-20220512170110-6706a2966875
 	github.com/stretchr/testify v1.9.0
 	golang.org/x/net v0.20.0

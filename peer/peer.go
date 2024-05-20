@@ -43,7 +43,6 @@ func (p *defaultPeer) Reset(proto tcpip.TransportProtocolNumber, remote netip.Ad
 }
 func (p *defaultPeer) Protocol() tcpip.TransportProtocolNumber { return p.proto }
 func (p *defaultPeer) Peer() netip.Addr                        { return p.peer }
-func (p *defaultPeer) Clone() Peer                             { return &defaultPeer{p.proto, p.peer} }
 
 var _builtinPeer = &defaultPeer{peer: netip.IPv4Unspecified(), proto: tcp.ProtocolNumber}
 

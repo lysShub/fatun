@@ -61,7 +61,7 @@ func NewDefaultSender(laddr netip.AddrPort) (Sender, error) {
 	}
 
 	var prog *unix.SockFprog
-	if rawIns, err := bpf.Assemble(bpfFilterProtoAndLocalPorts(laddr.Port())); err != nil {
+	if rawIns, err := bpf.Assemble(bpfFilterProtoAndLocalTCPPorts(laddr.Port())); err != nil {
 		return nil, s.close(errors.WithStack(err))
 	} else {
 		prog = &unix.SockFprog{
@@ -107,18 +107,20 @@ func (s *sender) close(cause error) error {
 }
 func (s *sender) Close() error { return s.close(nil) }
 
-func bpfFilterProtoAndLocalPorts(skipPorts ...uint16) []bpf.Instruction {
-	slices.Sort(skipPorts)
-	skipPorts = slices.Compact(skipPorts)
-	start := 0
-	for i, e := range skipPorts {
-		if e <= 1024 {
+// bpfFilterProtoAndLocalTCPPorts bpf filter,
+//
+// will drop packet, that not tcp/udp, or dst-port in rang (0,1024], or tcp-dst-port in skipPorts
+func bpfFilterProtoAndLocalTCPPorts(skipTCPPorts ...uint16) []bpf.Instruction {
+	slices.Sort(skipTCPPorts)
+	skipTCPPorts = slices.Compact(skipTCPPorts)
+	start := len(skipTCPPorts)
+	for i, e := range skipTCPPorts {
+		if e > 1024 {
 			start = i
-		} else {
 			break
 		}
 	}
-	skipPorts = skipPorts[start+1:]
+	skipTCPPorts = skipTCPPorts[start:]
 
 	const IPv4ProtocolOffset = 9
 	var ins = []bpf.Instruction{
@@ -129,7 +131,6 @@ func bpfFilterProtoAndLocalPorts(skipPorts ...uint16) []bpf.Instruction {
 		bpf.RetConstant{Val: 0},
 
 		// store IPv4HdrLen regX
-		bpf.JumpIf{Cond: bpf.JumpNotEqual, Val: 4, SkipTrue: 1},
 		bpf.LoadMemShift{Off: 0},
 
 		// skip port range (0, 1024]
@@ -137,12 +138,21 @@ func bpfFilterProtoAndLocalPorts(skipPorts ...uint16) []bpf.Instruction {
 		bpf.JumpIf{Cond: bpf.JumpGreaterThan, Val: 1024, SkipTrue: 1},
 		bpf.RetConstant{Val: 0},
 	}
-	for _, e := range skipPorts {
+	if len(skipTCPPorts) > 0 {
 		ins = append(ins,
-			bpf.LoadIndirect{Off: header.TCPDstPortOffset, Size: 2},
-			bpf.JumpIf{Cond: bpf.JumpNotEqual, Val: uint32(e), SkipTrue: 1},
-			bpf.RetConstant{Val: 0},
+			// skipTCPPorts not filter for udp
+			bpf.LoadAbsolute{Off: IPv4ProtocolOffset, Size: 1},
+			bpf.JumpIf{Cond: bpf.JumpEqual, Val: unix.IPPROTO_TCP, SkipTrue: 1},
+			bpf.RetConstant{Val: 0xffff},
 		)
+
+		for _, e := range skipTCPPorts {
+			ins = append(ins,
+				bpf.LoadIndirect{Off: header.TCPDstPortOffset, Size: 2},
+				bpf.JumpIf{Cond: bpf.JumpNotEqual, Val: uint32(e), SkipTrue: 1},
+				bpf.RetConstant{Val: 0},
+			)
+		}
 	}
 
 	return append(ins,

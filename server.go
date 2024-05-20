@@ -191,14 +191,14 @@ func (s *Server) recvService() (_ error) {
 
 	var (
 		ip       = packet.Make(0, s.Listener.MTU())
-		overhead = s.Listener.Overhead()
+		overhead = max(s.Listener.Overhead()-header.IPv4MinimumSize, 0)
 		peer     = s.peer.Make()
 	)
 	for {
 		err := s.Sender.Recv(s.srvCtx, ip.Sets(overhead, 0xffff))
 		if err != nil {
 			if errorx.Temporary(err) {
-				s.Logger.Warn(err.Error(), errorx.Trace(nil))
+				s.Logger.Warn(err.Error(), errorx.Trace(err))
 				continue
 			} else {
 				return s.close(err)

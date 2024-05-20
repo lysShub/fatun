@@ -4,6 +4,10 @@ import (
 	"net"
 	"net/netip"
 	"sync"
+
+	"github.com/lysShub/netkit/debug"
+	"github.com/lysShub/rawsock/test"
+	"github.com/stretchr/testify/require"
 )
 
 func NewMgr(addr netip.Addr) *Manager {
@@ -49,6 +53,9 @@ func (p *Manager) GetTCPPort() (uint16, error) {
 		p.tcp[addr.Port()] = l
 		p.Unlock()
 
+		if debug.Debug() {
+			require.Greater(test.T(), addr.Port(), uint16(1024))
+		}
 		return addr.Port(), nil
 	}
 }
@@ -83,6 +90,9 @@ func (p *Manager) GetUDPPort() (uint16, error) {
 		p.udp[addr.Port()] = c
 		p.Unlock()
 
+		if debug.Debug() {
+			require.Greater(test.T(), addr.Port(), uint16(1024))
+		}
 		return addr.Port(), nil
 	}
 }
