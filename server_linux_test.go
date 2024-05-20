@@ -4,15 +4,21 @@
 package fatun_test
 
 import (
-	"fmt"
 	"testing"
+	"time"
 
-	"golang.org/x/sys/unix"
+	"github.com/lysShub/fatun"
+	"github.com/lysShub/fatun/peer"
+	"github.com/stretchr/testify/require"
 )
 
 func TestXxxx(t *testing.T) {
 
-	fd, err := unix.Socket(unix.AF_INET, unix.SOCK_RAW, 0)
+	s, err := fatun.NewServer[peer.Default]()
+	require.NoError(t, err)
 
-	fmt.Println(fd, err)
+	err = s.Run()
+	require.NoError(t, err)
+
+	time.Sleep(time.Hour)
 }

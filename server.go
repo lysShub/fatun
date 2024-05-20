@@ -32,7 +32,7 @@ type Sender interface {
 type Server struct {
 	Logger *slog.Logger
 
-	Listener fatcp.Listener[peer.Peer]
+	Listener fatcp.Listener
 	Links    links.LinksManager
 
 	Sender Sender
@@ -43,8 +43,8 @@ type Server struct {
 	closeErr errorx.CloseErr
 }
 
-func NewServer(opts ...func(*Server)) (*Server, error) {
-	var s = &Server{}
+func NewServer[P peer.Peer](opts ...func(*Server)) (*Server, error) {
+	var s = &Server{peer: *new(P)}
 	for _, opt := range opts {
 		opt(s)
 	}
@@ -74,8 +74,7 @@ func NewServer(opts ...func(*Server)) (*Server, error) {
 	return s, nil
 }
 
-func (s *Server) Run(any peer.Peer) (err error) {
-	s.peer = any
+func (s *Server) Run() (err error) {
 	s.srvCtx, s.cancel = context.WithCancel(context.Background())
 	go s.acceptService()
 	go s.recvService()
@@ -118,7 +117,7 @@ func (s *Server) acceptService() (_ error) {
 	}
 }
 
-func (s *Server) serveConn(conn fatcp.Conn[peer.Peer]) (_ error) {
+func (s *Server) serveConn(conn fatcp.Conn) (_ error) {
 	var (
 		client = conn.RemoteAddr()
 		pkt    = packet.Make(0, s.Listener.MTU())

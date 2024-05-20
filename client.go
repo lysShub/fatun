@@ -2,7 +2,8 @@ package fatun
 
 import (
 	"context"
-	"errors"
+	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"net/netip"
@@ -12,6 +13,7 @@ import (
 	"github.com/lysShub/fatun/checksum"
 	"github.com/lysShub/fatun/peer"
 	"github.com/lysShub/rawsock/test"
+	"github.com/pkg/errors"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 
@@ -30,7 +32,7 @@ type Capture interface {
 type Client struct {
 	Logger *slog.Logger
 
-	Conn fatcp.Conn[peer.Peer]
+	Conn fatcp.Conn
 
 	Capture Capture
 
@@ -40,8 +42,8 @@ type Client struct {
 	closeErr errorx.CloseErr
 }
 
-func NewClient(opts ...func(*Client)) (*Client, error) {
-	var c = &Client{}
+func NewClient[P peer.Peer](opts ...func(*Client)) (*Client, error) {
+	var c = &Client{peer: *new(P)}
 	for _, opt := range opts {
 		opt(c)
 	}
@@ -62,8 +64,7 @@ func NewClient(opts ...func(*Client)) (*Client, error) {
 	return c, nil
 }
 
-func (c *Client) Run(any peer.Peer) (err error) {
-	c.peer = any
+func (c *Client) Run() (err error) {
 	c.srvCtx, c.cancel = context.WithCancel(context.Background())
 	go c.uplinkService()
 	go c.downlinkServic()
@@ -175,4 +176,52 @@ func rechecksum(ip header.IPv4) {
 	if debug.Debug() {
 		test.ValidIP(test.T(), ip)
 	}
+}
+
+func UpdateTcpMssOption(hdr header.TCP, delta int) error {
+	n := int(hdr.DataOffset())
+	if n > header.TCPMinimumSize && delta != 0 {
+		oldSum := ^hdr.Checksum()
+		for i := header.TCPMinimumSize; i < n; {
+			kind := hdr[i]
+			switch kind {
+			case header.TCPOptionMSS:
+				/* {kind} {length} {max seg size} */
+				if i+4 <= n && hdr[i+1] == 4 {
+					old := binary.BigEndian.Uint16(hdr[i+2:])
+					new := int(old) + delta
+					if new <= 0 {
+						return errors.Errorf("updated mss is invalid %d", new)
+					}
+
+					if (i+2)%2 == 0 {
+						binary.BigEndian.PutUint16(hdr[i+2:], uint16(new))
+						sum := stdsum.Combine(stdsum.Combine(oldSum, ^old), uint16(new))
+						hdr.SetChecksum(^sum)
+					} else if i+5 <= n {
+						sum := stdsum.Combine(oldSum, ^stdsum.Checksum(hdr[i+1:i+5], 0))
+
+						binary.BigEndian.PutUint16(hdr[i+2:], uint16(new))
+
+						sum = stdsum.Combine(sum, stdsum.Checksum(hdr[i+1:i+5], 0))
+						hdr.SetChecksum(^sum)
+					}
+					return nil
+				} else {
+					return errors.Errorf("invalid tcp packet: %s", hex.EncodeToString(hdr[:n]))
+				}
+			case header.TCPOptionNOP:
+				i += 1
+			case header.TCPOptionEOL:
+				return nil // not mss opt
+			default:
+				if i+1 < n {
+					i += int(hdr[i+1])
+				} else {
+					return errors.Errorf("invalid tcp packet: %s", hex.EncodeToString(hdr[:n]))
+				}
+			}
+		}
+	}
+	return nil
 }

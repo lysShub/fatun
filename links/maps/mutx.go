@@ -6,7 +6,6 @@ import (
 
 	"github.com/lysShub/fatcp"
 	"github.com/lysShub/fatun/links"
-	"github.com/lysShub/fatun/peer"
 	"github.com/lysShub/fatun/ports"
 )
 
@@ -31,10 +30,10 @@ func NewMutxLinkManager(mutx uint8, ttl time.Duration, addr netip.Addr) *mutxLin
 	return m
 }
 
-func (m *mutxLinkManager) Downlink(link links.Downlink) (conn fatcp.Conn[peer.Peer], clientPort uint16, has bool) {
+func (m *mutxLinkManager) Downlink(link links.Downlink) (conn fatcp.Conn, clientPort uint16, has bool) {
 	return m.get(link.Server.Addr()).Downlink(link)
 }
-func (m *mutxLinkManager) Add(link links.Uplink, conn fatcp.Conn[peer.Peer]) (localPort uint16, err error) {
+func (m *mutxLinkManager) Add(link links.Uplink, conn fatcp.Conn) (localPort uint16, err error) {
 	return m.get(link.Server.Addr()).Add(link, conn)
 }
 func (m *mutxLinkManager) Uplink(link links.Uplink) (localPort uint16, has bool) {

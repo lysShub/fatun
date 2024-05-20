@@ -5,7 +5,6 @@ import (
 	"net/netip"
 
 	"github.com/lysShub/fatcp"
-	"github.com/lysShub/fatun/peer"
 	"github.com/lysShub/netkit/packet"
 	"github.com/pkg/errors"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -16,8 +15,8 @@ import (
 
 // LinksManager link manager, use for proxy-server
 type LinksManager interface {
-	Add(link Uplink, conn fatcp.Conn[peer.Peer]) (localPort uint16, err error)
-	Downlink(link Downlink) (conn fatcp.Conn[peer.Peer], clientPort uint16, has bool) // todo: return error
+	Add(link Uplink, conn fatcp.Conn) (localPort uint16, err error)
+	Downlink(link Downlink) (conn fatcp.Conn, clientPort uint16, has bool) // todo: return error
 	Uplink(link Uplink) (localPort uint16, has bool)
 	Close() error
 }

@@ -24,36 +24,38 @@ type Peer interface {
 	Clone() Peer
 }
 
-type Default struct {
+type Default = *defaultPeer
+
+var _ Peer = (Default)(nil)
+
+type defaultPeer struct {
 	proto tcpip.TransportProtocolNumber
 	peer  netip.Addr // only ipv4
 }
 
-var _ fatcp.Attacher = (*Default)(nil)
-
 func New(proto tcpip.TransportProtocolNumber, remote netip.Addr) Peer {
-	return &Default{proto, remote}
+	return &defaultPeer{proto, remote}
 }
 
-func (p *Default) New() Peer { return &Default{} }
-func (p *Default) Reset(proto tcpip.TransportProtocolNumber, remote netip.Addr) {
+func (p *defaultPeer) New() Peer { return &defaultPeer{} }
+func (p *defaultPeer) Reset(proto tcpip.TransportProtocolNumber, remote netip.Addr) {
 	p.proto, p.peer = proto, remote
 }
-func (p *Default) Protocol() tcpip.TransportProtocolNumber { return p.proto }
-func (p *Default) Peer() netip.Addr                        { return p.peer }
-func (p *Default) Clone() Peer                             { return &Default{p.proto, p.peer} }
+func (p *defaultPeer) Protocol() tcpip.TransportProtocolNumber { return p.proto }
+func (p *defaultPeer) Peer() netip.Addr                        { return p.peer }
+func (p *defaultPeer) Clone() Peer                             { return &defaultPeer{p.proto, p.peer} }
 
-var _builtinPeer = &Default{peer: netip.IPv4Unspecified(), proto: tcp.ProtocolNumber}
+var _builtinPeer = &defaultPeer{peer: netip.IPv4Unspecified(), proto: tcp.ProtocolNumber}
 
-func (p *Default) Builtin() fatcp.Attacher { return _builtinPeer }
-func (p *Default) IsBuiltin() bool         { return p.Valid() && (*p) == (*_builtinPeer) }
-func (p *Default) Overhead() int           { return 5 }
-func (p *Default) Valid() bool {
+func (p *defaultPeer) Builtin() fatcp.Attacher { return _builtinPeer }
+func (p *defaultPeer) IsBuiltin() bool         { return p.Valid() && (*p) == (*_builtinPeer) }
+func (p *defaultPeer) Overhead() int           { return 5 }
+func (p *defaultPeer) Valid() bool {
 	return p != nil && p.peer.IsValid() && p.peer.Is4() &&
 		(p.proto == tcp.ProtocolNumber || p.proto == udp.ProtocolNumber)
 }
 
-func (p *Default) String() string {
+func (p *defaultPeer) String() string {
 	if p == nil {
 		return "nil"
 	}
@@ -69,7 +71,7 @@ func (p *Default) String() string {
 	return fmt.Sprintf("%s:%s", p.peer.String(), proto)
 }
 
-func (p *Default) Encode(pkt *packet.Packet) error {
+func (p *defaultPeer) Encode(pkt *packet.Packet) error {
 	if !p.Valid() {
 		return errors.Errorf("invalid peer: %s", p.String())
 	}
@@ -87,7 +89,7 @@ func (p *Default) Encode(pkt *packet.Packet) error {
 	return nil
 }
 
-func (p *Default) Decode(seg *packet.Packet) (err error) {
+func (p *defaultPeer) Decode(seg *packet.Packet) (err error) {
 	if p == nil {
 		return errors.Errorf("invalid peer: %s", p.String())
 	}
