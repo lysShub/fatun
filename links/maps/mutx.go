@@ -12,23 +12,21 @@ import (
 
 // mutx by server ip address last byte
 type mutxLinkManager struct {
-	ap    *ports.Adapter
-	conns *connManager
-	mutx  uint8
-	mgrs  []*linkManager
+	ap   *ports.Adapter
+	mutx uint8
+	mgrs []*linkManager
 }
 
 var _ links.LinksManager = (*mutxLinkManager)(nil)
 
 func NewMutxLinkManager(mutx uint8, ttl time.Duration, addr netip.Addr) *mutxLinkManager {
 	var m = &mutxLinkManager{
-		ap:    ports.NewAdapter(addr),
-		conns: newConnManager(),
-		mutx:  mutx,
-		mgrs:  make([]*linkManager, max(mutx, 4)),
+		ap:   ports.NewAdapter(addr),
+		mutx: mutx,
+		mgrs: make([]*linkManager, max(mutx, 4)),
 	}
 	for i := range m.mgrs {
-		m.mgrs[i] = newLinkManager(m.ap, m.conns, ttl)
+		m.mgrs[i] = newLinkManager(m.ap, ttl)
 	}
 	return m
 }

@@ -15,7 +15,6 @@ import (
 type linkManager struct {
 	addr     netip.Addr
 	ap       *ports.Adapter
-	conns    *connManager
 	duration time.Duration
 
 	uplinkMap map[links.Uplink]*port
@@ -29,14 +28,13 @@ type linkManager struct {
 var _ links.LinksManager = (*linkManager)(nil)
 
 func NewLinkManager(ttl time.Duration, addr netip.Addr) *linkManager {
-	return newLinkManager(ports.NewAdapter(addr), newConnManager(), ttl)
+	return newLinkManager(ports.NewAdapter(addr), ttl)
 }
 
-func newLinkManager(ap *ports.Adapter, conns *connManager, ttl time.Duration) *linkManager {
+func newLinkManager(ap *ports.Adapter, ttl time.Duration) *linkManager {
 	return &linkManager{
 		addr:     ap.Addr(),
 		ap:       ap,
-		conns:    conns,
 		duration: ttl,
 
 		uplinkMap: map[links.Uplink]*port{},
@@ -104,22 +102,15 @@ func (t *linkManager) cleanup() {
 		return
 	}
 
-	var conns []fatcp.Conn[peer.Peer]
 	t.donwlinkMu.Lock()
 	for i, e := range ls {
 		s := links.Downlink{Server: e.Server, Proto: e.Proto, Local: netip.AddrPortFrom(t.addr, lports[i])}
-		conns = append(conns, t.downlinkMap[s].conn)
 		delete(t.downlinkMap, s)
 	}
 	t.donwlinkMu.Unlock()
 
 	for i, e := range ls {
 		t.ap.DelPort(e.Proto, lports[i], e.Server)
-	}
-	for _, e := range conns {
-		if e != nil {
-			t.conns.Dec(e) // todo: 如果太小就close
-		}
 	}
 }
 
