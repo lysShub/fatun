@@ -12,6 +12,7 @@ import (
 	"github.com/lysShub/fatcp"
 	"github.com/lysShub/fatun"
 	"github.com/lysShub/fatun/peer"
+	"github.com/lysShub/fatun/wrapper/pcap"
 	"github.com/stretchr/testify/require"
 )
 
@@ -27,8 +28,10 @@ func TestXxx(t *testing.T) {
 	c, err := fatun.NewClient[peer.Default](func(c *fatun.Client) { c.Conn = conn })
 	require.NoError(t, err)
 
-	filter, ok := c.Capture.(interface{ Enable(process string) })
+	filter, ok := c.Capturer.(interface{ Enable(process string) })
 	require.True(t, ok)
+
+	c.Capturer = pcap.WrapCapture(c.Capturer, "capture.pcap")
 
 	err = c.Run()
 	require.NoError(t, err)

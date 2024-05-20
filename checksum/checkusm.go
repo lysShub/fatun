@@ -87,8 +87,8 @@ func Server(pkt *packet.Packet, down links.Downlink) (ip *packet.Packet) {
 		FragmentOffset: 0,
 		TTL:            64,
 		Protocol:       uint8(down.Proto),
-		Checksum:       0,       // set by linux-core
-		SrcAddr:        ip4zero, // set by linux-core
+		Checksum:       0, // set by linux-core
+		SrcAddr:        tcpip.AddrFrom4(down.Local.Addr().As4()),
 		DstAddr:        tcpip.AddrFrom4(down.Server.Addr().As4()),
 		Options:        nil,
 	})

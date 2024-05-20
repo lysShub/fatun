@@ -5,11 +5,14 @@ package fatun
 
 import (
 	"context"
+	"math/rand"
 	"net"
 	"net/netip"
 	"slices"
+	"sync/atomic"
 	"unsafe"
 
+	"github.com/lysShub/netkit/errorx"
 	"github.com/lysShub/netkit/eth"
 	"github.com/lysShub/netkit/packet"
 	"github.com/lysShub/netkit/route"
@@ -23,6 +26,7 @@ import (
 type sender struct {
 	conn *eth.ETHConn
 	to   net.HardwareAddr
+	id   atomic.Uint32 // ip id
 }
 
 func NewDefaultSender(laddr netip.AddrPort) (Sender, error) {
@@ -55,6 +59,7 @@ func NewDefaultSender(laddr netip.AddrPort) (Sender, error) {
 	}
 
 	var s = &sender{to: to}
+	s.id.Store(rand.Uint32())
 	s.conn, err = eth.Listen("eth:ip4", ifi)
 	if err != nil {
 		return nil, err
@@ -84,7 +89,7 @@ func NewDefaultSender(laddr netip.AddrPort) (Sender, error) {
 }
 
 func (s *sender) Recv(_ context.Context, ip *packet.Packet) error {
-	n, _, err := s.conn.ReadFromHW(ip.Bytes())
+	n, _, err := s.conn.ReadFromETH(ip.Bytes())
 	if err != nil {
 		return err
 	}
@@ -93,7 +98,15 @@ func (s *sender) Recv(_ context.Context, ip *packet.Packet) error {
 }
 
 func (s *sender) Send(_ context.Context, ip *packet.Packet) error {
-	_, err := s.conn.WriteToHW(ip.Bytes(), s.to)
+	hdr := header.IPv4(ip.Bytes())
+	if hdr.More() {
+		return errorx.WrapTemp(errors.New("can't send MF ip packet"))
+	}
+	hdr.SetTotalLength(uint16(len(hdr)))
+	hdr.SetID(uint16(s.id.Add(1)))
+	hdr.SetChecksum(^hdr.CalculateChecksum())
+
+	_, err := s.conn.WriteToETH(hdr, s.to)
 	return err
 }
 

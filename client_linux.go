@@ -8,6 +8,6 @@ import (
 	"net/netip"
 )
 
-func NewDefaultCapture(laddr netip.AddrPort, overhead int) (Capture, error) {
+func NewDefaultCapture(laddr netip.AddrPort, overhead int) (Capturer, error) {
 	return nil, errors.New("linux not default capture")
 }

@@ -23,7 +23,7 @@ import (
 	stdsum "gvisor.dev/gvisor/pkg/tcpip/checksum"
 )
 
-type Capture interface {
+type Capturer interface {
 	Capture(ctx context.Context, ip *packet.Packet) error
 	Inject(ctx context.Context, ip *packet.Packet) error
 	Close() error
@@ -34,7 +34,7 @@ type Client struct {
 
 	Conn fatcp.Conn
 
-	Capture Capture
+	Capturer Capturer
 
 	peer     peer.Peer
 	srvCtx   context.Context
@@ -55,8 +55,8 @@ func NewClient[P peer.Peer](opts ...func(*Client)) (*Client, error) {
 		return nil, errors.New("require fatcp.Conn")
 	}
 	var err error
-	if c.Capture == nil {
-		c.Capture, err = NewDefaultCapture(c.Conn.LocalAddr(), c.Conn.Overhead())
+	if c.Capturer == nil {
+		c.Capturer, err = NewDefaultCapture(c.Conn.LocalAddr(), c.Conn.Overhead())
 		if err != nil {
 			return nil, err
 		}
@@ -78,8 +78,8 @@ func (c *Client) close(cause error) (_ error) {
 		if c.cancel != nil {
 			c.cancel()
 		}
-		if c.Capture != nil {
-			errs = append(errs, c.Capture.Close())
+		if c.Capturer != nil {
+			errs = append(errs, c.Capturer.Close())
 		}
 		if c.Conn != nil {
 			errs = append(errs, c.Conn.Close())
@@ -96,7 +96,7 @@ func (c *Client) uplinkService() (_ error) {
 	)
 
 	for {
-		err := c.Capture.Capture(c.srvCtx, ip.Sets(overhead, 0xffff))
+		err := c.Capturer.Capture(c.srvCtx, ip.Sets(overhead, 0xffff))
 		if err != nil {
 			if errorx.Temporary(err) {
 				c.Logger.Warn(err.Error(), errorx.Trace(err))
@@ -142,7 +142,7 @@ func (c *Client) downlinkServic() error {
 		})
 		rechecksum(ip)
 
-		if err = c.Capture.Inject(c.srvCtx, pkt); err != nil {
+		if err = c.Capturer.Inject(c.srvCtx, pkt); err != nil {
 			return c.close(err)
 		}
 	}

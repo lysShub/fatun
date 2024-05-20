@@ -26,7 +26,7 @@ type capture struct {
 	overhead int
 }
 
-func NewDefaultCapture(laddr netip.AddrPort, overhead int) (Capture, error) {
+func NewDefaultCapture(laddr netip.AddrPort, overhead int) (Capturer, error) {
 	var c = &capture{overhead: overhead}
 	var err error
 

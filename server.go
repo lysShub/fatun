@@ -213,7 +213,7 @@ func (s *Server) recvService() (_ error) {
 
 		conn, port, has := s.Links.Downlink(link)
 		if !has {
-			s.Logger.Warn("links manager not record", slog.String("downlin", link.String()))
+			// s.Logger.Warn("links manager not record", slog.String("downlin", link.String()))
 			continue
 		}
 		peer.Reset(link.Proto, link.Server.Addr())
