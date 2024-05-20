@@ -55,7 +55,7 @@ func NewServer[P peer.Peer](opts ...func(*Server)) (*Server, error) {
 	var err error
 	if s.Listener == nil {
 		addr := net.JoinHostPort("", strconv.Itoa(DefaultPort))
-		s.Listener, err = fatcp.Listen[peer.Peer](addr, &fatcp.Config{})
+		s.Listener, err = fatcp.Listen[P](addr, &fatcp.Config{})
 		if err != nil {
 			return nil, s.close(err)
 		}
@@ -122,7 +122,7 @@ func (s *Server) serveConn(conn fatcp.Conn) (_ error) {
 		client = conn.RemoteAddr()
 		pkt    = packet.Make(0, s.Listener.MTU())
 		t      header.Transport
-		peer   = s.peer.Clone()
+		peer   = s.peer.Make()
 	)
 
 	for {
@@ -192,7 +192,7 @@ func (s *Server) recvService() (_ error) {
 	var (
 		ip       = packet.Make(0, s.Listener.MTU())
 		overhead = s.Listener.Overhead()
-		peer     = s.peer.Clone()
+		peer     = s.peer.Make()
 	)
 	for {
 		err := s.Sender.Recv(s.srvCtx, ip.Sets(overhead, 0xffff))

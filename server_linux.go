@@ -46,7 +46,7 @@ func NewDefaultSender(laddr netip.AddrPort) (Sender, error) {
 				}
 			}
 		}
-		if gateway.IsValid() {
+		if !gateway.IsValid() {
 			return nil, errors.Errorf("interface %s not network connect", ifi.Name)
 		}
 		if to, err = c.Resolve(gateway); err != nil {

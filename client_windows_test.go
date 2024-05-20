@@ -4,6 +4,7 @@
 package fatun_test
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -21,6 +22,7 @@ func TestXxx(t *testing.T) {
 	conn, err := fatcp.Dial[peer.Default]("8.137.91.200:443", &fatcp.Config{})
 	require.NoError(t, err)
 	defer conn.Close()
+	fmt.Println("connect")
 
 	c, err := fatun.NewClient[peer.Default](func(c *fatun.Client) { c.Conn = conn })
 	require.NoError(t, err)

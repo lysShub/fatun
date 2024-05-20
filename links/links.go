@@ -27,7 +27,9 @@ type Uplink struct {
 	Server  netip.AddrPort // client process request server address
 }
 
-func (d Uplink) String() string { return fmt.Sprintf("%#v", d) }
+func (d Uplink) String() string {
+	return fmt.Sprintf("Uplink{Process:%s, Proto:%s, Server:%s}", d.Process.String(), protostr(d.Proto), d.Server.String())
+}
 
 type Downlink struct {
 	Server netip.AddrPort // client process address(notice NAT)
@@ -35,7 +37,9 @@ type Downlink struct {
 	Local  netip.AddrPort // proxy-server alloced local address
 }
 
-func (d Downlink) String() string { return fmt.Sprintf("%#v", d) }
+func (d Downlink) String() string {
+	return fmt.Sprintf("Uplink{Server:%s, Proto:%s, Local:%s}", d.Server.String(), protostr(d.Proto), d.Local.String())
+}
 
 func StripIP(ip *packet.Packet) (Downlink, error) {
 	if header.IPVersion(ip.Bytes()) != 4 {
@@ -117,4 +121,19 @@ func (h *Heap[T]) grow() {
 
 	h.vals = tmp
 	h.sart = 0
+}
+
+func protostr(num tcpip.TransportProtocolNumber) string {
+	switch num {
+	case header.TCPProtocolNumber:
+		return "tcp"
+	case header.UDPProtocolNumber:
+		return "udp"
+	case header.ICMPv4ProtocolNumber:
+		return "icmp"
+	case header.ICMPv6ProtocolNumber:
+		return "icmp6"
+	default:
+		return fmt.Sprintf("unknown(%d)", int(num))
+	}
 }

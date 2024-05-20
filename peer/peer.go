@@ -18,10 +18,10 @@ import (
 type Peer interface {
 	fatcp.Attacher
 
+	Make() Peer
 	Reset(proto tcpip.TransportProtocolNumber, remote netip.Addr)
 	Protocol() tcpip.TransportProtocolNumber
 	Peer() netip.Addr
-	Clone() Peer
 }
 
 type Default = *defaultPeer
@@ -37,7 +37,7 @@ func New(proto tcpip.TransportProtocolNumber, remote netip.Addr) Peer {
 	return &defaultPeer{proto, remote}
 }
 
-func (p *defaultPeer) New() Peer { return &defaultPeer{} }
+func (p *defaultPeer) Make() Peer { return &defaultPeer{} }
 func (p *defaultPeer) Reset(proto tcpip.TransportProtocolNumber, remote netip.Addr) {
 	p.proto, p.peer = proto, remote
 }
@@ -73,7 +73,7 @@ func (p *defaultPeer) String() string {
 
 func (p *defaultPeer) Encode(pkt *packet.Packet) error {
 	if !p.Valid() {
-		return errors.Errorf("invalid peer: %s", p.String())
+		return errors.Errorf("encode from invalid Peer: %s", p.String())
 	}
 	if debug.Debug() {
 		require.True(test.T(), p.peer.Is4())
@@ -91,12 +91,12 @@ func (p *defaultPeer) Encode(pkt *packet.Packet) error {
 
 func (p *defaultPeer) Decode(seg *packet.Packet) (err error) {
 	if p == nil {
-		return errors.Errorf("invalid peer: %s", p.String())
+		return errors.New("decode to nil Peer")
 	}
 
 	b := seg.Bytes()
 	if len(b) < 5 {
-		return errors.New("invalid segment")
+		return errors.New("decode from invalid packet")
 	}
 
 	p.proto = tcpip.TransportProtocolNumber(b[0])

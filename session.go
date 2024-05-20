@@ -86,10 +86,10 @@ func (s Session) IsValid() bool {
 }
 
 func (s Session) String() string {
-	return fmt.Sprintf("%s:%s->%s", protoStr(s.Proto), s.Src.String(), s.Dst.String())
+	return fmt.Sprintf("%s:%s->%s", protostr(s.Proto), s.Src.String(), s.Dst.String())
 }
 
-func protoStr(num tcpip.TransportProtocolNumber) string {
+func protostr(num tcpip.TransportProtocolNumber) string {
 	switch num {
 	case header.TCPProtocolNumber:
 		return "tcp"

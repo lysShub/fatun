@@ -33,6 +33,8 @@ github.com/lysShub/fatcp v0.0.0-20240519133334-3e11b12b7a09 h1:J7EMR0UT/mmC/0Wg2
 github.com/lysShub/fatcp v0.0.0-20240519133334-3e11b12b7a09/go.mod h1:ViWkcHPISW0YxlZ+O6F2dMz6HUsdR52zY323FCqsqtE=
 github.com/lysShub/fatcp v0.0.0-20240520030548-41fb5277f243 h1:N9I1Zl8uodLXlINZfu23XZi7IzvErCrDi82chhCJJTg=
 github.com/lysShub/fatcp v0.0.0-20240520030548-41fb5277f243/go.mod h1:ViWkcHPISW0YxlZ+O6F2dMz6HUsdR52zY323FCqsqtE=
+github.com/lysShub/fatcp v0.0.0-20240520065704-f47d356b5a1b h1:b3339TJ+PM9VbFBAsCZYDvDbXIJ1f4YGnEXdET8GAi4=
+github.com/lysShub/fatcp v0.0.0-20240520065704-f47d356b5a1b/go.mod h1:ViWkcHPISW0YxlZ+O6F2dMz6HUsdR52zY323FCqsqtE=
 github.com/lysShub/netkit v0.0.0-20240519151952-15d541a71acb h1:LLsLNQ5+GGUvBnEKxKveoP8ewEWkPxjqDJa5F0j72Hs=
 github.com/lysShub/netkit v0.0.0-20240519151952-15d541a71acb/go.mod h1:meJ+5h9/ek0ORSdEgtCx6NsvuAWQHITzkLuVDtL+2lc=
 github.com/lysShub/rawsock v0.0.0-20240518130622-a7d8187069b0 h1:EdYRfkQq9hbFciv14fE7vFSRyu0ZGNr5HsRSV1qRRZA=

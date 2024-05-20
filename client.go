@@ -92,7 +92,7 @@ func (c *Client) uplinkService() (_ error) {
 	var (
 		overhead = c.Conn.Overhead()
 		ip       = packet.Make(c.Conn.MTU())
-		peer     = c.peer.Clone()
+		peer     = c.peer.Make()
 	)
 
 	for {
@@ -118,7 +118,7 @@ func (c *Client) uplinkService() (_ error) {
 func (c *Client) downlinkServic() error {
 	var (
 		pkt  = packet.Make(0, c.Conn.MTU())
-		peer = c.peer.Clone()
+		peer = c.peer.Make()
 	)
 
 	for {
