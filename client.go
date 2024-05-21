@@ -79,6 +79,7 @@ func (c *Client) Run() (err error) {
 	go c.downlinkServic()
 
 	c.Logger.Info("start", slog.String("server", c.Conn.RemoteAddr().String()))
+	go c.Controller.Control(c.srvCtx, c.Conn)
 	return nil
 }
 

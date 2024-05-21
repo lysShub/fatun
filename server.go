@@ -134,6 +134,7 @@ func (s *Server) serveConn(conn fatcp.Conn) (_ error) {
 		conn.Close()
 		s.Logger.Info("close connect", slog.String("client", client.String()))
 	}()
+	go s.Controller.Control(s.srvCtx, conn)
 
 	for {
 		err := conn.Recv(s.srvCtx, peer, pkt.Sets(0, 0xffff))
