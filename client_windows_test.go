@@ -20,7 +20,8 @@ func TestXxx(t *testing.T) {
 	divert.MustLoad(divert.DLL)
 	defer divert.Release()
 
-	conn, err := fatcp.Dial[peer.Default]("8.137.91.200:443", &fatcp.Config{})
+	// conn, err := fatcp.Dial[peer.Default]("8.137.91.200:443", &fatcp.Config{})
+	conn, err := fatcp.Dial[peer.Default]("103.94.185.61:443", &fatcp.Config{})
 	require.NoError(t, err)
 	defer conn.Close()
 	fmt.Println("connect", conn.LocalAddr(), conn.RemoteAddr())
@@ -36,7 +37,7 @@ func TestXxx(t *testing.T) {
 	err = c.Run()
 	require.NoError(t, err)
 
-	filter.Enable("curl.exe")
+	filter.Enable("aces.exe")
 
-	time.Sleep(time.Hour)
+	time.Sleep(time.Hour * 3)
 }

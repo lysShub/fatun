@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/netip"
 	"os"
+	"time"
 
 	"github.com/lysShub/fatcp"
 	"github.com/lysShub/fatun/checksum"
@@ -36,6 +37,8 @@ type Client struct {
 
 	Capturer Capturer
 
+	Controller Controller
+
 	peer     peer.Peer
 	srvCtx   context.Context
 	cancel   context.CancelFunc
@@ -54,6 +57,7 @@ func NewClient[P peer.Peer](opts ...func(*Client)) (*Client, error) {
 	if c.Conn == nil {
 		return nil, errors.New("require fatcp.Conn")
 	}
+
 	var err error
 	if c.Capturer == nil {
 		c.Capturer, err = NewDefaultCapture(c.Conn.LocalAddr(), c.Conn.Overhead())
@@ -61,6 +65,11 @@ func NewClient[P peer.Peer](opts ...func(*Client)) (*Client, error) {
 			return nil, err
 		}
 	}
+
+	if c.Controller == nil {
+		c.Controller = &DefaultController{HandshakeTimeout: time.Second * 3, Logger: c.Logger}
+	}
+
 	return c, nil
 }
 
@@ -68,6 +77,8 @@ func (c *Client) Run() (err error) {
 	c.srvCtx, c.cancel = context.WithCancel(context.Background())
 	go c.uplinkService()
 	go c.downlinkServic()
+
+	c.Logger.Info("start", slog.String("server", c.Conn.RemoteAddr().String()))
 	return nil
 }
 

@@ -37,6 +37,8 @@ type Server struct {
 
 	Sender Sender
 
+	Controller Controller
+
 	peer     peer.Peer
 	srvCtx   context.Context
 	cancel   context.CancelFunc
@@ -69,6 +71,10 @@ func NewServer[P peer.Peer](opts ...func(*Server)) (*Server, error) {
 		if err != nil {
 			return s, s.close(err)
 		}
+	}
+
+	if s.Controller == nil {
+		s.Controller = &DefaultController{HandshakeTimeout: time.Second * 3, Logger: s.Logger}
 	}
 
 	return s, nil
@@ -124,6 +130,10 @@ func (s *Server) serveConn(conn fatcp.Conn) (_ error) {
 		t      header.Transport
 		peer   = s.peer.Make()
 	)
+	defer func() {
+		conn.Close()
+		s.Logger.Info("close connect", slog.String("client", client.String()))
+	}()
 
 	for {
 		err := conn.Recv(s.srvCtx, peer, pkt.Sets(0, 0xffff))
