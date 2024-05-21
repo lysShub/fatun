@@ -25,6 +25,8 @@ type DefaultController struct {
 }
 
 func (c *DefaultController) Control(ctx context.Context, conn fatcp.Conn) {
+	gob.Register(Ping{})
+
 	handshakeCtx, cancel := context.WithTimeout(ctx, c.HandshakeTimeout)
 	defer cancel()
 	tcp, err := conn.BuiltinTCP(handshakeCtx)
@@ -83,7 +85,6 @@ type Marshal struct {
 }
 
 func NewMarshal(tcp io.ReadWriter) *Marshal {
-
 	return &Marshal{
 		enc: gob.NewEncoder(tcp),
 		dec: gob.NewDecoder(tcp),

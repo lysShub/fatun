@@ -44,11 +44,13 @@ func (p *defaultPeer) Reset(proto tcpip.TransportProtocolNumber, remote netip.Ad
 func (p *defaultPeer) Protocol() tcpip.TransportProtocolNumber { return p.proto }
 func (p *defaultPeer) Peer() netip.Addr                        { return p.peer }
 
-var _builtinPeer = &defaultPeer{peer: netip.IPv4Unspecified(), proto: tcp.ProtocolNumber}
-
-func (p *defaultPeer) Builtin() fatcp.Attacher { return _builtinPeer }
-func (p *defaultPeer) IsBuiltin() bool         { return p.Valid() && (*p) == (*_builtinPeer) }
-func (p *defaultPeer) Overhead() int           { return 5 }
+func (p *defaultPeer) Builtin() fatcp.Attacher {
+	return &defaultPeer{peer: netip.IPv4Unspecified(), proto: tcp.ProtocolNumber}
+}
+func (p *defaultPeer) IsBuiltin() bool {
+	return p.Valid() && p.peer.Is4() && p.peer.IsUnspecified() && p.proto == tcp.ProtocolNumber
+}
+func (p *defaultPeer) Overhead() int { return 5 }
 func (p *defaultPeer) Valid() bool {
 	return p != nil && p.peer.IsValid() && p.peer.Is4() &&
 		(p.proto == tcp.ProtocolNumber || p.proto == udp.ProtocolNumber)
