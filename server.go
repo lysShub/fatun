@@ -37,8 +37,6 @@ type Server struct {
 
 	Sender Sender
 
-	Controller Controller
-
 	peer     peer.Peer
 	srvCtx   context.Context
 	cancel   context.CancelFunc
@@ -71,10 +69,6 @@ func NewServer[P peer.Peer](opts ...func(*Server)) (*Server, error) {
 		if err != nil {
 			return s, s.close(err)
 		}
-	}
-
-	if s.Controller == nil {
-		s.Controller = &DefaultController{HandshakeTimeout: time.Second * 3, Logger: s.Logger}
 	}
 
 	return s, nil
@@ -134,7 +128,6 @@ func (s *Server) serveConn(conn fatcp.Conn) (_ error) {
 		conn.Close()
 		s.Logger.Info("close connect", slog.String("client", client.String()))
 	}()
-	go s.Controller.Control(s.srvCtx, conn)
 
 	for {
 		err := conn.Recv(s.srvCtx, peer, pkt.Sets(0, 0xffff))
@@ -187,19 +180,6 @@ func (s *Server) serveConn(conn fatcp.Conn) (_ error) {
 }
 
 func (s *Server) recvService() (_ error) {
-	// todo: 现在go的conn read/write cancel 有两种方式：
-	//  1. 传入ctx(通常一些上层协议使用),   2. 支持deadline(标准库)
-	//
-	// Sender使用ctx方式是因为rawsock传染，通常情况下一个conn只会cancel一次，
-	// 所以ctx显得不合理，而且系统调用不是原生支持的。
-	// 打算下一步更改rawsock接口。
-	//
-	// 此处使用AfterFunc临时支持ctx。
-	stop := context.AfterFunc(s.srvCtx, func() {
-		s.Sender.Close()
-	})
-	defer stop()
-
 	var (
 		ip       = packet.Make(0, s.Listener.MTU())
 		overhead = max(s.Listener.Overhead()-header.IPv4MinimumSize, 0)

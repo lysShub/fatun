@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"net/netip"
 	"os"
-	"time"
 
 	"github.com/lysShub/fatcp"
 	"github.com/lysShub/fatun/checksum"
@@ -37,8 +36,6 @@ type Client struct {
 
 	Capturer Capturer
 
-	Controller Controller
-
 	peer     peer.Peer
 	srvCtx   context.Context
 	cancel   context.CancelFunc
@@ -66,10 +63,6 @@ func NewClient[P peer.Peer](opts ...func(*Client)) (*Client, error) {
 		}
 	}
 
-	if c.Controller == nil {
-		c.Controller = &DefaultController{HandshakeTimeout: time.Second * 3, Logger: c.Logger}
-	}
-
 	return c, nil
 }
 
@@ -79,7 +72,6 @@ func (c *Client) Run() (err error) {
 	go c.downlinkServic()
 
 	c.Logger.Info("start", slog.String("server", c.Conn.RemoteAddr().String()))
-	go c.Controller.Control(c.srvCtx, c.Conn)
 	return nil
 }
 
