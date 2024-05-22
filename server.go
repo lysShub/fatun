@@ -34,7 +34,9 @@ type Server struct {
 	Logger *slog.Logger
 
 	Listener fatcp.Listener
-	Links    links.LinksManager
+
+	// links manager, notice not call Cleanup()
+	Links links.LinksManager
 
 	Sender Sender
 

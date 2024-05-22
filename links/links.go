@@ -13,11 +13,16 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 )
 
-// LinksManager link manager, use for proxy-server
+// LinksManager proxy-server links manager, support ttl
 type LinksManager interface {
-	Add(link Uplink, conn fatcp.Conn) (localPort uint16, err error)
-	Downlink(link Downlink) (conn fatcp.Conn, clientPort uint16, has bool) // todo: return error
+	Downlink(link Downlink) (conn fatcp.Conn, clientPort uint16, has bool)
 	Uplink(link Uplink) (localPort uint16, has bool)
+
+	// Add add new link, return alloced local port
+	Add(link Uplink, conn fatcp.Conn) (localPort uint16, err error)
+	// Cleanup clean timeout ttl link
+	Cleanup() []Link
+
 	Close() error
 }
 
@@ -39,6 +44,20 @@ type Downlink struct {
 
 func (d Downlink) String() string {
 	return fmt.Sprintf("Uplink{Server:%s, Proto:%s, Local:%s}", d.Server.String(), protostr(d.Proto), d.Local.String())
+}
+
+type Link struct {
+	Uplink
+	Local netip.AddrPort
+}
+
+func (l Link) String() string {
+	return fmt.Sprintf("Uplink{Proto:%s, Process:%s, Local:%s, Server:%s}",
+		protostr(l.Proto),
+		l.Process.String(),
+		l.Local.String(),
+		l.Server.String(),
+	)
 }
 
 func StripIP(ip *packet.Packet) (Downlink, error) {

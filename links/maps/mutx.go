@@ -33,12 +33,19 @@ func NewMutxLinkManager(mutx uint8, ttl time.Duration, addr netip.Addr) *mutxLin
 func (m *mutxLinkManager) Downlink(link links.Downlink) (conn fatcp.Conn, clientPort uint16, has bool) {
 	return m.get(link.Server.Addr()).Downlink(link)
 }
-func (m *mutxLinkManager) Add(link links.Uplink, conn fatcp.Conn) (localPort uint16, err error) {
-	return m.get(link.Server.Addr()).Add(link, conn)
-}
 func (m *mutxLinkManager) Uplink(link links.Uplink) (localPort uint16, has bool) {
 	return m.get(link.Server.Addr()).Uplink(link)
 }
+func (m *mutxLinkManager) Add(link links.Uplink, conn fatcp.Conn) (localPort uint16, err error) {
+	return m.get(link.Server.Addr()).Add(link, conn)
+}
+func (m *mutxLinkManager) Cleanup() (ls []links.Link) {
+	for _, e := range m.mgrs {
+		ls = append(ls, e.Cleanup()...)
+	}
+	return ls
+}
+
 func (m *mutxLinkManager) Close() error {
 	return m.ap.Close()
 }

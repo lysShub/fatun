@@ -44,20 +44,20 @@ func newLinkManager(ap *ports.Adapter, ttl time.Duration) *linkManager {
 }
 
 type ttlkey struct {
-	s links.Uplink
-	t time.Time
+	up    links.Uplink
+	start time.Time
 }
 
 func (t ttlkey) valid() bool {
-	return t.s.Process.IsValid() && t.s.Server.IsValid() && t.t != time.Time{}
+	return t.up.Process.IsValid() && t.up.Server.IsValid() && t.start != time.Time{}
 }
 
 type port atomic.Uint64
 
 func NewPort(p uint16) *port {
-	var a = &atomic.Uint64{}
-	a.Store(uint64(p) << 48)
-	return (*port)(a)
+	var a = &port{}
+	((*atomic.Uint64)(a)).Store(uint64(p) << 48)
+	return a
 }
 func (p *port) p() *atomic.Uint64 { return (*atomic.Uint64)(p) }
 func (p *port) Idle() bool {
@@ -74,47 +74,49 @@ type downkey struct {
 	clientPort uint16
 }
 
-func (t *linkManager) cleanup() {
+func (t *linkManager) Cleanup() []links.Link {
 	var (
-		ls     []links.Uplink
-		lports []uint16
+		ups []links.Uplink
+		ls  []links.Link
 	)
 	t.uplinkMu.Lock()
 	for i := 0; i < t.ttl.Size(); i++ {
 		i := t.ttl.Pop()
-		if i.valid() && time.Since(i.t) > t.duration {
-			p := t.uplinkMap[i.s]
+		if i.valid() && time.Since(i.start) > t.duration {
+			p := t.uplinkMap[i.up]
 			if p.Idle() {
-				ls = append(ls, i.s)
-				lports = append(lports, p.Port())
-				delete(t.uplinkMap, i.s)
+				ups = append(ups, i.up)
+				ls = append(ls, links.Link{Uplink: i.up, Local: netip.AddrPortFrom(t.addr, p.Port())})
+
+				delete(t.uplinkMap, i.up)
 			} else {
-				t.ttl.Put(ttlkey{i.s, time.Now()})
+				t.ttl.Put(ttlkey{i.up, time.Now()})
 			}
 		} else {
-			t.ttl.Put(ttlkey{i.s, time.Now()})
+			t.ttl.Put(ttlkey{i.up, time.Now()})
 			break
 		}
 	}
 	t.uplinkMu.Unlock()
-	if len(ls) == 0 {
-		return
+	if len(ups) == 0 {
+		return nil
 	}
 
 	t.donwlinkMu.Lock()
-	for i, e := range ls {
-		s := links.Downlink{Server: e.Server, Proto: e.Proto, Local: netip.AddrPortFrom(t.addr, lports[i])}
+	for i, e := range ups {
+		s := links.Downlink{Server: e.Server, Proto: e.Proto, Local: netip.AddrPortFrom(t.addr, ls[i].Local.Port())}
 		delete(t.downlinkMap, s)
 	}
 	t.donwlinkMu.Unlock()
 
-	for i, e := range ls {
-		t.ap.DelPort(e.Proto, lports[i], e.Server)
+	for i, e := range ups {
+		t.ap.DelPort(e.Proto, ls[i].Local.Port(), e.Server)
 	}
+	return ls
 }
 
 func (t *linkManager) Add(s links.Uplink, conn fatcp.Conn) (localPort uint16, err error) {
-	t.cleanup()
+	t.Cleanup()
 
 	localPort, err = t.ap.GetPort(s.Proto, s.Server)
 	if err != nil {
@@ -123,7 +125,7 @@ func (t *linkManager) Add(s links.Uplink, conn fatcp.Conn) (localPort uint16, er
 
 	t.uplinkMu.Lock()
 	t.uplinkMap[s] = NewPort(localPort)
-	t.ttl.Put(ttlkey{s: s, t: time.Now()})
+	t.ttl.Put(ttlkey{up: s, start: time.Now()})
 	t.uplinkMu.Unlock()
 
 	t.donwlinkMu.Lock()
