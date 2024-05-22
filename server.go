@@ -30,6 +30,7 @@ type Sender interface {
 }
 
 type Server struct {
+	// Logger Warn/Error logger
 	Logger *slog.Logger
 
 	Listener fatcp.Listener
@@ -45,6 +46,8 @@ type Server struct {
 
 func NewServer[P peer.Peer](opts ...func(*Server)) (*Server, error) {
 	var s = &Server{peer: *new(P)}
+	s.srvCtx, s.cancel = context.WithCancel(context.Background())
+
 	for _, opt := range opts {
 		opt(s)
 	}
@@ -75,7 +78,6 @@ func NewServer[P peer.Peer](opts ...func(*Server)) (*Server, error) {
 }
 
 func (s *Server) Serve() (err error) {
-	s.srvCtx, s.cancel = context.WithCancel(context.Background())
 	go s.recvService()
 	return s.acceptService()
 }
@@ -162,7 +164,6 @@ func (s *Server) serveConn(conn fatcp.Conn) (_ error) {
 				s.Logger.Warn(err.Error(), errorx.Trace(err))
 				continue
 			}
-			s.Logger.Info("add session", slog.String("server", up.Server.String()), slog.String("client", client.String()))
 		}
 
 		down := links.Downlink{

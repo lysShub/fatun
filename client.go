@@ -30,6 +30,7 @@ type Capturer interface {
 }
 
 type Client struct {
+	// Logger Warn/Error logger
 	Logger *slog.Logger
 
 	Conn fatcp.Conn
@@ -44,6 +45,8 @@ type Client struct {
 
 func NewClient[P peer.Peer](opts ...func(*Client)) (*Client, error) {
 	var c = &Client{peer: *new(P)}
+	c.srvCtx, c.cancel = context.WithCancel(context.Background())
+
 	for _, opt := range opts {
 		opt(c)
 	}
@@ -67,11 +70,8 @@ func NewClient[P peer.Peer](opts ...func(*Client)) (*Client, error) {
 }
 
 func (c *Client) Run() {
-	c.srvCtx, c.cancel = context.WithCancel(context.Background())
 	go c.uplinkService()
 	go c.downlinkServic()
-
-	c.Logger.Info("start", slog.String("server", c.Conn.RemoteAddr().String()))
 }
 
 func (c *Client) close(cause error) (_ error) {
