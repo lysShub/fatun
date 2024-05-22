@@ -66,13 +66,12 @@ func NewClient[P peer.Peer](opts ...func(*Client)) (*Client, error) {
 	return c, nil
 }
 
-func (c *Client) Run() (err error) {
+func (c *Client) Run() {
 	c.srvCtx, c.cancel = context.WithCancel(context.Background())
 	go c.uplinkService()
 	go c.downlinkServic()
 
 	c.Logger.Info("start", slog.String("server", c.Conn.RemoteAddr().String()))
-	return nil
 }
 
 func (c *Client) close(cause error) (_ error) {

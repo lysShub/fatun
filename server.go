@@ -74,11 +74,10 @@ func NewServer[P peer.Peer](opts ...func(*Server)) (*Server, error) {
 	return s, nil
 }
 
-func (s *Server) Run() (err error) {
+func (s *Server) Serve() (err error) {
 	s.srvCtx, s.cancel = context.WithCancel(context.Background())
-	go s.acceptService()
 	go s.recvService()
-	return nil
+	return s.acceptService()
 }
 
 func (s *Server) close(cause error) error {

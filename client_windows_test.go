@@ -34,8 +34,7 @@ func TestXxx(t *testing.T) {
 
 	c.Capturer = pcap.WrapCapture(c.Capturer, "capture.pcap")
 
-	err = c.Run()
-	require.NoError(t, err)
+	c.Run()
 
 	filter.Enable("aces.exe")
 
