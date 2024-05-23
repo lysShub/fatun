@@ -183,12 +183,11 @@ func (s *Server) serveConn(conn fatcp.Conn) (_ error) {
 
 func (s *Server) recvService() (_ error) {
 	var (
-		ip       = packet.Make(0, s.Listener.MTU())
-		overhead = max(s.Listener.Overhead()-header.IPv4MinimumSize, 0)
-		peer     = s.peer.Make()
+		ip   = packet.Make(64, s.Listener.MTU())
+		peer = s.peer.Make()
 	)
 	for {
-		err := s.Sender.Recv(s.srvCtx, ip.Sets(overhead, 0xffff))
+		err := s.Sender.Recv(s.srvCtx, ip.Sets(64, 0xffff))
 		if err != nil {
 			if errorx.Temporary(err) {
 				s.Logger.Warn(err.Error(), errorx.Trace(err))

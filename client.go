@@ -93,13 +93,12 @@ func (c *Client) close(cause error) (_ error) {
 
 func (c *Client) uplinkService() (_ error) {
 	var (
-		overhead = c.Conn.Overhead()
-		ip       = packet.Make(c.Conn.MTU())
-		peer     = c.peer.Make()
+		ip   = packet.Make(64, c.Conn.MTU())
+		peer = c.peer.Make()
 	)
 
 	for {
-		err := c.Capturer.Capture(c.srvCtx, ip.Sets(overhead, 0xffff))
+		err := c.Capturer.Capture(c.srvCtx, ip.Sets(64, 0xffff))
 		if err != nil {
 			if errorx.Temporary(err) {
 				c.Logger.Warn(err.Error(), errorx.Trace(err))
