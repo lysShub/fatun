@@ -6,7 +6,7 @@ require golang.org/x/sys v0.19.0
 
 require (
 	github.com/lysShub/divert-go v0.0.0-20240505203543-cdad175fca17
-	github.com/lysShub/fatcp v0.0.0-20240523075326-c8090958079c
+	github.com/lysShub/fatcp v0.0.0-20240523180130-7c3762f94b9c
 	github.com/lysShub/netkit v0.0.0-20240523071634-a634aa727e4f
 	github.com/lysShub/rawsock v0.0.0-20240523072032-1f20ac571cc0
 	github.com/mdlayher/arp v0.0.0-20220512170110-6706a2966875
