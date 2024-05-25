@@ -138,13 +138,6 @@ func (s *Server) serveConn(conn fatcp.Conn) (_ error) {
 		err := conn.Recv(s.srvCtx, peer, pkt.Sets(0, 0xffff))
 		if err != nil {
 			if errorx.Temporary(err) {
-				// todo: temporary
-				if debug.Debug() && errors.Is(err, io.ErrShortBuffer) && header.IPVersion(pkt.SetHead(0).Bytes()) == 4 {
-					ip := header.IPv4(pkt.Bytes())
-					println("short buff", "ip4 total length:", ip.TotalLength(),
-						"src", ip.SourceAddress().String(), "dst", ip.DestinationAddress().String(), "proto", ip.Protocol())
-				}
-
 				s.Logger.Warn(err.Error(), errorx.Trace(err))
 				continue
 			} else {
@@ -199,6 +192,15 @@ func (s *Server) recvService() (_ error) {
 		err := s.Sender.Recv(s.srvCtx, ip.Sets(64, 0xffff))
 		if err != nil {
 			if errorx.Temporary(err) {
+				if debug.Debug() && errors.Is(err, io.ErrShortBuffer) &&
+					header.IPVersion(ip.SetHead(64).Bytes()) == 4 {
+
+					// todo: temporary
+					ip := header.IPv4(ip.Bytes())
+					println("short buff", "ip4 total length:", ip.TotalLength(),
+						"src", ip.SourceAddress().String(), "dst", ip.DestinationAddress().String(), "proto", ip.Protocol())
+				}
+
 				s.Logger.Warn(err.Error(), errorx.Trace(err))
 				continue
 			} else {
