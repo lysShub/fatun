@@ -4,7 +4,6 @@
 package fatun
 
 import (
-	"context"
 	"fmt"
 	"net/netip"
 	"sync/atomic"
@@ -64,12 +63,12 @@ func (c *capture) close(cause error) error {
 
 func (c *capture) Enable(process string) { c.process.Store(&process) }
 
-func (c *capture) Capture(ctx context.Context, ip *packet.Packet) error {
+func (c *capture) Capture(ip *packet.Packet) error {
 	var addr divert.Address
 
 	head, data := ip.Head(), ip.Data()
 	for {
-		n, err := c.capture.RecvCtx(ctx, ip.Sets(head, data).Bytes(), &addr)
+		n, err := c.capture.Recv(ip.Sets(head, data).Bytes(), &addr)
 		if err != nil {
 			return c.close(err)
 		} else if n == 0 {
@@ -109,7 +108,7 @@ func (c *capture) Capture(ctx context.Context, ip *packet.Packet) error {
 	}
 }
 
-func (c *capture) Inject(ctx context.Context, ip *packet.Packet) error {
+func (c *capture) Inject(ip *packet.Packet) error {
 	if header.IPv4(ip.Bytes()).TransportProtocol() == header.TCPProtocolNumber {
 		UpdateTcpMssOption(header.IPv4(ip.Bytes()).Payload(), -c.overhead)
 	}

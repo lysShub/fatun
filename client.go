@@ -24,8 +24,8 @@ import (
 )
 
 type Capturer interface {
-	Capture(ctx context.Context, ip *packet.Packet) error
-	Inject(ctx context.Context, ip *packet.Packet) error
+	Capture(ip *packet.Packet) error
+	Inject(ip *packet.Packet) error
 	Close() error
 }
 
@@ -98,7 +98,7 @@ func (c *Client) uplinkService() (_ error) {
 	)
 
 	for {
-		err := c.Capturer.Capture(c.srvCtx, ip.Sets(64, 0xffff))
+		err := c.Capturer.Capture(ip.Sets(64, 0xffff))
 		if err != nil {
 			if errorx.Temporary(err) {
 				c.Logger.Warn(err.Error(), errorx.Trace(err))
@@ -144,7 +144,7 @@ func (c *Client) downlinkServic() error {
 		})
 		rechecksum(ip)
 
-		if err = c.Capturer.Inject(c.srvCtx, pkt); err != nil {
+		if err = c.Capturer.Inject(pkt); err != nil {
 			return c.close(err)
 		}
 	}

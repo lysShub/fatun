@@ -3,6 +3,7 @@ package fatun
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/netip"
@@ -15,6 +16,7 @@ import (
 	"github.com/lysShub/fatun/links"
 	"github.com/lysShub/fatun/links/maps"
 	"github.com/lysShub/fatun/peer"
+	"github.com/lysShub/netkit/debug"
 	"github.com/lysShub/netkit/errorx"
 	"github.com/lysShub/netkit/packet"
 	"github.com/pkg/errors"
@@ -136,6 +138,13 @@ func (s *Server) serveConn(conn fatcp.Conn) (_ error) {
 		err := conn.Recv(s.srvCtx, peer, pkt.Sets(0, 0xffff))
 		if err != nil {
 			if errorx.Temporary(err) {
+				// todo: temporary
+				if debug.Debug() && errors.Is(err, io.ErrShortBuffer) && header.IPVersion(pkt.SetHead(0).Bytes()) == 4 {
+					ip := header.IPv4(pkt.Bytes())
+					println("short buff", "ip4 total length:", ip.TotalLength(),
+						"src", ip.SourceAddress().String(), "dst", ip.DestinationAddress().String(), "proto", ip.Protocol())
+				}
+
 				s.Logger.Warn(err.Error(), errorx.Trace(err))
 				continue
 			} else {

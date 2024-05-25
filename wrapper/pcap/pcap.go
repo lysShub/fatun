@@ -24,15 +24,15 @@ func WrapCapture(capturer fatun.Capturer, file string) fatun.Capturer {
 	}
 }
 
-func (c *CaptureWrapper) Capture(ctx context.Context, ip *packet.Packet) error {
-	err := c.Capturer.Capture(ctx, ip)
+func (c *CaptureWrapper) Capture(ip *packet.Packet) error {
+	err := c.Capturer.Capture(ip)
 	if err != nil {
 		return err
 	}
 	return c.pcap.WriteIP(ip.Bytes())
 }
-func (c *CaptureWrapper) Inject(ctx context.Context, ip *packet.Packet) error {
-	err := c.Capturer.Inject(ctx, ip)
+func (c *CaptureWrapper) Inject(ip *packet.Packet) error {
+	err := c.Capturer.Inject(ip)
 	if err != nil {
 		return err
 	}
