@@ -116,12 +116,13 @@ func (s *IPSender) Recv(ip *packet.Packet) (err error) {
 }
 
 func (s *IPSender) Send(ip *packet.Packet) (err error) {
-	var proto = header.IPv4(ip.Bytes()).TransportProtocol()
-	switch proto {
+	var hdr = header.IPv4(ip.Bytes())
+	var dst = hdr.DestinationAddress()
+	switch proto := hdr.TransportProtocol(); proto {
 	case header.TCPProtocolNumber:
-		_, err = s.tcp.Write(ip.Bytes())
+		_, err = s.tcp.WriteToIP(ip.Bytes(), &net.IPAddr{IP: dst.AsSlice()})
 	case header.UDPProtocolNumber:
-		_, err = s.udp.Write(ip.Bytes())
+		_, err = s.udp.WriteToIP(ip.Bytes(), &net.IPAddr{IP: dst.AsSlice()})
 	default:
 		panic(fmt.Sprintf("not support  protocol %d", proto))
 	}
