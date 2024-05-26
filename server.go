@@ -26,8 +26,8 @@ import (
 const DefaultPort = 443
 
 type Sender interface {
-	Recv(ctx context.Context, ip *packet.Packet) error
-	Send(ctx context.Context, ip *packet.Packet) error
+	Recv(ip *packet.Packet) error
+	Send(ip *packet.Packet) error
 	Close() error
 }
 
@@ -40,7 +40,7 @@ type Server struct {
 	// links manager, notice not call Cleanup()
 	Links links.LinksManager
 
-	Sender Sender
+	Senders []Sender
 
 	peer     peer.Peer
 	srvCtx   context.Context
@@ -71,8 +71,8 @@ func NewServer[P peer.Peer](opts ...func(*Server)) (*Server, error) {
 		s.Links = maps.NewLinkManager(time.Second*30, s.Listener.Addr().Addr())
 	}
 
-	if s.Sender == nil {
-		s.Sender, err = NewDefaultSender(s.Listener.Addr())
+	if len(s.Senders) == 0 {
+		s.Senders, err = NewDefaultSender(s.Listener.Addr())
 		if err != nil {
 			return s, s.close(err)
 		}
@@ -82,7 +82,9 @@ func NewServer[P peer.Peer](opts ...func(*Server)) (*Server, error) {
 }
 
 func (s *Server) Serve() (err error) {
-	go s.recvService()
+	for _, e := range s.Senders {
+		go s.recvService(e)
+	}
 	return s.acceptService()
 }
 
@@ -93,8 +95,10 @@ func (s *Server) close(cause error) error {
 		if s.cancel != nil {
 			s.cancel()
 		}
-		if s.Sender != nil {
-			errs = append(errs, s.Sender.Close())
+		if len(s.Senders) > 0 {
+			for _, e := range s.Senders {
+				errs = append(errs, e.Close())
+			}
 		}
 		if s.Links != nil {
 			errs = append(errs, s.Links.Close())
@@ -135,7 +139,7 @@ func (s *Server) serveConn(conn fatcp.Conn) (_ error) {
 	}()
 
 	for {
-		err := conn.Recv(s.srvCtx, peer, pkt.Sets(0, 0xffff))
+		err := conn.Recv(peer, pkt.Sets(0, 0xffff))
 		if err != nil {
 			if errorx.Temporary(err) {
 				s.Logger.Warn(err.Error(), errorx.Trace(err))
@@ -177,19 +181,19 @@ func (s *Server) serveConn(conn fatcp.Conn) (_ error) {
 		}
 		ip := checksum.Server(pkt, down)
 
-		if err := s.Sender.Send(s.srvCtx, ip); err != nil {
+		if err := s.Senders[0].Send(ip); err != nil {
 			return s.close(errors.WithStack(err))
 		}
 	}
 }
 
-func (s *Server) recvService() (_ error) {
+func (s *Server) recvService(sender Sender) (_ error) {
 	var (
 		ip   = packet.Make(64, s.Listener.MTU())
 		peer = s.peer.Make()
 	)
 	for {
-		err := s.Sender.Recv(s.srvCtx, ip.Sets(64, 0xffff))
+		err := sender.Recv(ip.Sets(64, 0xffff))
 		if err != nil {
 			if errorx.Temporary(err) {
 				if debug.Debug() && errors.Is(err, io.ErrShortBuffer) &&
@@ -228,7 +232,7 @@ func (s *Server) recvService() (_ error) {
 		default:
 			return errors.Errorf("not support protocol %d", peer.Protocol())
 		}
-		if err := conn.Send(s.srvCtx, peer, ip); err != nil {
+		if err := conn.Send(peer, ip); err != nil {
 			// todo: 如果是已经删除的downlinker, 应该从links中删除，对于tcp，还应该回复RST
 			s.Logger.Warn(err.Error(), errorx.Trace(err))
 		}

@@ -5,10 +5,10 @@ go 1.22.0
 require golang.org/x/sys v0.19.0
 
 require (
-	github.com/lysShub/divert-go v0.0.0-20240524201828-91b65596d64d
-	github.com/lysShub/fatcp v0.0.0-20240525020803-96eaed50bf3c
+	github.com/lysShub/divert-go v0.0.0-20240525230502-6f79596abd61
+	github.com/lysShub/fatcp v0.0.0-20240526054140-1ad18db99b12
 	github.com/lysShub/netkit v0.0.0-20240523071634-a634aa727e4f
-	github.com/lysShub/rawsock v0.0.0-20240524142408-86e79472066f
+	github.com/lysShub/rawsock v0.0.0-20240526042157-00a185f3e450
 	github.com/mdlayher/arp v0.0.0-20220512170110-6706a2966875
 	github.com/stretchr/testify v1.9.0
 	golang.org/x/net v0.20.0

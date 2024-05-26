@@ -1,8 +1,6 @@
 package pcap
 
 import (
-	"context"
-
 	"github.com/lysShub/fatun"
 	"github.com/lysShub/netkit/packet"
 	"github.com/lysShub/netkit/pcap"
@@ -49,15 +47,15 @@ type SenderWrapper struct {
 	pcap *pcap.Pcap
 }
 
-func (s *SenderWrapper) Send(ctx context.Context, ip *packet.Packet) error {
-	err := s.Sender.Send(ctx, ip)
+func (s *SenderWrapper) Send(ip *packet.Packet) error {
+	err := s.Sender.Send(ip)
 	if err != nil {
 		return err
 	}
 	return s.pcap.WriteIP(ip.Bytes())
 }
-func (s *SenderWrapper) Recv(ctx context.Context, ip *packet.Packet) error {
-	err := s.Sender.Recv(ctx, ip)
+func (s *SenderWrapper) Recv(ip *packet.Packet) error {
+	err := s.Sender.Recv(ip)
 	if err != nil {
 		return err
 	}

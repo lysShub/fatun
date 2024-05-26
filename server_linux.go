@@ -4,7 +4,6 @@
 package fatun
 
 import (
-	"context"
 	"math/rand"
 	"net"
 	"net/netip"
@@ -23,13 +22,14 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
-type sender struct {
+type ethSender struct {
 	conn *eth.ETHConn
 	to   net.HardwareAddr
 	id   atomic.Uint32 // ip id
 }
 
-func NewDefaultSender(laddr netip.AddrPort) (Sender, error) {
+// NewETHSender 即使关闭eth offload, 也会读取到许多超过mtu的数据包
+func NewETHSender(laddr netip.AddrPort) (Sender, error) {
 	ifi, err := ifaceByAddr(laddr.Addr())
 	if err != nil {
 		return nil, err
@@ -58,7 +58,7 @@ func NewDefaultSender(laddr netip.AddrPort) (Sender, error) {
 		}
 	}
 
-	var s = &sender{to: to}
+	var s = &ethSender{to: to}
 	s.id.Store(rand.Uint32())
 	s.conn, err = eth.Listen("eth:ip4", ifi)
 	if err != nil {
@@ -88,7 +88,7 @@ func NewDefaultSender(laddr netip.AddrPort) (Sender, error) {
 	return s, nil
 }
 
-func (s *sender) Recv(_ context.Context, ip *packet.Packet) error {
+func (s *ethSender) Recv(ip *packet.Packet) error {
 	n, _, err := s.conn.ReadFromETH(ip.Bytes())
 	if err != nil {
 		return err
@@ -97,7 +97,7 @@ func (s *sender) Recv(_ context.Context, ip *packet.Packet) error {
 	return nil
 }
 
-func (s *sender) Send(_ context.Context, ip *packet.Packet) error {
+func (s *ethSender) Send(ip *packet.Packet) error {
 	hdr := header.IPv4(ip.Bytes())
 	if hdr.More() {
 		return errorx.WrapTemp(errors.New("can't send MF ip packet"))
@@ -110,7 +110,7 @@ func (s *sender) Send(_ context.Context, ip *packet.Packet) error {
 	return err
 }
 
-func (s *sender) close(cause error) error {
+func (s *ethSender) close(cause error) error {
 	if s.conn != nil {
 		if err := s.conn.Close(); err != nil && cause == nil {
 			cause = err
@@ -118,7 +118,7 @@ func (s *sender) close(cause error) error {
 	}
 	return cause
 }
-func (s *sender) Close() error { return s.close(nil) }
+func (s *ethSender) Close() error { return s.close(nil) }
 
 // bpfFilterProtoAndLocalTCPPorts bpf filter,
 //

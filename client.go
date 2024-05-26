@@ -111,7 +111,7 @@ func (c *Client) uplinkService() (_ error) {
 		peer.Reset(hdr.TransportProtocol(), netip.AddrFrom4(hdr.DestinationAddress().As4()))
 
 		pkt := checksum.Client(ip)
-		if err = c.Conn.Send(c.srvCtx, peer, pkt); err != nil {
+		if err = c.Conn.Send(peer, pkt); err != nil {
 			return c.close(err)
 		}
 	}
@@ -124,7 +124,7 @@ func (c *Client) downlinkServic() error {
 	)
 
 	for {
-		err := c.Conn.Recv(c.srvCtx, peer, pkt.Sets(0, 0xffff))
+		err := c.Conn.Recv(peer, pkt.Sets(0, 0xffff))
 		if err != nil {
 			if errorx.Temporary(err) {
 				c.Logger.Warn(err.Error(), errorx.Trace(err))
