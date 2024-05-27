@@ -29,7 +29,7 @@ func NewDefaultCapture(laddr netip.AddrPort, overhead int) (Capturer, error) {
 	var c = &capture{overhead: overhead}
 	var err error
 
-	var filter = fmt.Sprintf("outbound and !loopback and ip and (tcp or udp) and tcp.SrcPort!=%d", laddr.Port())
+	var filter = fmt.Sprintf("outbound and !loopback and ip and ((tcp and tcp.SrcPort!=%d) or udp)", laddr.Port())
 	c.capture, err = divert.Open(filter, divert.Network, 0, 0)
 	if err != nil {
 		return nil, c.close(err)
