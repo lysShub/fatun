@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/lysShub/fatcp"
-	"github.com/lysShub/fatcp/crypto"
+	"github.com/lysShub/fatun/conn/crypto"
 )
 
 var cfg = &fatcp.Config{

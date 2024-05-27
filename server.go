@@ -40,14 +40,14 @@ type Server struct {
 
 	Senders []Sender
 
-	peer     conn.Peer
+	session  conn.Session
 	srvCtx   context.Context
 	cancel   context.CancelFunc
 	closeErr errorx.CloseErr
 }
 
-func NewServer[P conn.Peer](opts ...func(*Server)) (*Server, error) {
-	var s = &Server{peer: *new(P)}
+func NewServer[P conn.Session](opts ...func(*Server)) (*Server, error) {
+	var s = &Server{session: *new(P)}
 	s.srvCtx, s.cancel = context.WithCancel(context.Background())
 
 	for _, opt := range opts {
@@ -135,7 +135,7 @@ func (s *Server) serveConn(conn conn.Conn) (_ error) {
 		client = conn.RemoteAddr()
 		pkt    = packet.Make(0, s.Listener.MTU())
 		t      header.Transport
-		peer   = s.peer.Builtin().Reset(0, netip.IPv4Unspecified())
+		sess   = s.session.Builtin().Reset(0, netip.IPv4Unspecified())
 	)
 	defer func() {
 		conn.Close()
@@ -143,7 +143,7 @@ func (s *Server) serveConn(conn conn.Conn) (_ error) {
 	}()
 
 	for {
-		err := conn.Recv(peer, pkt.Sets(0, 0xffff))
+		err := conn.Recv(sess, pkt.Sets(0, 0xffff))
 		if err != nil {
 			if errorx.Temporary(err) {
 				s.Logger.Warn(err.Error(), errorx.Trace(err))
@@ -154,20 +154,20 @@ func (s *Server) serveConn(conn conn.Conn) (_ error) {
 			}
 		}
 
-		switch peer.Protocol() {
+		switch sess.Protocol() {
 		case header.TCPProtocolNumber:
 			t = header.TCP(pkt.Bytes())
 		case header.UDPProtocolNumber:
 			t = header.UDP(pkt.Bytes())
 		default:
-			s.Logger.Warn(fmt.Sprintf("not support protocol %d", peer.Protocol()), errorx.CallTrace())
+			s.Logger.Warn(fmt.Sprintf("not support protocol %d", sess.Protocol()), errorx.CallTrace())
 			continue
 		}
 
 		up := links.Uplink{
 			Process: netip.AddrPortFrom(conn.RemoteAddr().Addr(), t.SourcePort()),
-			Proto:   peer.Protocol(),
-			Server:  netip.AddrPortFrom(peer.Peer(), t.DestinationPort()),
+			Proto:   sess.Protocol(),
+			Server:  netip.AddrPortFrom(sess.Destionation(), t.DestinationPort()),
 		}
 		localPort, has := s.Links.Uplink(up)
 		if !has {
@@ -194,7 +194,7 @@ func (s *Server) serveConn(conn conn.Conn) (_ error) {
 func (s *Server) recvService(sender Sender) (_ error) {
 	var (
 		ip   = packet.Make(64, s.Listener.MTU())
-		peer = s.peer.Builtin().Reset(0, netip.IPv4Unspecified())
+		sess = s.session.Builtin().Reset(0, netip.IPv4Unspecified())
 	)
 	for {
 		err := sender.Recv(ip.Sets(64, 0xffff))
@@ -227,16 +227,16 @@ func (s *Server) recvService(sender Sender) (_ error) {
 			// s.Logger.Warn("links manager not record", slog.String("downlin", link.String()))
 			continue
 		}
-		peer.Reset(link.Proto, link.Server.Addr())
-		switch peer.Protocol() {
+		sess.Reset(link.Proto, link.Server.Addr())
+		switch sess.Protocol() {
 		case header.TCPProtocolNumber:
 			header.TCP(ip.Bytes()).SetDestinationPort(port)
 		case header.UDPProtocolNumber:
 			header.UDP(ip.Bytes()).SetDestinationPort(port)
 		default:
-			return errors.Errorf("not support protocol %d", peer.Protocol())
+			return errors.Errorf("not support protocol %d", sess.Protocol())
 		}
-		if err := conn.Send(peer, ip); err != nil {
+		if err := conn.Send(sess, ip); err != nil {
 			// todo: 如果是已经删除的downlinker, 应该从links中删除，对于tcp，还应该回复RST
 			s.Logger.Warn(err.Error(), errorx.Trace(err))
 		}
