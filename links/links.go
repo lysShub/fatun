@@ -33,7 +33,7 @@ type Uplink struct {
 }
 
 func (d Uplink) String() string {
-	return fmt.Sprintf("Uplink{Process:%s, Proto:%s, Server:%s}", d.Process.String(), protostr(d.Proto), d.Server.String())
+	return fmt.Sprintf("{Process:%s, Proto:%s, Server:%s}", d.Process.String(), protostr(d.Proto), d.Server.String())
 }
 
 type Downlink struct {
@@ -43,7 +43,7 @@ type Downlink struct {
 }
 
 func (d Downlink) String() string {
-	return fmt.Sprintf("Uplink{Server:%s, Proto:%s, Local:%s}", d.Server.String(), protostr(d.Proto), d.Local.String())
+	return fmt.Sprintf("{Server:%s, Proto:%s, Local:%s}", d.Server.String(), protostr(d.Proto), d.Local.String())
 }
 
 type Link struct {
@@ -52,7 +52,7 @@ type Link struct {
 }
 
 func (l Link) String() string {
-	return fmt.Sprintf("Uplink{Proto:%s, Process:%s, Local:%s, Server:%s}",
+	return fmt.Sprintf("{Proto:%s, Process:%s, Local:%s, Server:%s}",
 		protostr(l.Proto),
 		l.Process.String(),
 		l.Local.String(),
