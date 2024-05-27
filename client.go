@@ -36,14 +36,14 @@ type Client struct {
 
 	Capturer Capturer
 
-	sess     conn.Session
+	peer     conn.Peer
 	srvCtx   context.Context
 	cancel   context.CancelFunc
 	closeErr errorx.CloseErr
 }
 
-func NewClient[P conn.Session](opts ...func(*Client)) (*Client, error) {
-	var c = &Client{sess: *new(P)}
+func NewClient[P conn.Peer](opts ...func(*Client)) (*Client, error) {
+	var c = &Client{peer: *new(P)}
 	c.srvCtx, c.cancel = context.WithCancel(context.Background())
 
 	for _, opt := range opts {
@@ -99,7 +99,7 @@ func (c *Client) close(cause error) (_ error) {
 func (c *Client) uplinkService() (_ error) {
 	var (
 		ip = packet.Make(64, c.Conn.MTU())
-		s  = c.sess.Builtin().Reset(0, netip.IPv4Unspecified())
+		s  = c.peer.Builtin().Reset(0, netip.IPv4Unspecified())
 	)
 
 	for {
@@ -125,11 +125,11 @@ func (c *Client) uplinkService() (_ error) {
 func (c *Client) downlinkServic() error {
 	var (
 		pkt  = packet.Make(0, c.Conn.MTU())
-		sess = c.sess.Builtin().Reset(0, netip.IPv4Unspecified())
+		peer = c.peer.Builtin().Reset(0, netip.IPv4Unspecified())
 	)
 
 	for {
-		err := c.Conn.Recv(sess, pkt.Sets(0, 0xffff))
+		err := c.Conn.Recv(peer, pkt.Sets(0, 0xffff))
 		if err != nil {
 			if errorx.Temporary(err) {
 				c.Logger.Warn(err.Error(), errorx.Trace(err))
@@ -143,8 +143,8 @@ func (c *Client) downlinkServic() error {
 		ip.Encode(&header.IPv4Fields{
 			TotalLength: uint16(pkt.Data()),
 			TTL:         64,
-			Protocol:    uint8(sess.Protocol()),
-			SrcAddr:     tcpip.AddrFrom4(sess.Destionation().As4()),
+			Protocol:    uint8(peer.Protocol()),
+			SrcAddr:     tcpip.AddrFrom4(peer.Peer().As4()),
 			DstAddr:     tcpip.AddrFrom4(c.Conn.LocalAddr().Addr().As4()),
 		})
 		rechecksum(ip)

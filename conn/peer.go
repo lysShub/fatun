@@ -14,41 +14,41 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 )
 
-type Session interface {
+type Peer interface {
 	Valid() bool
 	String() string
-	Builtin() Session
+	Builtin() Peer
 	IsBuiltin() bool
 	Overhead() int
 	Encode(from *packet.Packet) error
 	Decode(to *packet.Packet) error
 
-	Reset(proto tcpip.TransportProtocolNumber, dst netip.Addr) Session
+	Reset(proto tcpip.TransportProtocolNumber, dst netip.Addr) Peer
 	Protocol() tcpip.TransportProtocolNumber
-	Destionation() netip.Addr
+	Peer() netip.Addr
 }
 
 type Default = *defaultSession
 
-var _ Session = (Default)(nil)
+var _ Peer = (Default)(nil)
 
 type defaultSession struct {
 	proto tcpip.TransportProtocolNumber
 	dst   netip.Addr // only ipv4
 }
 
-func New(proto tcpip.TransportProtocolNumber, remote netip.Addr) Session {
+func New(proto tcpip.TransportProtocolNumber, remote netip.Addr) Peer {
 	return &defaultSession{proto, remote}
 }
 
-func (p *defaultSession) Reset(proto tcpip.TransportProtocolNumber, remote netip.Addr) Session {
+func (p *defaultSession) Reset(proto tcpip.TransportProtocolNumber, remote netip.Addr) Peer {
 	p.proto, p.dst = proto, remote
 	return p
 }
 func (p *defaultSession) Protocol() tcpip.TransportProtocolNumber { return p.proto }
-func (p *defaultSession) Destionation() netip.Addr                { return p.dst }
+func (p *defaultSession) Peer() netip.Addr                        { return p.dst }
 
-func (p *defaultSession) Builtin() Session {
+func (p *defaultSession) Builtin() Peer {
 	return &defaultSession{dst: netip.IPv4Unspecified(), proto: tcp.ProtocolNumber}
 }
 func (p *defaultSession) IsBuiltin() bool {

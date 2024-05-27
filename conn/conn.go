@@ -20,8 +20,8 @@ type Listener interface {
 // datagram conn
 type Conn interface {
 	BuiltinTCP(ctx context.Context) (tcp net.Conn, err error)
-	Recv(atter Session, payload *packet.Packet) (err error)
-	Send(atter Session, payload *packet.Packet) (err error)
+	Recv(atter Peer, payload *packet.Packet) (err error)
+	Send(atter Peer, payload *packet.Packet) (err error)
 
 	MTU() int
 	Role() Role
