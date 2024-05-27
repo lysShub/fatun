@@ -2,6 +2,7 @@ package conn
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"net/netip"
 
@@ -33,6 +34,19 @@ type Conn interface {
 type Role uint8
 
 const (
-	client Role = 1
-	server Role = 2
+	Client Role = 1
+	Server Role = 2
 )
+
+func (r Role) Client() bool { return r == Client }
+func (r Role) Server() bool { return r == Server }
+func (r Role) String() string {
+	switch r {
+	case Client:
+		return "client"
+	case Server:
+		return "server"
+	default:
+		return fmt.Sprintf("invalid fatcp role %d", r)
+	}
+}
