@@ -30,7 +30,9 @@ type Capturer interface {
 
 type Client struct {
 	// Logger Warn/Error logger
-	Logger *slog.Logger
+	Logger      *slog.Logger
+	MaxRecvBuff int
+	TcpMssDelta int
 
 	Conn conn.Conn
 
@@ -59,7 +61,7 @@ func NewClient[P conn.Peer](opts ...func(*Client)) (*Client, error) {
 
 	var err error
 	if c.Capturer == nil {
-		c.Capturer, err = NewDefaultCapture(c.Conn.LocalAddr(), c.Conn.Overhead())
+		c.Capturer, err = NewDefaultCapture(c.Conn.LocalAddr(), c.TcpMssDelta)
 		if err != nil {
 			return nil, err
 		}
@@ -98,7 +100,7 @@ func (c *Client) close(cause error) (_ error) {
 
 func (c *Client) uplinkService() (_ error) {
 	var (
-		ip = packet.Make(64, c.Conn.MTU())
+		ip = packet.Make(64, c.MaxRecvBuff)
 		s  = c.peer.Builtin().Reset(0, netip.IPv4Unspecified())
 	)
 
@@ -124,7 +126,7 @@ func (c *Client) uplinkService() (_ error) {
 
 func (c *Client) downlinkServic() error {
 	var (
-		pkt  = packet.Make(0, c.Conn.MTU())
+		pkt  = packet.Make(0, c.MaxRecvBuff)
 		peer = c.peer.Builtin().Reset(0, netip.IPv4Unspecified())
 	)
 
