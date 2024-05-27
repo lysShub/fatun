@@ -64,7 +64,7 @@ func NewETHSender(laddr netip.AddrPort) ([]Sender, error) {
 	var s = &ethSender{to: to}
 
 	{
-		s.pcap, err = pcap.File("client-segments.pcap")
+		s.pcap, err = pcap.File("server-segments.pcap")
 		if err != nil {
 			return nil, err
 		}
