@@ -8,10 +8,8 @@ import (
 	"net"
 	"net/netip"
 	"os"
-	"strconv"
 	"time"
 
-	"github.com/lysShub/fatcp"
 	"github.com/lysShub/fatun/checksum"
 	"github.com/lysShub/fatun/conn"
 	"github.com/lysShub/fatun/links"
@@ -35,7 +33,7 @@ type Server struct {
 	// Logger Warn/Error logger
 	Logger *slog.Logger
 
-	Listener fatcp.Listener
+	Listener conn.Listener
 
 	// links manager, notice not call Cleanup()
 	Links links.LinksManager
@@ -61,8 +59,8 @@ func NewServer[P conn.Peer](opts ...func(*Server)) (*Server, error) {
 	}
 	var err error
 	if s.Listener == nil {
-		addr := net.JoinHostPort("", strconv.Itoa(DefaultPort))
-		s.Listener, err = fatcp.Listen[P](addr, &fatcp.Config{})
+		// addr := net.JoinHostPort("", strconv.Itoa(DefaultPort))
+		// s.Listener, err = fatcp.Listen[P](addr, &fatcp.Config{}) // todo: 默认udp那个
 		if err != nil {
 			return nil, s.close(err)
 		}
