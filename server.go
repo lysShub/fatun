@@ -167,7 +167,7 @@ func (s *Server) serveConn(conn conn.Conn) (_ error) {
 		up := links.Uplink{
 			Process: netip.AddrPortFrom(conn.RemoteAddr().Addr(), t.SourcePort()),
 			Proto:   peer.Protocol(),
-			Server:  netip.AddrPortFrom(conn.Peer(), t.DestinationPort()),
+			Server:  netip.AddrPortFrom(peer.Peer(), t.DestinationPort()),
 		}
 		localPort, has := s.Links.Uplink(up)
 		if !has {
