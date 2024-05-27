@@ -75,6 +75,12 @@ func (c *Client) Run() {
 }
 
 func (c *Client) close(cause error) (_ error) {
+	if cause != nil {
+		c.Logger.Error(cause.Error(), errorx.Trace(cause))
+	} else {
+		c.Logger.Info("client close", errorx.Trace(nil))
+	}
+
 	return c.closeErr.Close(func() (errs []error) {
 		errs = append(errs, cause)
 

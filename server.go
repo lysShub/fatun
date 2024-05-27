@@ -89,6 +89,12 @@ func (s *Server) Serve() (err error) {
 }
 
 func (s *Server) close(cause error) error {
+	if cause != nil {
+		s.Logger.Error(cause.Error(), errorx.Trace(cause))
+	} else {
+		s.Logger.Info("server close", errorx.Trace(nil))
+	}
+
 	return s.closeErr.Close(func() (errs []error) {
 		errs = append(errs, cause)
 
@@ -161,7 +167,7 @@ func (s *Server) serveConn(conn fatcp.Conn) (_ error) {
 		}
 
 		up := links.Uplink{
-			Process: netip.AddrPortFrom(conn.LocalAddr().Addr(), t.SourcePort()),
+			Process: netip.AddrPortFrom(conn.RemoteAddr().Addr(), t.SourcePort()),
 			Proto:   peer.Protocol(),
 			Server:  netip.AddrPortFrom(peer.Peer(), t.DestinationPort()),
 		}

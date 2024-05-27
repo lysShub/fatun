@@ -29,8 +29,8 @@ github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 h1:6E+4a0GO5zZEnZ
 github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0/go.mod h1:zJYVVT2jmtg6P3p1VtQj7WsuWi/y4VnjVBn7F8KPB3I=
 github.com/lysShub/divert-go v0.0.0-20240525230502-6f79596abd61 h1:qqarPA8zZe+LnIGHaleqDikaQ3QzvlAfDigXYRrboHU=
 github.com/lysShub/divert-go v0.0.0-20240525230502-6f79596abd61/go.mod h1:OXuD4Q/Y84FyNiYy/sf9RVshvAC5/rvcHA6J7JvvtFM=
-github.com/lysShub/fatcp v0.0.0-20240526073347-4780cb1ebc59 h1:uMM4fXWUNNHS4SyjiZ2oSxQo2Trcq/L3R/JlIC/hb2o=
-github.com/lysShub/fatcp v0.0.0-20240526073347-4780cb1ebc59/go.mod h1:OcwmJH75UFbxgySGBfTD2K8HbGTENCUbfGykNT2DgSE=
+github.com/lysShub/fatcp v0.0.0-20240526181953-545fe46e3c99 h1:fH80xHMoYXzDW9XzGaGwG1UpllwgVowVoZJrgFU7bK0=
+github.com/lysShub/fatcp v0.0.0-20240526181953-545fe46e3c99/go.mod h1:OcwmJH75UFbxgySGBfTD2K8HbGTENCUbfGykNT2DgSE=
 github.com/lysShub/netkit v0.0.0-20240523071634-a634aa727e4f h1:45H4XCe9QYhyWuEmEb7wnmPP6+6JPq4bngYQeW0g574=
 github.com/lysShub/netkit v0.0.0-20240523071634-a634aa727e4f/go.mod h1:meJ+5h9/ek0ORSdEgtCx6NsvuAWQHITzkLuVDtL+2lc=
 github.com/lysShub/rawsock v0.0.0-20240526072017-bbcbc8a34f47 h1:kwiF1j5ADA1DqMZN/9Utt7CUbQNJzA6XUW3QGy456gc=
