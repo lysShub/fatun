@@ -1,10 +1,9 @@
-package peer
+package conn
 
 import (
 	"fmt"
 	"net/netip"
 
-	"github.com/lysShub/fatcp"
 	"github.com/lysShub/netkit/debug"
 	"github.com/lysShub/netkit/packet"
 	"github.com/lysShub/rawsock/test"
@@ -16,10 +15,15 @@ import (
 )
 
 type Peer interface {
-	fatcp.Attacher
+	Valid() bool
+	String() string
+	Builtin() Peer
+	IsBuiltin() bool
+	Overhead() int
+	Encode(from *packet.Packet) error
+	Decode(to *packet.Packet) error
 
-	Make() Peer
-	Reset(proto tcpip.TransportProtocolNumber, remote netip.Addr)
+	Reset(proto tcpip.TransportProtocolNumber, remote netip.Addr) Peer
 	Protocol() tcpip.TransportProtocolNumber
 	Peer() netip.Addr
 }
@@ -37,14 +41,14 @@ func New(proto tcpip.TransportProtocolNumber, remote netip.Addr) Peer {
 	return &defaultPeer{proto, remote}
 }
 
-func (p *defaultPeer) Make() Peer { return &defaultPeer{} }
-func (p *defaultPeer) Reset(proto tcpip.TransportProtocolNumber, remote netip.Addr) {
+func (p *defaultPeer) Reset(proto tcpip.TransportProtocolNumber, remote netip.Addr) Peer {
 	p.proto, p.peer = proto, remote
+	return p
 }
 func (p *defaultPeer) Protocol() tcpip.TransportProtocolNumber { return p.proto }
 func (p *defaultPeer) Peer() netip.Addr                        { return p.peer }
 
-func (p *defaultPeer) Builtin() fatcp.Attacher {
+func (p *defaultPeer) Builtin() Peer {
 	return &defaultPeer{peer: netip.IPv4Unspecified(), proto: tcp.ProtocolNumber}
 }
 func (p *defaultPeer) IsBuiltin() bool {

@@ -9,9 +9,8 @@ import (
 	"net/netip"
 	"os"
 
-	"github.com/lysShub/fatcp"
 	"github.com/lysShub/fatun/checksum"
-	"github.com/lysShub/fatun/peer"
+	"github.com/lysShub/fatun/conn"
 	"github.com/lysShub/rawsock/test"
 	"github.com/pkg/errors"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -33,17 +32,17 @@ type Client struct {
 	// Logger Warn/Error logger
 	Logger *slog.Logger
 
-	Conn fatcp.Conn
+	Conn conn.Conn
 
 	Capturer Capturer
 
-	peer     peer.Peer
+	peer     conn.Peer
 	srvCtx   context.Context
 	cancel   context.CancelFunc
 	closeErr errorx.CloseErr
 }
 
-func NewClient[P peer.Peer](opts ...func(*Client)) (*Client, error) {
+func NewClient[P conn.Peer](opts ...func(*Client)) (*Client, error) {
 	var c = &Client{peer: *new(P)}
 	c.srvCtx, c.cancel = context.WithCancel(context.Background())
 
@@ -55,7 +54,7 @@ func NewClient[P peer.Peer](opts ...func(*Client)) (*Client, error) {
 		c.Logger = slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	}
 	if c.Conn == nil {
-		return nil, errors.New("require fatcp.Conn")
+		return nil, errors.New("require conn.Conn")
 	}
 
 	var err error
@@ -100,7 +99,7 @@ func (c *Client) close(cause error) (_ error) {
 func (c *Client) uplinkService() (_ error) {
 	var (
 		ip   = packet.Make(64, c.Conn.MTU())
-		peer = c.peer.Make()
+		peer = c.peer.Builtin().Reset(0, netip.IPv4Unspecified())
 	)
 
 	for {
@@ -126,7 +125,7 @@ func (c *Client) uplinkService() (_ error) {
 func (c *Client) downlinkServic() error {
 	var (
 		pkt  = packet.Make(0, c.Conn.MTU())
-		peer = c.peer.Make()
+		peer = c.peer.Builtin().Reset(0, netip.IPv4Unspecified())
 	)
 
 	for {

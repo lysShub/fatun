@@ -13,9 +13,9 @@ import (
 
 	"github.com/lysShub/fatcp"
 	"github.com/lysShub/fatun/checksum"
+	"github.com/lysShub/fatun/conn"
 	"github.com/lysShub/fatun/links"
 	"github.com/lysShub/fatun/links/maps"
-	"github.com/lysShub/fatun/peer"
 	"github.com/lysShub/netkit/debug"
 	"github.com/lysShub/netkit/errorx"
 	"github.com/lysShub/netkit/packet"
@@ -42,13 +42,13 @@ type Server struct {
 
 	Senders []Sender
 
-	peer     peer.Peer
+	peer     conn.Peer
 	srvCtx   context.Context
 	cancel   context.CancelFunc
 	closeErr errorx.CloseErr
 }
 
-func NewServer[P peer.Peer](opts ...func(*Server)) (*Server, error) {
+func NewServer[P conn.Peer](opts ...func(*Server)) (*Server, error) {
 	var s = &Server{peer: *new(P)}
 	s.srvCtx, s.cancel = context.WithCancel(context.Background())
 
@@ -132,12 +132,12 @@ func (s *Server) acceptService() (_ error) {
 	}
 }
 
-func (s *Server) serveConn(conn fatcp.Conn) (_ error) {
+func (s *Server) serveConn(conn conn.Conn) (_ error) {
 	var (
 		client = conn.RemoteAddr()
 		pkt    = packet.Make(0, s.Listener.MTU())
 		t      header.Transport
-		peer   = s.peer.Make()
+		peer   = s.peer.Builtin().Reset(0, netip.IPv4Unspecified())
 	)
 	defer func() {
 		conn.Close()
@@ -169,7 +169,7 @@ func (s *Server) serveConn(conn fatcp.Conn) (_ error) {
 		up := links.Uplink{
 			Process: netip.AddrPortFrom(conn.RemoteAddr().Addr(), t.SourcePort()),
 			Proto:   peer.Protocol(),
-			Server:  netip.AddrPortFrom(peer.Peer(), t.DestinationPort()),
+			Server:  netip.AddrPortFrom(conn.Peer(), t.DestinationPort()),
 		}
 		localPort, has := s.Links.Uplink(up)
 		if !has {
@@ -196,7 +196,7 @@ func (s *Server) serveConn(conn fatcp.Conn) (_ error) {
 func (s *Server) recvService(sender Sender) (_ error) {
 	var (
 		ip   = packet.Make(64, s.Listener.MTU())
-		peer = s.peer.Make()
+		peer = s.peer.Builtin().Reset(0, netip.IPv4Unspecified())
 	)
 	for {
 		err := sender.Recv(ip.Sets(64, 0xffff))
