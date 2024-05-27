@@ -12,6 +12,7 @@ import (
 	"github.com/lysShub/netkit/errorx"
 	mapping "github.com/lysShub/netkit/mapping/process"
 	"github.com/lysShub/netkit/packet"
+	"github.com/lysShub/netkit/pcap"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
@@ -23,11 +24,20 @@ type capture struct {
 	mapping mapping.Mapping
 
 	overhead int
+
+	pcap *pcap.Pcap
 }
 
 func NewDefaultCapture(laddr netip.AddrPort, overhead int) (Capturer, error) {
 	var c = &capture{overhead: overhead}
 	var err error
+
+	{
+		c.pcap, err = pcap.File("client-segments.pcap")
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	var filter = fmt.Sprintf("outbound and !loopback and ip and ((tcp and tcp.SrcPort!=%d) or udp)", laddr.Port())
 	c.capture, err = divert.Open(filter, divert.Network, 0, 0)
@@ -104,6 +114,14 @@ func (c *capture) Capture(ip *packet.Packet) error {
 		if s.Proto == header.TCPProtocolNumber {
 			UpdateTcpMssOption(header.IPv4(ip.Bytes()).Payload(), -c.overhead)
 		}
+
+		{
+			err = c.pcap.WriteIP(ip.Bytes())
+			if err != nil {
+				return err
+			}
+		}
+
 		return nil
 	}
 }
@@ -111,6 +129,13 @@ func (c *capture) Capture(ip *packet.Packet) error {
 func (c *capture) Inject(ip *packet.Packet) error {
 	if header.IPv4(ip.Bytes()).TransportProtocol() == header.TCPProtocolNumber {
 		UpdateTcpMssOption(header.IPv4(ip.Bytes()).Payload(), -c.overhead)
+	}
+
+	{
+		err := c.pcap.WriteIP(ip.Bytes())
+		if err != nil {
+			return err
+		}
 	}
 
 	_, err := c.capture.Send(ip.Bytes(), &c.inbound)

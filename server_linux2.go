@@ -23,10 +23,6 @@ type IPSender struct {
 	istcp bool
 }
 
-func NewDefaultSender(laddr netip.AddrPort) ([]Sender, error) {
-	return NewIPSender(laddr)
-}
-
 func NewIPSender(laddr netip.AddrPort) (sneders []Sender, err error) {
 	tcp, err := net.ListenIP("ip4:tcp", &net.IPAddr{IP: laddr.Addr().AsSlice()})
 	defer func() {
