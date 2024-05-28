@@ -31,7 +31,8 @@ type Sender interface {
 
 type Server struct {
 	// Logger Warn/Error logger
-	Logger *slog.Logger
+	Logger      *slog.Logger
+	MaxRecvBuff int
 
 	Listener conn.Listener
 
@@ -116,7 +117,7 @@ func (s *Server) close(cause error) error {
 
 func (s *Server) acceptService() (_ error) {
 	for {
-		conn, err := s.Listener.AcceptCtx(s.srvCtx)
+		conn, err := s.Listener.Accept()
 		if err != nil {
 			if errorx.Temporary(err) {
 				s.Logger.Warn(err.Error(), errorx.Trace(err))
@@ -133,7 +134,7 @@ func (s *Server) acceptService() (_ error) {
 func (s *Server) serveConn(conn conn.Conn) (_ error) {
 	var (
 		client = conn.RemoteAddr()
-		pkt    = packet.Make(0, s.Listener.MTU())
+		pkt    = packet.Make(0, s.MaxRecvBuff)
 		t      header.Transport
 		peer   = s.peer.Builtin().Reset(0, netip.IPv4Unspecified())
 	)
@@ -193,7 +194,7 @@ func (s *Server) serveConn(conn conn.Conn) (_ error) {
 
 func (s *Server) recvService(sender Sender) (_ error) {
 	var (
-		ip   = packet.Make(64, s.Listener.MTU())
+		ip   = packet.Make(s.MaxRecvBuff)
 		peer = s.peer.Builtin().Reset(0, netip.IPv4Unspecified())
 	)
 	for {

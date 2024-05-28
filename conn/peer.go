@@ -20,8 +20,8 @@ type Peer interface {
 	Builtin() Peer
 	IsBuiltin() bool
 	Overhead() int
-	Encode(from *packet.Packet) error
-	Decode(to *packet.Packet) error
+	Encode(to *packet.Packet) error
+	Decode(from *packet.Packet) error
 
 	Reset(proto tcpip.TransportProtocolNumber, dst netip.Addr) Peer
 	Protocol() tcpip.TransportProtocolNumber
