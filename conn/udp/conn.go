@@ -26,9 +26,10 @@ type Config struct {
 }
 
 type Conn struct {
-	config *Config
-	role   role
-	peer   conn.Peer
+	config  *Config
+	role    role
+	peer    conn.Peer
+	natPort uint16
 
 	conn audp.Conn
 
@@ -110,6 +111,11 @@ func newConn(conn audp.Conn, peer conn.Peer, role role, ep *ustack.LinkEndpoint,
 	} else {
 		c.tcpFactory = fact
 	}
+	if role.Client() {
+		c.natPort = c.LocalAddr().Port()
+	} else {
+		c.natPort = c.RemoteAddr().Port()
+	}
 
 	go c.outboundService()
 	return c, nil
@@ -174,7 +180,7 @@ func (c *Conn) Recv(peer conn.Peer, pkt *packet.Packet) (err error) {
 		}
 
 		if peer.IsBuiltin() {
-			c.ep.Inbound(pkt)
+			c.inboundBuitinPacket(pkt)
 		} else {
 			if c.crypto != nil {
 				err = c.crypto.Decrypt(pkt.AttachN(c.peer.Overhead()))

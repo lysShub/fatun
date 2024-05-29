@@ -63,8 +63,8 @@ func Listen(addr *net.UDPAddr, maxRecvSize int) (*Listener, error) {
 }
 
 func (l *Listener) close(cause error) error {
-	defer func() { close(l.connCh) }()
 	return l.closeErr.Close(func() (errs []error) {
+		close(l.connCh)
 		return append(errs, cause)
 	})
 }

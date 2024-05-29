@@ -130,7 +130,8 @@ func (c *Conn) handshakeInboundService(retch chan struct{}) (_ error) {
 					require.Equal(test.T(), c.LocalAddr().Port(), hdr.DestinationPort())
 					require.Equal(test.T(), c.RemoteAddr().Port(), hdr.SourcePort())
 				}
-				c.ep.Inbound(tcp)
+				// c.ep.Inbound(tcp)
+				c.inboundBuitinPacket(tcp)
 			} else {
 				select {
 				case c.handshakeRecvedPackets <- tcp.AttachN(c.peer.Overhead()).Clone():
@@ -140,4 +141,16 @@ func (c *Conn) handshakeInboundService(retch chan struct{}) (_ error) {
 			}
 		}
 	}
+}
+
+func (c *Conn) inboundBuitinPacket(tcp *packet.Packet) {
+	// if the data packet passes through the NAT gateway, on handshake
+	// step, the client port will be change automatically, after handshake, need manually
+	// change client port for builtin tcp packet.
+	if c.role.Client() {
+		header.TCP(tcp.Bytes()).SetDestinationPortWithChecksumUpdate(c.natPort)
+	} else {
+		header.TCP(tcp.Bytes()).SetSourcePortWithChecksumUpdate(c.natPort)
+	}
+	c.ep.Inbound(tcp)
 }
