@@ -10,8 +10,11 @@ import (
 	"time"
 
 	"github.com/lysShub/fatun/ustack/gonet"
+	"github.com/lysShub/netkit/debug"
 	"github.com/lysShub/netkit/packet"
+	"github.com/lysShub/rawsock/test"
 	"github.com/pkg/errors"
+	"github.com/stretchr/testify/require"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
@@ -35,6 +38,14 @@ func (r role) String() string {
 	}
 }
 
+func (c *Conn) clientFactory(ctx context.Context, remote netip.AddrPort) (*gonet.TCPConn, error) {
+	return gonet.DialTCPWithBind(
+		ctx, c.ep.Stack(),
+		c.LocalAddr(), remote,
+		header.IPv4ProtocolNumber,
+	)
+}
+
 func (c *Conn) handshake(ctx context.Context) (err error) {
 	if !c.handshaked.CompareAndSwap(false, true) {
 		<-c.handshakedNotify
@@ -42,11 +53,7 @@ func (c *Conn) handshake(ctx context.Context) (err error) {
 	}
 	go c.handshakeInboundService()
 
-	tcp, err := gonet.DialTCPWithBind(
-		ctx, c.stack,
-		c.LocalAddr(), c.RemoteAddr(),
-		header.IPv4ProtocolNumber,
-	)
+	tcp, err := c.tcpFactory(ctx, c.RemoteAddr())
 	if err != nil {
 		return errors.WithStack(err)
 	}
@@ -84,6 +91,10 @@ func (c *Conn) handshake(ctx context.Context) (err error) {
 		if err != nil {
 			return errors.WithStack(err)
 		}
+
+		c.builtin = tconn
+	} else {
+		c.builtin = tcp
 	}
 
 	close(c.handshakedNotify)
@@ -100,8 +111,7 @@ func (c *Conn) handshakeInboundService() (_ error) {
 		case <-c.handshakedNotify:
 			return nil
 		default:
-
-			n, err := c.conn.Read(tcp.Sets(0, 0xffff).Bytes())
+			n, err := c.conn.Read(tcp.Sets(64, 0xffff).Bytes())
 			if err != nil {
 				return c.close(err)
 			}
@@ -112,9 +122,17 @@ func (c *Conn) handshakeInboundService() (_ error) {
 			}
 
 			if peer.IsBuiltin() {
+				if debug.Debug() {
+					hdr := header.TCP(tcp.Bytes())
+					require.Equal(test.T(), c.LocalAddr().Port(), hdr.DestinationPort())
+					require.Equal(test.T(), c.RemoteAddr().Port(), hdr.SourcePort())
+				}
 				c.ep.Inbound(tcp)
 			} else {
-				fmt.Println("缓存起来")
+				select {
+				case c.handshakeRecvedPackets <- tcp.AttachN(c.peer.Overhead()).Clone():
+				default:
+				}
 			}
 		}
 	}

@@ -16,9 +16,12 @@ type Listener interface {
 
 // datagram conn
 type Conn interface {
-	BuiltinConn(ctx context.Context) (tcp net.Conn, err error)
-	Recv(atter Peer, payload *packet.Packet) (err error)
-	Send(atter Peer, payload *packet.Packet) (err error)
+
+	// BuiltinConn get builtin stream connect, require Recv be called async.
+	BuiltinConn(ctx context.Context) (conn net.Conn, err error)
+
+	Recv(peer Peer, payload *packet.Packet) (err error)
+	Send(peer Peer, payload *packet.Packet) (err error)
 
 	LocalAddr() netip.AddrPort
 	RemoteAddr() netip.AddrPort

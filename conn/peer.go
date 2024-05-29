@@ -33,6 +33,10 @@ type Default = *defaultSession
 
 var _ Peer = (Default)(nil)
 
+func NewDefaultPeer() Default {
+	return &defaultSession{}
+}
+
 type defaultSession struct {
 	proto tcpip.TransportProtocolNumber
 	dst   netip.Addr // only ipv4

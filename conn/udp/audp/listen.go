@@ -5,11 +5,12 @@ package audp
 import (
 	"net"
 	"net/netip"
+	"runtime"
 	"sync"
 	"time"
 
+	"github.com/lysShub/netkit/debug"
 	"github.com/lysShub/netkit/errorx"
-	"github.com/pkg/errors"
 )
 
 type Conn interface {
@@ -28,12 +29,15 @@ type Listener struct {
 	connsMu sync.RWMutex
 	conns   map[netip.AddrPort]*acceptConn
 
+	connCh chan Conn
+
 	closeErr errorx.CloseErr
 }
 
 func Listen(addr *net.UDPAddr, maxRecvSize int) (*Listener, error) {
 	var l = &Listener{
-		conns: map[netip.AddrPort]*acceptConn{},
+		conns:  map[netip.AddrPort]*acceptConn{},
+		connCh: make(chan Conn, 8),
 	}
 
 	var err error
@@ -48,33 +52,40 @@ func Listen(addr *net.UDPAddr, maxRecvSize int) (*Listener, error) {
 		},
 	}
 
+	ncpu := runtime.NumCPU()
+	if debug.Debug() {
+		ncpu = 1
+	}
+	for i := 0; i < max(1, ncpu); i++ {
+		go l.accpetService()
+	}
 	return l, nil
 }
 
 func (l *Listener) close(cause error) error {
-	l.connsMu.Lock()
-	for _, e := range l.conns {
-		e.destroy()
-	}
-	l.connsMu.Unlock()
-
 	return l.closeErr.Close(func() (errs []error) {
-		errs = append(errs, cause)
-		if l.udp != nil {
-			errs = append(errs, errors.WithStack(l.udp.Close()))
-		}
-		return errs
+		close(l.connCh)
+		return append(errs, cause)
 	})
 }
 
 func (l *Listener) Accept() (Conn, error) {
+	conn, ok := <-l.connCh
+	if !ok {
+		return nil, l.close(nil)
+	}
+	return conn, nil
+}
+
+func (l *Listener) accpetService() (_ error) {
 	for {
 		seg := l.pool.Get().(segment)
-
 		seg.full()
+
+		// todo: 应该设置较长的timeout，可能存在僵尸conn
 		n, addr, err := l.udp.ReadFromUDPAddrPort(*seg)
 		if err != nil {
-			return nil, l.close(err)
+			return l.close(err)
 		}
 		seg.data(n)
 		// todo: 校验数据包
@@ -89,8 +100,8 @@ func (l *Listener) Accept() (Conn, error) {
 			l.connsMu.Unlock()
 		}
 		a.put(seg)
-		if !has {
-			return a, nil
+		if !has && !l.closeErr.Closed() {
+			l.connCh <- a
 		}
 	}
 }
@@ -104,10 +115,24 @@ func (l *Listener) put(seg segment) {
 	l.pool.Put(seg)
 }
 func (l *Listener) del(raddr netip.AddrPort) {
-	// tcp有ISN进行辅助判断, udp只能等待一段时间
-	time.AfterFunc(time.Second, func() {
-		l.connsMu.Lock()
-		defer l.connsMu.Unlock()
-		delete(l.conns, raddr)
-	})
+	l.connsMu.RLock()
+	n := len(l.conns)
+	l.connsMu.RUnlock()
+
+	if n == 1 {
+		l._del(raddr)
+	} else {
+		// tcp可以根据ISN进行判断, udp只能等待一段时间
+		time.AfterFunc(time.Second*5, func() { l._del(raddr) })
+	}
+}
+
+func (l *Listener) _del(raddr netip.AddrPort) {
+	l.connsMu.Lock()
+	defer l.connsMu.Unlock()
+
+	delete(l.conns, raddr)
+	if len(l.conns) == 0 && l.closeErr.Closed() {
+		l.udp.Close()
+	}
 }

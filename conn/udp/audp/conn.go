@@ -3,7 +3,7 @@ package audp
 import (
 	"net"
 	"net/netip"
-	"sync"
+	"sync/atomic"
 
 	"github.com/lysShub/netkit/errorx"
 	"github.com/pkg/errors"
@@ -13,37 +13,31 @@ type acceptConn struct {
 	l     *Listener
 	raddr netip.AddrPort
 
-	mu         sync.RWMutex
-	putNotify  *sync.Cond
-	segs       []segment
-	sart, size int
-	closed     bool
+	closed atomic.Bool
+	buff   chan segment
 }
 
 var _ Conn = (*acceptConn)(nil)
 
 func newAcceptConn(l *Listener, raddr netip.AddrPort) *acceptConn {
-	var c = &acceptConn{l: l, raddr: raddr}
-	c.putNotify = sync.NewCond(&c.mu)
-
-	c.segs = make([]segment, 128) // todo: from config
+	var c = &acceptConn{
+		l: l, raddr: raddr,
+		buff: make(chan *segmentData, 128), // todo: from config
+	}
 	return c
 }
 
 func (c *acceptConn) Write(b []byte) (int, error) {
-	c.mu.RLock()
-	if c.closed {
-		c.mu.RUnlock()
+	if c.closed.Load() {
 		return 0, errors.WithStack(net.ErrClosed)
 	}
-	c.mu.RUnlock()
 	return c.l.udp.WriteToUDPAddrPort(b, c.raddr)
 }
 
 func (c *acceptConn) Read(b []byte) (int, error) {
-	seg, err := c.pop()
-	if err != nil {
-		return 0, err
+	seg, ok := <-c.buff
+	if !ok {
+		return 0, errors.WithStack(net.ErrClosed)
 	}
 	defer func() { c.l.put(seg) }()
 
@@ -60,21 +54,26 @@ func (c *acceptConn) LocalAddr() net.Addr {
 func (c *acceptConn) RemoteAddr() net.Addr {
 	return &net.UDPAddr{IP: c.raddr.Addr().AsSlice(), Port: int(c.raddr.Port())}
 }
-func (c *acceptConn) destroy() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.closed = true
-}
 func (c *acceptConn) Close() error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.closed = true
+	c.closed.Store(true)
+	close(c.buff)
 
 	c.l.del(c.raddr)
-	for i := 0; i < c.size; i++ {
-		c.l.put(c.popLocked())
+	for e := range c.buff {
+		c.l.put(e)
 	}
 	return nil
+}
+
+func (c *acceptConn) put(s segment) {
+	for !c.closed.Load() {
+		select {
+		case c.buff <- s: // probably painc write closed ch
+			return
+		default:
+			c.l.put(<-c.buff)
+		}
+	}
 }
 
 type segment = *segmentData
@@ -85,55 +84,4 @@ func (s *segmentData) full() {
 }
 func (s *segmentData) data(n int) {
 	*s = (*s)[:n]
-}
-
-func (c *acceptConn) pop() (segment, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if c.closed {
-		return nil, errors.WithStack(net.ErrClosed)
-	}
-	return c.popLocked(), nil
-}
-func (c *acceptConn) popLocked() segment {
-	for c.size == 0 {
-		c.putNotify.Wait()
-	}
-
-	val := c.segs[c.sart]
-
-	c.size -= 1
-	c.sart = (c.sart + 1)
-	if c.sart >= len(c.segs) {
-		c.sart = c.sart - len(c.segs)
-	}
-	return val
-}
-func (c *acceptConn) put(t segment) error {
-	if t == nil {
-		return nil
-	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if c.closed {
-		return errors.WithStack(net.ErrClosed)
-	}
-	c.putLocked(t)
-	return nil
-}
-func (c *acceptConn) putLocked(t segment) {
-	if len(c.segs) == c.size {
-		c.l.put(c.popLocked())
-	}
-
-	i := c.sart + c.size
-	if i >= len(c.segs) {
-		i = i - len(c.segs)
-	}
-
-	c.segs[i] = t
-	c.size += 1
-	c.putNotify.Signal()
 }

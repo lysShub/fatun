@@ -19,7 +19,6 @@ import (
 
 type Config struct {
 	MaxRecvBuff int
-	TcpMssDelta int
 
 	TLS *tls.Config
 
@@ -29,16 +28,18 @@ type Config struct {
 type Conn struct {
 	config *Config
 	role   role
+	peer   conn.Peer
 
 	conn audp.Conn
-	peer conn.Peer
 
-	stack ustack.Ustack
-	ep    *ustack.LinkEndpoint
+	// stack ustack.Ustack
+	ep         *ustack.LinkEndpoint
+	tcpFactory factory
 
-	handshakedNotify chan struct{}
-	handshaked       atomic.Bool    // start or final handshake
-	builtin          *gonet.TCPConn // builtin tcp conn
+	handshakedNotify       chan struct{}
+	handshaked             atomic.Bool // start or final handshake
+	builtin                net.Conn    // builtin tcp conn
+	handshakeRecvedPackets chan *packet.Packet
 
 	crypto *crypto
 
@@ -60,10 +61,11 @@ func DialCtx[P conn.Peer](ctx context.Context, server string, config *Config) (c
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
+	laddr := netip.MustParseAddrPort(conn.LocalAddr().String())
 
-	c, err := newConn(conn, *(new(P)), client, config)
+	c, err := NewConn[P](conn, laddr, raddr, config)
 	if err != nil {
-		return nil, c.close(err)
+		return nil, err
 	}
 
 	if err := c.handshake(ctx); err != nil {
@@ -72,29 +74,41 @@ func DialCtx[P conn.Peer](ctx context.Context, server string, config *Config) (c
 	return c, nil
 }
 
-func newConn(conn audp.Conn, peer conn.Peer, role role, config *Config) (*Conn, error) {
+func NewConn[P conn.Peer](conn audp.Conn, laddr, raddr netip.AddrPort, config *Config) (*Conn, error) {
+	stack, err := ustack.NewUstack(link.NewList(8, 512), laddr.Addr()) // todo: fix mtu
+	if err != nil {
+		return nil, err
+	}
+	if config.PcapBuiltinPath != "" {
+		stack = ustack.MustWrapPcap(stack, config.PcapBuiltinPath)
+	}
+	ep, err := ustack.NewLinkEndpoint(stack, laddr.Port(), raddr)
+	if err != nil {
+		return nil, err
+	}
+
+	return newConn(conn, *new(P), client, ep, nil, config)
+}
+
+type factory func(ctx context.Context, remote netip.AddrPort) (*gonet.TCPConn, error)
+
+func newConn(conn audp.Conn, peer conn.Peer, role role, ep *ustack.LinkEndpoint, fact factory, config *Config) (*Conn, error) {
 	var c = &Conn{
 		config: config,
-		peer:   peer,
 		role:   role,
+		peer:   peer,
 
 		conn: conn,
 
-		handshakedNotify: make(chan struct{}),
-	}
-	var err error
+		ep: ep,
 
-	laddr, raddr := c.LocalAddr(), c.RemoteAddr()
-	c.stack, err = ustack.NewUstack(link.NewList(8, 512), laddr.Addr()) // todo: fix mtu
-	if err != nil {
-		return nil, c.close(err)
+		handshakedNotify:       make(chan struct{}),
+		handshakeRecvedPackets: make(chan *packet.Packet, 8),
 	}
-	if config.PcapBuiltinPath != "" {
-		c.stack = ustack.MustWrapPcap(c.stack, config.PcapBuiltinPath)
-	}
-	c.ep, err = ustack.NewLinkEndpoint(c.stack, laddr.Port(), raddr)
-	if err != nil {
-		return nil, c.close(err)
+	if fact == nil {
+		c.tcpFactory = c.clientFactory
+	} else {
+		c.tcpFactory = fact
 	}
 
 	go c.outboundService()
@@ -104,12 +118,12 @@ func newConn(conn audp.Conn, peer conn.Peer, role role, config *Config) (*Conn, 
 func (c *Conn) close(cause error) error {
 	return c.closeErr.Close(func() (errs []error) {
 		errs = append(errs, cause)
+		if c.builtin != nil {
+			errs = append(errs, c.builtin.Close())
+		}
 		if c.ep != nil {
 			errs = append(errs, c.ep.Close())
 			// todo: wait
-		}
-		if c.stack != nil {
-			errs = append(errs, c.stack.Close())
 		}
 		if c.conn != nil {
 			errs = append(errs, c.conn.Close())
@@ -125,6 +139,24 @@ func (c *Conn) BuiltinConn(ctx context.Context) (conn net.Conn, err error) {
 	return c.builtin, nil
 }
 
+func (c *Conn) recv(pkt *packet.Packet) (err error) {
+	select {
+	case p := <-c.handshakeRecvedPackets:
+		n := copy(pkt.Bytes(), p.Bytes())
+		pkt.SetData(n)
+		if n != p.Data() {
+			return errorx.ShortBuff(p.Data(), pkt.Data())
+		}
+	default:
+		n, err := c.conn.Read(pkt.Bytes())
+		if err != nil {
+			return err
+		}
+		pkt.SetData(n)
+	}
+	return nil
+}
+
 func (c *Conn) Recv(peer conn.Peer, pkt *packet.Packet) (err error) {
 	if err := c.handshake(context.Background()); err != nil {
 		return c.close(err)
@@ -132,11 +164,10 @@ func (c *Conn) Recv(peer conn.Peer, pkt *packet.Packet) (err error) {
 
 	head, data := pkt.Head(), pkt.Data()
 	for {
-		n, err := c.conn.Read(pkt.Sets(head, data).Bytes())
+		err := c.recv(pkt.Sets(head, data))
 		if err != nil {
 			return c.close(err)
 		}
-		pkt.SetData(n)
 
 		if err := peer.Decode(pkt); err != nil {
 			return err
