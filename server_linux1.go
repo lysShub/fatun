@@ -14,7 +14,6 @@ import (
 	"github.com/lysShub/netkit/errorx"
 	"github.com/lysShub/netkit/eth"
 	"github.com/lysShub/netkit/packet"
-	"github.com/lysShub/netkit/pcap"
 	"github.com/lysShub/netkit/route"
 	"github.com/mdlayher/arp"
 	"github.com/pkg/errors"
@@ -27,8 +26,6 @@ type ethSender struct {
 	conn *eth.ETHConn
 	to   net.HardwareAddr
 	id   atomic.Uint32 // ip id
-
-	pcap *pcap.Pcap
 }
 
 // NewETHSender 即使关闭eth offload, 也会读取到许多超过mtu的数据包
@@ -62,13 +59,6 @@ func NewETHSender(laddr netip.AddrPort) ([]Sender, error) {
 	}
 
 	var s = &ethSender{to: to}
-
-	{
-		s.pcap, err = pcap.File("server-segments.pcap")
-		if err != nil {
-			return nil, err
-		}
-	}
 
 	s.id.Store(rand.Uint32())
 	s.conn, err = eth.Listen("eth:ip4", ifi)
@@ -106,13 +96,6 @@ func (s *ethSender) Recv(ip *packet.Packet) error {
 	}
 	ip.SetData(n)
 
-	{
-		err = s.pcap.WriteIP(ip.Bytes())
-		if err != nil {
-			return err
-		}
-	}
-
 	return nil
 }
 
@@ -126,7 +109,7 @@ func (s *ethSender) Send(ip *packet.Packet) error {
 	hdr.SetChecksum(^hdr.CalculateChecksum())
 
 	{
-		err := s.pcap.WriteIP(ip.Bytes())
+		err := SenderPcap.WriteIP(ip.Bytes())
 		if err != nil {
 			return err
 		}

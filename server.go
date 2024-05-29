@@ -17,6 +17,7 @@ import (
 	"github.com/lysShub/netkit/debug"
 	"github.com/lysShub/netkit/errorx"
 	"github.com/lysShub/netkit/packet"
+	"github.com/lysShub/netkit/pcap"
 	"github.com/pkg/errors"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
@@ -28,6 +29,8 @@ type Sender interface {
 	Send(ip *packet.Packet) error
 	Close() error
 }
+
+var SenderPcap *pcap.Pcap
 
 type Server struct {
 	// Logger Warn/Error logger
@@ -216,6 +219,7 @@ func (s *Server) recvService(sender Sender) (_ error) {
 				return s.close(err)
 			}
 		}
+		old := ip.Head()
 
 		link, err := links.StripIP(ip)
 		if err != nil {
@@ -228,6 +232,16 @@ func (s *Server) recvService(sender Sender) (_ error) {
 			// s.Logger.Warn("links manager not record", slog.String("downlin", link.String()))
 			continue
 		}
+
+		{
+			new := ip.Head()
+			err = SenderPcap.WriteIP(ip.SetHead(old).Bytes())
+			if err != nil {
+				return err
+			}
+			ip.SetHead(new)
+		}
+
 		peer.Reset(link.Proto, link.Server.Addr())
 		switch peer.Protocol() {
 		case header.TCPProtocolNumber:
