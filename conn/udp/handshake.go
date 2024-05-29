@@ -125,12 +125,6 @@ func (c *Conn) handshakeInboundService(retch chan struct{}) (_ error) {
 			}
 
 			if peer.IsBuiltin() {
-				if debug.Debug() {
-					hdr := header.TCP(tcp.Bytes())
-					require.Equal(test.T(), c.LocalAddr().Port(), hdr.DestinationPort())
-					require.Equal(test.T(), c.RemoteAddr().Port(), hdr.SourcePort())
-				}
-				// c.ep.Inbound(tcp)
 				c.inboundBuitinPacket(tcp)
 			} else {
 				select {
@@ -151,6 +145,12 @@ func (c *Conn) inboundBuitinPacket(tcp *packet.Packet) {
 		header.TCP(tcp.Bytes()).SetDestinationPortWithChecksumUpdate(c.natPort)
 	} else {
 		header.TCP(tcp.Bytes()).SetSourcePortWithChecksumUpdate(c.natPort)
+	}
+
+	if debug.Debug() {
+		hdr := header.TCP(tcp.Bytes())
+		require.Equal(test.T(), c.LocalAddr().Port(), hdr.DestinationPort())
+		require.Equal(test.T(), c.RemoteAddr().Port(), hdr.SourcePort())
 	}
 	c.ep.Inbound(tcp)
 }

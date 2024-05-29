@@ -144,7 +144,7 @@ func (s *Server) serveConn(conn conn.Conn) (_ error) {
 	}()
 
 	for {
-		err := conn.Recv(peer, pkt.Sets(0, 0xffff))
+		err := conn.Recv(peer, pkt.Sets(64, 0xffff))
 		if err != nil {
 			if errorx.Temporary(err) {
 				s.Logger.Warn(err.Error(), errorx.Trace(err))

@@ -131,7 +131,7 @@ func (c *Client) downlinkServic() error {
 	)
 
 	for {
-		err := c.Conn.Recv(peer, pkt.Sets(0, 0xffff))
+		err := c.Conn.Recv(peer, pkt.Sets(64, 0xffff))
 		if err != nil {
 			if errorx.Temporary(err) {
 				c.Logger.Warn(err.Error(), errorx.Trace(err))

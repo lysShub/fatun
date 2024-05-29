@@ -1,5 +1,4 @@
-bou.ke/monkey v1.0.2 h1:kWcnsrCNUatbxncxR/ThdYqbytgOIArtYWqcQLQzKLI=
-bou.ke/monkey v1.0.2/go.mod h1:OqickVX3tNx6t33n1xvtTtu85YN5s6cKwVug+oHMaIA=
+github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ33E=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
@@ -29,12 +28,6 @@ github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 h1:6E+4a0GO5zZEnZ
 github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0/go.mod h1:zJYVVT2jmtg6P3p1VtQj7WsuWi/y4VnjVBn7F8KPB3I=
 github.com/lysShub/divert-go v0.0.0-20240525230502-6f79596abd61 h1:qqarPA8zZe+LnIGHaleqDikaQ3QzvlAfDigXYRrboHU=
 github.com/lysShub/divert-go v0.0.0-20240525230502-6f79596abd61/go.mod h1:OXuD4Q/Y84FyNiYy/sf9RVshvAC5/rvcHA6J7JvvtFM=
-github.com/lysShub/fatcp v0.0.0-20240527182616-e99299788afc h1:N3StByjt8+uUzPjhIYEE/IOrbV8rJ2fhAuIuuRT9OxU=
-github.com/lysShub/fatcp v0.0.0-20240527182616-e99299788afc/go.mod h1:XjmXohtnhPu+Y2Wk/5YWJ8DyYpPr0GQDz2oiqmODnxg=
-github.com/lysShub/netkit v0.0.0-20240523071634-a634aa727e4f h1:45H4XCe9QYhyWuEmEb7wnmPP6+6JPq4bngYQeW0g574=
-github.com/lysShub/netkit v0.0.0-20240523071634-a634aa727e4f/go.mod h1:meJ+5h9/ek0ORSdEgtCx6NsvuAWQHITzkLuVDtL+2lc=
-github.com/lysShub/netkit v0.0.0-20240528181612-b2610f3addd0 h1:zgWvqxWXKx4NimLBsGIHeIR6nZJfDpv7WxlHoQjQwk0=
-github.com/lysShub/netkit v0.0.0-20240528181612-b2610f3addd0/go.mod h1:meJ+5h9/ek0ORSdEgtCx6NsvuAWQHITzkLuVDtL+2lc=
 github.com/lysShub/netkit v0.0.0-20240528182030-3007a2828d6a h1:NEvTQ2aTjpegYW8W+30CsPt2yTx6hNFgBzMSA51zRGI=
 github.com/lysShub/netkit v0.0.0-20240528182030-3007a2828d6a/go.mod h1:meJ+5h9/ek0ORSdEgtCx6NsvuAWQHITzkLuVDtL+2lc=
 github.com/lysShub/rawsock v0.0.0-20240527161428-8849e5547531 h1:oNrvNTvaHcAtNdYOjOJtiq57hX+55hnAJ5LPkzvoIlg=
