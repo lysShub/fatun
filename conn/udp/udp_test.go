@@ -130,7 +130,8 @@ func Test_UDP_Packets(t *testing.T) {
 		var b = packet.Make(config.MaxRecvBuff)
 		for i := 0; i < packets; i++ {
 			msg := time.Now().String()
-			p.Reset(header.TCPProtocolNumber, test.RandIP())
+			ip := test.RandIP()
+			p.Reset(header.TCPProtocolNumber, ip)
 
 			err = c.Send(p, b.Sets(64, 0).Append([]byte(msg)))
 			require.NoError(t, err)
@@ -139,47 +140,11 @@ func Test_UDP_Packets(t *testing.T) {
 			require.NoError(t, err)
 
 			require.Equal(t, msg, string(b.Bytes()))
+			require.Equal(t, header.TCPProtocolNumber, p.Protocol())
+			require.Equal(t, ip, p.Peer())
 		}
 		return nil
-
 	})
 
 	eg.Wait()
-
 }
-
-/*
-
-	eg.Go(func() error {
-		var p = conn.NewDefaultPeer()
-		var b = packet.Make(config.MaxRecvBuff)
-
-		for i := 0; i < packets; i++ {
-			err = c.Recv(p, b.Sets(0, 0xffff))
-			require.NoError(t, err)
-
-			err = c.Send(p, b)
-			require.NoError(t, err)
-		}
-		return nil
-	})
-
-
-			eg.Go(func() error {
-			var p = conn.NewDefaultPeer()
-			var b = packet.Make(config.MaxRecvBuff)
-			for i := 0; i < 0xff; i++ {
-				p.Reset(header.TCPProtocolNumber, test.RandIP())
-
-				msg := time.Now().String()
-				err = c.Send(p, b.Sets(64, 0).Append([]byte(msg)))
-				require.NoError(t, err)
-
-				err = c.Recv(p, b.Sets(0, 0xffff))
-				require.NoError(t, err)
-
-				require.Equal(t, msg, string(b.Bytes()))
-			}
-			return nil
-		})
-*/

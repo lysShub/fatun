@@ -51,7 +51,9 @@ func (c *Conn) handshake(ctx context.Context) (err error) {
 		<-c.handshakedNotify
 		return nil
 	}
-	go c.handshakeInboundService()
+	retch := make(chan struct{})
+	defer func() { <-retch }()
+	go c.handshakeInboundService(retch)
 
 	tcp, err := c.tcpFactory(ctx, c.RemoteAddr())
 	if err != nil {
@@ -100,11 +102,12 @@ func (c *Conn) handshake(ctx context.Context) (err error) {
 	close(c.handshakedNotify)
 	return nil
 }
-func (c *Conn) handshakeInboundService() (_ error) {
+func (c *Conn) handshakeInboundService(retch chan struct{}) (_ error) {
 	var (
 		tcp  = packet.Make(c.config.MaxRecvBuff)
 		peer = c.peer.Builtin().Reset(0, netip.IPv4Unspecified())
 	)
+	defer func() { close(retch) }()
 
 	for {
 		select {
@@ -132,6 +135,7 @@ func (c *Conn) handshakeInboundService() (_ error) {
 				select {
 				case c.handshakeRecvedPackets <- tcp.AttachN(c.peer.Overhead()).Clone():
 				default:
+					// todo: log
 				}
 			}
 		}

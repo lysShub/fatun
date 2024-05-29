@@ -37,7 +37,7 @@ type Listener struct {
 func Listen(addr *net.UDPAddr, maxRecvSize int) (*Listener, error) {
 	var l = &Listener{
 		conns:  map[netip.AddrPort]*acceptConn{},
-		connCh: make(chan Conn, 8),
+		connCh: make(chan Conn, 32),
 	}
 
 	var err error
@@ -63,8 +63,8 @@ func Listen(addr *net.UDPAddr, maxRecvSize int) (*Listener, error) {
 }
 
 func (l *Listener) close(cause error) error {
+	defer func() { close(l.connCh) }()
 	return l.closeErr.Close(func() (errs []error) {
-		close(l.connCh)
 		return append(errs, cause)
 	})
 }
@@ -101,7 +101,10 @@ func (l *Listener) accpetService() (_ error) {
 		}
 		a.put(seg)
 		if !has && !l.closeErr.Closed() {
-			l.connCh <- a
+			select {
+			case l.connCh <- a:
+			default:
+			}
 		}
 	}
 }
