@@ -5,47 +5,49 @@ import (
 	"net/netip"
 
 	"github.com/lysShub/fatun/conn"
-	"github.com/lysShub/netkit/packet"
+	"github.com/lysShub/fatun/conn/udp/audp"
+	"github.com/pkg/errors"
 )
 
-type Listen struct {
-	conn *net.UDPConn
+type Listener struct {
+	addr   netip.AddrPort
+	config *Config
+	peer   conn.Peer
+
+	l *audp.Listener
 }
 
-var _ conn.Listener = (*Listen)(nil)
+var _ conn.Listener = (*Listener)(nil)
 
-func (l *Listen) Accept() (conn.Conn, error) {
+func Listen[P conn.Peer](server string, config *Config) (conn.Listener, error) {
+	var l = &Listener{config: config, peer: *new(P)}
+	var err error
 
-	return nil, nil
+	if l.addr, err = resolve(server, true); err != nil {
+		return nil, l.close(err)
+	}
+
+	l.l, err = audp.Listen(
+		&net.UDPAddr{IP: l.addr.Addr().AsSlice(), Port: int(l.addr.Port())}, config.MaxRecvBuff,
+	)
+	if err != nil {
+		return nil, l.close(err)
+	}
+
+	return l, nil
 }
 
-func (l *Listen) Addr() netip.AddrPort {
-	return netip.AddrPort{}
-}
-func (l *Listen) Close() error
-
-type acceptConn struct {
-	l     *Listen
-	raddr netip.AddrPort
-
-	buff []*packet.Packet
+func (l *Listener) close(cause error) error {
+	panic(cause)
 }
 
-var _ udp = (*acceptConn)(nil)
+func (l *Listener) Accept() (conn.Conn, error) {
+	conn, err := l.l.Accept()
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+	return newConn(conn, l.peer, server, l.config)
+}
 
-func (c *acceptConn) Read([]byte) (int, error) {
-
-	return 0, nil
-}
-func (c *acceptConn) Write(b []byte) (int, error) {
-	return c.l.conn.WriteToUDPAddrPort(b, c.raddr)
-}
-func (c *acceptConn) LocalAddr() net.Addr {
-	return &net.UDPAddr{IP: c.l.Addr().Addr().AsSlice(), Port: int(c.l.Addr().Port())}
-}
-func (c *acceptConn) RemoteAddr() net.Addr {
-	return &net.UDPAddr{IP: c.raddr.Addr().AsSlice(), Port: int(c.raddr.Port())}
-}
-func (c *acceptConn) Close() error {
-	return nil
-}
+func (l *Listener) Addr() netip.AddrPort { return l.addr }
+func (l *Listener) Close() error         { return l.close(nil) }

@@ -3,19 +3,18 @@ package udp
 import (
 	"context"
 	"crypto/tls"
-	"fmt"
 	"net"
 	"net/netip"
 	"sync/atomic"
 
 	"github.com/lysShub/fatun/conn"
-	"github.com/lysShub/fatun/conn/crypto"
+	"github.com/lysShub/fatun/conn/udp/audp"
 	"github.com/lysShub/fatun/ustack"
 	"github.com/lysShub/fatun/ustack/gonet"
 	"github.com/lysShub/fatun/ustack/link"
+	"github.com/lysShub/netkit/errorx"
 	"github.com/lysShub/netkit/packet"
 	"github.com/pkg/errors"
-	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
 type Config struct {
@@ -27,19 +26,11 @@ type Config struct {
 	PcapBuiltinPath string
 }
 
-type udp interface {
-	Read([]byte) (int, error)
-	Write([]byte) (int, error)
-	LocalAddr() net.Addr
-	RemoteAddr() net.Addr
-	Close() error
-}
-
 type Conn struct {
 	config *Config
 	role   role
 
-	conn udp
+	conn audp.Conn
 	peer conn.Peer
 
 	stack ustack.Ustack
@@ -47,38 +38,20 @@ type Conn struct {
 
 	handshakedNotify chan struct{}
 	handshaked       atomic.Bool    // start or final handshake
-	tcp              *gonet.TCPConn // builtin tcp conn
+	builtin          *gonet.TCPConn // builtin tcp conn
 
-	// crypto crypto.Crypto
+	crypto *crypto
+
+	closeErr errorx.CloseErr
 }
 
 var _ conn.Conn = (*Conn)(nil)
 
-type role uint8
-
-const (
-	client role = 1
-	server role = 2
-)
-
-func (r role) Client() bool { return r == client }
-func (r role) Server() bool { return r == server }
-func (r role) String() string {
-	switch r {
-	case client:
-		return "client"
-	case server:
-		return "server"
-	default:
-		return fmt.Sprintf("invalid fatcp role %d", r)
-	}
+func Dial[P conn.Peer](server string, config *Config) (conn.Conn, error) {
+	return DialCtx[P](context.Background(), server, config)
 }
 
-func Dial[A conn.Peer](server string, config *Config) (conn.Conn, error) {
-	return DialCtx[A](context.Background(), server, config)
-}
-
-func DialCtx[A conn.Peer](ctx context.Context, server string, config *Config) (conn.Conn, error) {
+func DialCtx[P conn.Peer](ctx context.Context, server string, config *Config) (conn.Conn, error) {
 	raddr, err := resolve(server, false)
 	if err != nil {
 		return nil, err
@@ -88,7 +61,7 @@ func DialCtx[A conn.Peer](ctx context.Context, server string, config *Config) (c
 		return nil, errors.WithStack(err)
 	}
 
-	c, err := newConn[A](conn, config)
+	c, err := newConn(conn, *(new(P)), client, config)
 	if err != nil {
 		return nil, c.close(err)
 	}
@@ -99,11 +72,11 @@ func DialCtx[A conn.Peer](ctx context.Context, server string, config *Config) (c
 	return c, nil
 }
 
-func newConn[P conn.Peer](conn udp, config *Config) (*Conn, error) {
+func newConn(conn audp.Conn, peer conn.Peer, role role, config *Config) (*Conn, error) {
 	var c = &Conn{
 		config: config,
-		peer:   *(new(P)),
-		role:   client,
+		peer:   peer,
+		role:   role,
 
 		conn: conn,
 
@@ -112,8 +85,7 @@ func newConn[P conn.Peer](conn udp, config *Config) (*Conn, error) {
 	var err error
 
 	laddr, raddr := c.LocalAddr(), c.RemoteAddr()
-	// todo: fix mtu
-	c.stack, err = ustack.NewUstack(link.NewList(8, 1400), laddr.Addr())
+	c.stack, err = ustack.NewUstack(link.NewList(8, 512), laddr.Addr()) // todo: fix mtu
 	if err != nil {
 		return nil, c.close(err)
 	}
@@ -129,95 +101,30 @@ func newConn[P conn.Peer](conn udp, config *Config) (*Conn, error) {
 	return c, nil
 }
 
-func (c *Conn) handshake(ctx context.Context) (err error) {
-	if !c.handshaked.CompareAndSwap(false, true) {
-		<-c.handshakedNotify
-		return nil
-	}
-	go c.handshakeInboundService()
-
-	c.tcp, err = gonet.DialTCPWithBind(
-		ctx, c.stack,
-		c.LocalAddr(), c.RemoteAddr(),
-		header.IPv4ProtocolNumber,
-	)
-	if err != nil {
-		return errors.WithStack(err)
-	}
-
-	var key crypto.Key
-	if c.role.Client() {
-		// key, err = c.config.Handshake.Client(ctx, c.tcp)
-	} else {
-		// key, err = c.config.Handshake.Server(ctx, c.tcp)
-	}
-	if err != nil {
-		return c.close(err)
-	}
-	if key != (crypto.Key{}) {
-		// c.crypto, err = crypto.NewTCP(key, 0) // todo： udp
-		// if err != nil {
-		// 	return c.close(err)
-		// }
-	}
-
-	close(c.handshakedNotify)
-	return nil
-}
-func (c *Conn) handshakeInboundService() (_ error) {
-	var (
-		tcp  = packet.Make(c.config.MaxRecvBuff)
-		peer = c.peer.Builtin().Reset(0, netip.IPv4Unspecified())
-	)
-
-	for {
-		select {
-		case <-c.handshakedNotify:
-			return nil
-		default:
-			err := c.Recv(peer, tcp.Sets(0, 0xffff))
-			if err != nil {
-				return c.close(err)
-			}
-
-			if peer.IsBuiltin() {
-				c.ep.Inbound(tcp)
-			} else {
-				fmt.Println("缓存起来")
-			}
-		}
-	}
-}
-
-func (c *Conn) outboundService() error {
-	var (
-		tcp     = packet.Make(c.config.MaxRecvBuff)
-		builtin = c.peer.Builtin()
-	)
-
-	for {
-		err := c.ep.Outbound(context.Background(), tcp.Sets(64, 0xffff))
-		if err != nil {
-			return c.close(err)
-		}
-
-		err = c.Send(builtin, tcp)
-		if err != nil {
-			return c.close(err)
-		}
-	}
-}
-
 func (c *Conn) close(cause error) error {
-	panic(cause)
+	return c.closeErr.Close(func() (errs []error) {
+		errs = append(errs, cause)
+		if c.ep != nil {
+			errs = append(errs, c.ep.Close())
+			// todo: wait
+		}
+		if c.stack != nil {
+			errs = append(errs, c.stack.Close())
+		}
+		if c.conn != nil {
+			errs = append(errs, c.conn.Close())
+		}
+		return errs
+	})
 }
 
-func (c *Conn) BuiltinConn(ctx context.Context) (tcp net.Conn, err error) {
+func (c *Conn) BuiltinConn(ctx context.Context) (conn net.Conn, err error) {
 	if err := c.handshake(ctx); err != nil {
 		return nil, c.close(err)
 	}
-	return c.tcp, nil
+	return c.builtin, nil
 }
+
 func (c *Conn) Recv(peer conn.Peer, pkt *packet.Packet) (err error) {
 	if err := c.handshake(context.Background()); err != nil {
 		return c.close(err)
@@ -230,38 +137,37 @@ func (c *Conn) Recv(peer conn.Peer, pkt *packet.Packet) (err error) {
 			return c.close(err)
 		}
 		pkt.SetData(n)
-		// todo: 校验包完整性
-
-		// if c.crypto != nil {
-		// 	if err = c.crypto.Decrypt(pkt); err != nil {
-		// 		fmt.Println(err)
-		// 		continue
-		// 	}
-		// }
 
 		if err := peer.Decode(pkt); err != nil {
-			return c.close(err)
+			return err
 		}
 
 		if peer.IsBuiltin() {
 			c.ep.Inbound(pkt)
 		} else {
+			if c.crypto != nil {
+				err = c.crypto.Decrypt(pkt.AttachN(c.peer.Overhead()))
+				if err != nil {
+					return err
+				}
+				pkt.DetachN(c.peer.Overhead())
+			}
 			return nil
 		}
 	}
 }
-func (c *Conn) Send(atter conn.Peer, pkt *packet.Packet) (err error) {
+func (c *Conn) Send(peer conn.Peer, pkt *packet.Packet) (err error) {
 	if err := c.handshake(context.Background()); err != nil {
 		return c.close(err)
 	}
 
-	if err = atter.Encode(pkt); err != nil {
+	if err = peer.Encode(pkt); err != nil {
 		return c.close(err)
 	}
 
-	// if c.crypto != nil {
-	// 	c.crypto.Encrypt(pkt)
-	// }
+	if !peer.IsBuiltin() && c.crypto != nil {
+		c.crypto.Encrypt(pkt)
+	}
 
 	_, err = c.conn.Write(pkt.Bytes())
 	if err != nil {
@@ -277,6 +183,29 @@ func (c *Conn) RemoteAddr() netip.AddrPort {
 	return netip.MustParseAddrPort(c.conn.RemoteAddr().String())
 }
 func (c *Conn) Close() error { return c.close(nil) }
+
+func (c *Conn) outboundService() error {
+	var (
+		tcp     = packet.Make(c.config.MaxRecvBuff)
+		builtin = c.peer.Builtin()
+	)
+
+	for {
+		err := c.ep.Outbound(context.Background(), tcp.Sets(64, 0xffff))
+		if err != nil {
+			return c.close(err)
+		}
+
+		if err = builtin.Encode(tcp); err != nil {
+			return c.close(err)
+		}
+
+		_, err = c.conn.Write(tcp.Bytes())
+		if err != nil {
+			return c.close(err)
+		}
+	}
+}
 
 func resolve(addr string, local bool) (netip.AddrPort, error) {
 	if taddr, err := net.ResolveTCPAddr("tcp", addr); err != nil {

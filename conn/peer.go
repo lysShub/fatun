@@ -20,6 +20,7 @@ type Peer interface {
 	Builtin() Peer
 	IsBuiltin() bool
 	Overhead() int
+
 	Encode(to *packet.Packet) error
 	Decode(from *packet.Packet) error
 
@@ -35,10 +36,6 @@ var _ Peer = (Default)(nil)
 type defaultSession struct {
 	proto tcpip.TransportProtocolNumber
 	dst   netip.Addr // only ipv4
-}
-
-func New(proto tcpip.TransportProtocolNumber, remote netip.Addr) Peer {
-	return &defaultSession{proto, remote}
 }
 
 func (p *defaultSession) Reset(proto tcpip.TransportProtocolNumber, remote netip.Addr) Peer {
