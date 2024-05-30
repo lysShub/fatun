@@ -30,8 +30,6 @@ type Sender interface {
 	Close() error
 }
 
-var SenderPcap *pcap.Pcap
-
 type Server struct {
 	// Logger Warn/Error logger
 	Logger      *slog.Logger
@@ -42,7 +40,9 @@ type Server struct {
 	// links manager, notice not call Cleanup()
 	Links links.LinksManager
 
-	Senders []Sender
+	Sender Sender
+
+	PcapSender *pcap.Pcap
 
 	peer     conn.Peer
 	srvCtx   context.Context
@@ -73,8 +73,8 @@ func NewServer[P conn.Peer](opts ...func(*Server)) (*Server, error) {
 		s.Links = maps.NewLinkManager(time.Second*30, s.Listener.Addr().Addr())
 	}
 
-	if len(s.Senders) == 0 {
-		s.Senders, err = NewDefaultSender(s.Listener.Addr())
+	if s.Sender == nil {
+		s.Sender, err = NewDefaultSender(s.Listener.Addr())
 		if err != nil {
 			return s, s.close(err)
 		}
@@ -84,9 +84,7 @@ func NewServer[P conn.Peer](opts ...func(*Server)) (*Server, error) {
 }
 
 func (s *Server) Serve() (err error) {
-	for _, e := range s.Senders {
-		go s.recvService(e)
-	}
+	go s.recvService()
 	return s.acceptService()
 }
 
@@ -103,10 +101,8 @@ func (s *Server) close(cause error) error {
 		if s.cancel != nil {
 			s.cancel()
 		}
-		if len(s.Senders) > 0 {
-			for _, e := range s.Senders {
-				errs = append(errs, e.Close())
-			}
+		if s.Sender != nil {
+			errs = append(errs, s.Sender.Close())
 		}
 		if s.Links != nil {
 			errs = append(errs, s.Links.Close())
@@ -189,19 +185,24 @@ func (s *Server) serveConn(conn conn.Conn) (_ error) {
 		}
 		ip := checksum.Server(pkt, down)
 
-		if err := s.Senders[0].Send(ip); err != nil {
-			return s.close(errors.WithStack(err))
+		if s.PcapSender != nil {
+			if err := s.PcapSender.WriteIP(ip.Bytes()); err != nil {
+				return s.close(err)
+			}
+		}
+		if err := s.Sender.Send(ip); err != nil {
+			return s.close(err)
 		}
 	}
 }
 
-func (s *Server) recvService(sender Sender) (_ error) {
+func (s *Server) recvService() (_ error) {
 	var (
 		ip   = packet.Make(s.MaxRecvBuff)
 		peer = s.peer.Builtin().Reset(0, netip.IPv4Unspecified())
 	)
 	for {
-		err := sender.Recv(ip.Sets(64, 0xffff))
+		err := s.Sender.Recv(ip.Sets(64, 0xffff))
 		if err != nil {
 			if errorx.Temporary(err) {
 				if debug.Debug() && errors.Is(err, io.ErrShortBuffer) &&
@@ -233,11 +234,11 @@ func (s *Server) recvService(sender Sender) (_ error) {
 			continue
 		}
 
-		{
+		if s.PcapSender != nil {
 			new := ip.Head()
-			err = SenderPcap.WriteIP(ip.SetHead(old).Bytes())
+			err = s.PcapSender.WriteIP(ip.SetHead(old).Bytes())
 			if err != nil {
-				return err
+				return s.close(err)
 			}
 			ip.SetHead(new)
 		}

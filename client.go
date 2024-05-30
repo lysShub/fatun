@@ -19,6 +19,7 @@ import (
 	"github.com/lysShub/netkit/debug"
 	"github.com/lysShub/netkit/errorx"
 	"github.com/lysShub/netkit/packet"
+	"github.com/lysShub/netkit/pcap"
 	stdsum "gvisor.dev/gvisor/pkg/tcpip/checksum"
 )
 
@@ -37,6 +38,8 @@ type Client struct {
 	Conn conn.Conn
 
 	Capturer Capturer
+
+	PcapCapturer *pcap.Pcap
 
 	peer     conn.Peer
 	srvCtx   context.Context
@@ -114,6 +117,12 @@ func (c *Client) uplinkService() (_ error) {
 				return c.close(err)
 			}
 		}
+		if c.PcapCapturer != nil {
+			if err := c.PcapCapturer.WriteIP(ip.Bytes()); err != nil {
+				return c.close(err)
+			}
+		}
+
 		hdr := header.IPv4(ip.Bytes())
 		s.Reset(hdr.TransportProtocol(), netip.AddrFrom4(hdr.DestinationAddress().As4()))
 
@@ -151,6 +160,11 @@ func (c *Client) downlinkServic() error {
 		})
 		rechecksum(ip)
 
+		if c.PcapCapturer != nil {
+			if err := c.PcapCapturer.WriteIP(ip); err != nil {
+				return c.close(err)
+			}
+		}
 		if err = c.Capturer.Inject(pkt); err != nil {
 			return c.close(err)
 		}

@@ -11,7 +11,6 @@ import (
 	"sync/atomic"
 	"unsafe"
 
-	"github.com/lysShub/netkit/errorx"
 	"github.com/lysShub/netkit/eth"
 	"github.com/lysShub/netkit/packet"
 	"github.com/lysShub/netkit/route"
@@ -22,7 +21,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
-func NewDefaultSender(laddr netip.AddrPort) ([]Sender, error) {
+func NewDefaultSender(laddr netip.AddrPort) (Sender, error) {
 	return NewETHSender(laddr)
 }
 
@@ -32,7 +31,7 @@ type ethSender struct {
 	id   atomic.Uint32 // ip id
 }
 
-func NewETHSender(laddr netip.AddrPort) ([]Sender, error) {
+func NewETHSender(laddr netip.AddrPort) (Sender, error) {
 	ifi, err := ifaceByAddr(laddr.Addr())
 	if err != nil {
 		return nil, err
@@ -89,7 +88,7 @@ func NewETHSender(laddr netip.AddrPort) ([]Sender, error) {
 		return nil, s.close(errors.WithStack(e))
 	}
 
-	return []Sender{s}, nil
+	return s, nil
 }
 
 func (s *ethSender) Recv(ip *packet.Packet) error {
@@ -103,22 +102,7 @@ func (s *ethSender) Recv(ip *packet.Packet) error {
 }
 
 func (s *ethSender) Send(ip *packet.Packet) error {
-	hdr := header.IPv4(ip.Bytes())
-	if hdr.More() {
-		return errorx.WrapTemp(errors.New("can't send MF ip packet"))
-	}
-	hdr.SetTotalLength(uint16(len(hdr)))
-	hdr.SetID(uint16(s.id.Add(1)))
-	hdr.SetChecksum(^hdr.CalculateChecksum())
-
-	{
-		err := SenderPcap.WriteIP(ip.Bytes())
-		if err != nil {
-			return err
-		}
-	}
-
-	_, err := s.conn.WriteToETH(hdr, s.to)
+	_, err := s.conn.WriteToETH(ip.Bytes(), s.to)
 	return err
 }
 
