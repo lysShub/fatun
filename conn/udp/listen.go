@@ -15,6 +15,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
+// todo: 这个和udp没啥关系啊, 传入底层的dgrm-conn就行
 type Listener struct {
 	addr   netip.AddrPort
 	config *Config

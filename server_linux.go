@@ -4,11 +4,10 @@
 package fatun
 
 import (
-	"math/rand"
 	"net"
 	"net/netip"
 	"slices"
-	"sync/atomic"
+	"syscall"
 	"unsafe"
 
 	"github.com/lysShub/netkit/eth"
@@ -22,17 +21,30 @@ import (
 )
 
 func NewDefaultSender(laddr netip.AddrPort) (Sender, error) {
-	return NewETHSender(laddr)
+	s, err := NewETHSender(laddr.Addr())
+	if err != nil {
+		return nil, err
+	}
+	if err = s.SkipPorts(
+		[]uint16{22},
+		[]uint16{laddr.Port()}, // todo: current work on udp
+	); err != nil {
+		s.Close()
+		return nil, err
+	}
+
+	return s, nil
 }
 
-type ethSender struct {
+type EthSender struct {
 	conn *eth.ETHConn
 	to   net.HardwareAddr
-	id   atomic.Uint32 // ip id
 }
 
-func NewETHSender(laddr netip.AddrPort) (Sender, error) {
-	ifi, err := ifaceByAddr(laddr.Addr())
+var _ Sender = (*EthSender)(nil)
+
+func NewETHSender(laddr netip.Addr) (*EthSender, error) {
+	ifi, err := ifaceByAddr(laddr)
 	if err != nil {
 		return nil, err
 	}
@@ -60,17 +72,20 @@ func NewETHSender(laddr netip.AddrPort) (Sender, error) {
 		}
 	}
 
-	var s = &ethSender{to: to}
+	var s = &EthSender{to: to}
 
-	s.id.Store(rand.Uint32())
 	s.conn, err = eth.Listen("eth:ip4", ifi)
 	if err != nil {
 		return nil, err
 	}
 
+	return s, nil
+}
+
+func (s *EthSender) SkipPorts(tcp, udp []uint16) error {
 	var prog *unix.SockFprog
-	if rawIns, err := bpf.Assemble(bpfFilterProtoAndLocalTCPPorts(laddr.Port())); err != nil {
-		return nil, s.close(errors.WithStack(err))
+	if rawIns, err := bpf.Assemble(bpfFilterProtoAndSkipLocalTCPPorts(tcp, udp)); err != nil {
+		return s.close(errors.WithStack(err))
 	} else {
 		prog = &unix.SockFprog{
 			Len:    uint16(len(rawIns)),
@@ -82,16 +97,15 @@ func NewETHSender(laddr netip.AddrPort) (Sender, error) {
 	if err := s.conn.SyscallConn().Control(func(fd uintptr) {
 		e = unix.SetsockoptSockFprog(int(fd), unix.SOL_SOCKET, unix.SO_ATTACH_FILTER, prog)
 	}); err != nil {
-		return nil, s.close(errors.WithStack(err))
+		return s.close(errors.WithStack(err))
 	}
 	if e != nil {
-		return nil, s.close(errors.WithStack(e))
+		return s.close(errors.WithStack(e))
 	}
-
-	return s, nil
+	return nil
 }
 
-func (s *ethSender) Recv(ip *packet.Packet) error {
+func (s *EthSender) Recv(ip *packet.Packet) error {
 	n, _, err := s.conn.ReadFromETH(ip.Bytes())
 	if err != nil {
 		return err
@@ -101,12 +115,12 @@ func (s *ethSender) Recv(ip *packet.Packet) error {
 	return nil
 }
 
-func (s *ethSender) Send(ip *packet.Packet) error {
+func (s *EthSender) Send(ip *packet.Packet) error {
 	_, err := s.conn.WriteToETH(ip.Bytes(), s.to)
 	return err
 }
 
-func (s *ethSender) close(cause error) error {
+func (s *EthSender) close(cause error) error {
 	if s.conn != nil {
 		if err := s.conn.Close(); err != nil && cause == nil {
 			cause = err
@@ -114,57 +128,53 @@ func (s *ethSender) close(cause error) error {
 	}
 	return cause
 }
-func (s *ethSender) Close() error { return s.close(nil) }
+func (s *EthSender) Close() error { return s.close(nil) }
 
-// bpfFilterProtoAndLocalTCPPorts bpf filter,
+// bpfFilterProtoAndSkipLocalTCPPorts bpf filter,
 //
-// will drop packet, that not tcp/udp, or dst-port in rang (0,1024], or tcp-dst-port in skipPorts
-func bpfFilterProtoAndLocalTCPPorts(skipTCPPorts ...uint16) []bpf.Instruction {
-	slices.Sort(skipTCPPorts)
-	skipTCPPorts = slices.Compact(skipTCPPorts)
-	start := len(skipTCPPorts)
-	for i, e := range skipTCPPorts {
-		if e > 1024 {
-			start = i
-			break
-		}
-	}
-	skipTCPPorts = skipTCPPorts[start:]
-
-	const IPv4ProtocolOffset = 9
-	var ins = []bpf.Instruction{
-		// filter tcp/udp
-		bpf.LoadAbsolute{Off: IPv4ProtocolOffset, Size: 1},
-		bpf.JumpIf{Cond: bpf.JumpEqual, Val: unix.IPPROTO_TCP, SkipTrue: 2},
-		bpf.JumpIf{Cond: bpf.JumpEqual, Val: unix.IPPROTO_UDP, SkipTrue: 1},
-		bpf.RetConstant{Val: 0},
-
-		// store IPv4HdrLen regX
-		bpf.LoadMemShift{Off: 0},
-
-		// skip port range (0, 1024]
-		bpf.LoadIndirect{Off: header.TCPDstPortOffset, Size: 2},
-		bpf.JumpIf{Cond: bpf.JumpGreaterThan, Val: 1024, SkipTrue: 1},
-		bpf.RetConstant{Val: 0},
-	}
-	if len(skipTCPPorts) > 0 {
-		ins = append(ins,
-			// skipTCPPorts not filter for udp
-			bpf.LoadAbsolute{Off: IPv4ProtocolOffset, Size: 1},
-			bpf.JumpIf{Cond: bpf.JumpEqual, Val: unix.IPPROTO_TCP, SkipTrue: 1},
-			bpf.RetConstant{Val: 0xffff},
-		)
-
-		for _, e := range skipTCPPorts {
-			ins = append(ins,
-				bpf.LoadIndirect{Off: header.TCPDstPortOffset, Size: 2},
-				bpf.JumpIf{Cond: bpf.JumpNotEqual, Val: uint32(e), SkipTrue: 1},
-				bpf.RetConstant{Val: 0},
-			)
-		}
-	}
+// will drop packet, that the protocol dst port in skip-ports
+func bpfFilterProtoAndSkipLocalTCPPorts(tcpSkipPorts, udpSkipPorts []uint16) (ins []bpf.Instruction) {
+	ins = append(ins,
+		bpfSkipPorts(syscall.IPPROTO_TCP, tcpSkipPorts)...,
+	)
+	ins = append(ins,
+		bpfSkipPorts(syscall.IPPROTO_UDP, udpSkipPorts)...,
+	)
 
 	return append(ins,
+		bpf.RetConstant{Val: 0},
+	)
+}
+
+func bpfSkipPorts(proto uint8, ports []uint16) []bpf.Instruction {
+	slices.Sort(ports)
+	ports = slices.Compact(ports)
+
+	const IPv4ProtocolOffset = 9
+
+	var skipIns = []bpf.Instruction{
+		// store IPv4HdrLen regX
+		bpf.LoadMemShift{Off: 0},
+	}
+
+	const DstPortOffset = header.TCPDstPortOffset
+	for _, e := range ports {
+		skipIns = append(skipIns,
+
+			bpf.LoadIndirect{Off: DstPortOffset, Size: 2},
+			bpf.JumpIf{Cond: bpf.JumpNotEqual, Val: uint32(e), SkipTrue: 1},
+			bpf.RetConstant{Val: 0},
+		)
+	}
+	skipIns = append(skipIns,
 		bpf.RetConstant{Val: 0xffff},
 	)
+
+	var ins = []bpf.Instruction{
+		bpf.LoadAbsolute{Off: IPv4ProtocolOffset, Size: 1},
+		bpf.JumpIf{Cond: bpf.JumpNotEqual, Val: uint32(proto), SkipTrue: uint8(len(skipIns))},
+	}
+	ins = append(ins, skipIns...)
+
+	return ins
 }
