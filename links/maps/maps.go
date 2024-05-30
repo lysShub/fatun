@@ -6,7 +6,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/lysShub/fatcp"
+	"github.com/lysShub/fatun/conn"
 	"github.com/lysShub/fatun/links"
 	"github.com/lysShub/fatun/ports"
 )
@@ -70,7 +70,7 @@ func (p *port) Idle() bool {
 func (p *port) Port() uint16 { return uint16(p.p().Add(1) >> 48) }
 
 type downkey struct {
-	conn       fatcp.Conn
+	conn       conn.Conn
 	clientPort uint16
 }
 
@@ -115,7 +115,7 @@ func (t *linkManager) Cleanup() []links.Link {
 	return ls
 }
 
-func (t *linkManager) Add(s links.Uplink, conn fatcp.Conn) (localPort uint16, err error) {
+func (t *linkManager) Add(s links.Uplink, conn conn.Conn) (localPort uint16, err error) {
 	t.Cleanup()
 
 	localPort, err = t.ap.GetPort(s.Proto, s.Server)
@@ -154,7 +154,7 @@ func (t *linkManager) Uplink(s links.Uplink) (localPort uint16, has bool) {
 }
 
 // Downlink get donwlink packet proxyer and client port
-func (t *linkManager) Downlink(s links.Downlink) (conn fatcp.Conn, clientPort uint16, has bool) {
+func (t *linkManager) Downlink(s links.Downlink) (conn conn.Conn, clientPort uint16, has bool) {
 	t.donwlinkMu.RLock()
 	defer t.donwlinkMu.RUnlock()
 

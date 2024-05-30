@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"net/netip"
 
-	"github.com/lysShub/fatcp"
+	"github.com/lysShub/fatun/conn"
 	"github.com/lysShub/netkit/packet"
 	"github.com/pkg/errors"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -15,11 +15,11 @@ import (
 
 // LinksManager proxy-server links manager, support ttl
 type LinksManager interface {
-	Downlink(link Downlink) (conn fatcp.Conn, clientPort uint16, has bool)
+	Downlink(link Downlink) (conn conn.Conn, clientPort uint16, has bool)
 	Uplink(link Uplink) (localPort uint16, has bool)
 
 	// Add add new link, return alloced local port
-	Add(link Uplink, conn fatcp.Conn) (localPort uint16, err error)
+	Add(link Uplink, conn conn.Conn) (localPort uint16, err error)
 	// Cleanup clean timeout ttl link
 	Cleanup() []Link
 

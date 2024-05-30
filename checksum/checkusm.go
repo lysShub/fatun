@@ -2,6 +2,8 @@ package checksum
 
 import (
 	"fmt"
+	"math/rand"
+	"sync/atomic"
 
 	"github.com/lysShub/fatun/links"
 	"github.com/lysShub/netkit/debug"
@@ -54,6 +56,11 @@ func Client(ip *packet.Packet) (pkt *packet.Packet) {
 }
 
 var ip4zero = tcpip.AddrFrom4([4]byte{})
+var ip4id = atomic.Uint32{}
+
+func init() {
+	ip4id.Store(rand.Uint32())
+}
 
 func Server(pkt *packet.Packet, down links.Downlink) (ip *packet.Packet) {
 	sum := checksum.Checksum(down.Local.Addr().AsSlice(), down.Local.Port())
@@ -79,18 +86,22 @@ func Server(pkt *packet.Packet, down links.Downlink) (ip *packet.Packet) {
 	}
 
 	hdr := header.IPv4(pkt.AttachN(header.IPv4MinimumSize).Bytes())
+
+	// notice: IPConn can set TotalLength/ID/Checksum/SrcAddr automatically, but ETHConn can't
 	hdr.Encode(&header.IPv4Fields{
 		TOS:            0b00001110,
-		TotalLength:    0, // set by linux-core
-		ID:             0, // set by linux-core
+		TotalLength:    uint16(len(hdr)),
+		ID:             uint16(ip4id.Add(1)),
 		Flags:          0,
 		FragmentOffset: 0,
 		TTL:            64,
 		Protocol:       uint8(down.Proto),
-		Checksum:       0, // set by linux-core
+		Checksum:       0,
 		SrcAddr:        tcpip.AddrFrom4(down.Local.Addr().As4()),
 		DstAddr:        tcpip.AddrFrom4(down.Server.Addr().As4()),
 		Options:        nil,
 	})
+	hdr.SetChecksum(^hdr.CalculateChecksum())
+
 	return pkt
 }

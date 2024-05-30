@@ -9,9 +9,8 @@ import (
 	"net/netip"
 	"os"
 
-	"github.com/lysShub/fatcp"
 	"github.com/lysShub/fatun/checksum"
-	"github.com/lysShub/fatun/peer"
+	"github.com/lysShub/fatun/conn"
 	"github.com/lysShub/rawsock/test"
 	"github.com/pkg/errors"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -20,6 +19,7 @@ import (
 	"github.com/lysShub/netkit/debug"
 	"github.com/lysShub/netkit/errorx"
 	"github.com/lysShub/netkit/packet"
+	"github.com/lysShub/netkit/pcap"
 	stdsum "gvisor.dev/gvisor/pkg/tcpip/checksum"
 )
 
@@ -31,19 +31,23 @@ type Capturer interface {
 
 type Client struct {
 	// Logger Warn/Error logger
-	Logger *slog.Logger
+	Logger      *slog.Logger
+	MaxRecvBuff int
+	TcpMssDelta int
 
-	Conn fatcp.Conn
+	Conn conn.Conn
 
 	Capturer Capturer
 
-	peer     peer.Peer
+	PcapCapturer *pcap.Pcap
+
+	peer     conn.Peer
 	srvCtx   context.Context
 	cancel   context.CancelFunc
 	closeErr errorx.CloseErr
 }
 
-func NewClient[P peer.Peer](opts ...func(*Client)) (*Client, error) {
+func NewClient[P conn.Peer](opts ...func(*Client)) (*Client, error) {
 	var c = &Client{peer: *new(P)}
 	c.srvCtx, c.cancel = context.WithCancel(context.Background())
 
@@ -55,12 +59,12 @@ func NewClient[P peer.Peer](opts ...func(*Client)) (*Client, error) {
 		c.Logger = slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	}
 	if c.Conn == nil {
-		return nil, errors.New("require fatcp.Conn")
+		return nil, errors.New("require conn.Conn")
 	}
 
 	var err error
 	if c.Capturer == nil {
-		c.Capturer, err = NewDefaultCapture(c.Conn.LocalAddr(), c.Conn.Overhead())
+		c.Capturer, err = NewDefaultCapture(c.Conn.LocalAddr(), c.TcpMssDelta)
 		if err != nil {
 			return nil, err
 		}
@@ -99,8 +103,8 @@ func (c *Client) close(cause error) (_ error) {
 
 func (c *Client) uplinkService() (_ error) {
 	var (
-		ip   = packet.Make(64, c.Conn.MTU())
-		peer = c.peer.Make()
+		ip = packet.Make(64, c.MaxRecvBuff)
+		s  = c.peer.Builtin().Reset(0, netip.IPv4Unspecified())
 	)
 
 	for {
@@ -113,11 +117,17 @@ func (c *Client) uplinkService() (_ error) {
 				return c.close(err)
 			}
 		}
+		if c.PcapCapturer != nil {
+			if err := c.PcapCapturer.WriteIP(ip.Bytes()); err != nil {
+				return c.close(err)
+			}
+		}
+
 		hdr := header.IPv4(ip.Bytes())
-		peer.Reset(hdr.TransportProtocol(), netip.AddrFrom4(hdr.DestinationAddress().As4()))
+		s.Reset(hdr.TransportProtocol(), netip.AddrFrom4(hdr.DestinationAddress().As4()))
 
 		pkt := checksum.Client(ip)
-		if err = c.Conn.Send(peer, pkt); err != nil {
+		if err = c.Conn.Send(s, pkt); err != nil {
 			return c.close(err)
 		}
 	}
@@ -125,12 +135,12 @@ func (c *Client) uplinkService() (_ error) {
 
 func (c *Client) downlinkServic() error {
 	var (
-		pkt  = packet.Make(0, c.Conn.MTU())
-		peer = c.peer.Make()
+		pkt  = packet.Make(0, c.MaxRecvBuff)
+		peer = c.peer.Builtin().Reset(0, netip.IPv4Unspecified())
 	)
 
 	for {
-		err := c.Conn.Recv(peer, pkt.Sets(0, 0xffff))
+		err := c.Conn.Recv(peer, pkt.Sets(64, 0xffff))
 		if err != nil {
 			if errorx.Temporary(err) {
 				c.Logger.Warn(err.Error(), errorx.Trace(err))
@@ -150,6 +160,11 @@ func (c *Client) downlinkServic() error {
 		})
 		rechecksum(ip)
 
+		if c.PcapCapturer != nil {
+			if err := c.PcapCapturer.WriteIP(ip); err != nil {
+				return c.close(err)
+			}
+		}
 		if err = c.Capturer.Inject(pkt); err != nil {
 			return c.close(err)
 		}

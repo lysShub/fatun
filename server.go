@@ -8,17 +8,16 @@ import (
 	"net"
 	"net/netip"
 	"os"
-	"strconv"
 	"time"
 
-	"github.com/lysShub/fatcp"
 	"github.com/lysShub/fatun/checksum"
+	"github.com/lysShub/fatun/conn"
 	"github.com/lysShub/fatun/links"
 	"github.com/lysShub/fatun/links/maps"
-	"github.com/lysShub/fatun/peer"
 	"github.com/lysShub/netkit/debug"
 	"github.com/lysShub/netkit/errorx"
 	"github.com/lysShub/netkit/packet"
+	"github.com/lysShub/netkit/pcap"
 	"github.com/pkg/errors"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
@@ -33,22 +32,25 @@ type Sender interface {
 
 type Server struct {
 	// Logger Warn/Error logger
-	Logger *slog.Logger
+	Logger      *slog.Logger
+	MaxRecvBuff int
 
-	Listener fatcp.Listener
+	Listener conn.Listener
 
 	// links manager, notice not call Cleanup()
 	Links links.LinksManager
 
-	Senders []Sender
+	Sender Sender
 
-	peer     peer.Peer
+	PcapSender *pcap.Pcap
+
+	peer     conn.Peer
 	srvCtx   context.Context
 	cancel   context.CancelFunc
 	closeErr errorx.CloseErr
 }
 
-func NewServer[P peer.Peer](opts ...func(*Server)) (*Server, error) {
+func NewServer[P conn.Peer](opts ...func(*Server)) (*Server, error) {
 	var s = &Server{peer: *new(P)}
 	s.srvCtx, s.cancel = context.WithCancel(context.Background())
 
@@ -61,8 +63,8 @@ func NewServer[P peer.Peer](opts ...func(*Server)) (*Server, error) {
 	}
 	var err error
 	if s.Listener == nil {
-		addr := net.JoinHostPort("", strconv.Itoa(DefaultPort))
-		s.Listener, err = fatcp.Listen[P](addr, &fatcp.Config{})
+		// addr := net.JoinHostPort("", strconv.Itoa(DefaultPort))
+		// s.Listener, err = fatcp.Listen[P](addr, &fatcp.Config{}) // todo: 默认udp那个
 		if err != nil {
 			return nil, s.close(err)
 		}
@@ -71,8 +73,8 @@ func NewServer[P peer.Peer](opts ...func(*Server)) (*Server, error) {
 		s.Links = maps.NewLinkManager(time.Second*30, s.Listener.Addr().Addr())
 	}
 
-	if len(s.Senders) == 0 {
-		s.Senders, err = NewDefaultSender(s.Listener.Addr())
+	if s.Sender == nil {
+		s.Sender, err = NewDefaultSender(s.Listener.Addr())
 		if err != nil {
 			return s, s.close(err)
 		}
@@ -82,9 +84,7 @@ func NewServer[P peer.Peer](opts ...func(*Server)) (*Server, error) {
 }
 
 func (s *Server) Serve() (err error) {
-	for _, e := range s.Senders {
-		go s.recvService(e)
-	}
+	go s.recvService()
 	return s.acceptService()
 }
 
@@ -101,10 +101,8 @@ func (s *Server) close(cause error) error {
 		if s.cancel != nil {
 			s.cancel()
 		}
-		if len(s.Senders) > 0 {
-			for _, e := range s.Senders {
-				errs = append(errs, e.Close())
-			}
+		if s.Sender != nil {
+			errs = append(errs, s.Sender.Close())
 		}
 		if s.Links != nil {
 			errs = append(errs, s.Links.Close())
@@ -118,7 +116,7 @@ func (s *Server) close(cause error) error {
 
 func (s *Server) acceptService() (_ error) {
 	for {
-		conn, err := s.Listener.AcceptCtx(s.srvCtx)
+		conn, err := s.Listener.Accept()
 		if err != nil {
 			if errorx.Temporary(err) {
 				s.Logger.Warn(err.Error(), errorx.Trace(err))
@@ -132,12 +130,12 @@ func (s *Server) acceptService() (_ error) {
 	}
 }
 
-func (s *Server) serveConn(conn fatcp.Conn) (_ error) {
+func (s *Server) serveConn(conn conn.Conn) (_ error) {
 	var (
 		client = conn.RemoteAddr()
-		pkt    = packet.Make(0, s.Listener.MTU())
+		pkt    = packet.Make(0, s.MaxRecvBuff)
 		t      header.Transport
-		peer   = s.peer.Make()
+		peer   = s.peer.Builtin().Reset(0, netip.IPv4Unspecified())
 	)
 	defer func() {
 		conn.Close()
@@ -145,7 +143,7 @@ func (s *Server) serveConn(conn fatcp.Conn) (_ error) {
 	}()
 
 	for {
-		err := conn.Recv(peer, pkt.Sets(0, 0xffff))
+		err := conn.Recv(peer, pkt.Sets(64, 0xffff))
 		if err != nil {
 			if errorx.Temporary(err) {
 				s.Logger.Warn(err.Error(), errorx.Trace(err))
@@ -187,19 +185,24 @@ func (s *Server) serveConn(conn fatcp.Conn) (_ error) {
 		}
 		ip := checksum.Server(pkt, down)
 
-		if err := s.Senders[0].Send(ip); err != nil {
-			return s.close(errors.WithStack(err))
+		if s.PcapSender != nil {
+			if err := s.PcapSender.WriteIP(ip.Bytes()); err != nil {
+				return s.close(err)
+			}
+		}
+		if err := s.Sender.Send(ip); err != nil {
+			return s.close(err)
 		}
 	}
 }
 
-func (s *Server) recvService(sender Sender) (_ error) {
+func (s *Server) recvService() (_ error) {
 	var (
-		ip   = packet.Make(64, s.Listener.MTU())
-		peer = s.peer.Make()
+		ip   = packet.Make(s.MaxRecvBuff)
+		peer = s.peer.Builtin().Reset(0, netip.IPv4Unspecified())
 	)
 	for {
-		err := sender.Recv(ip.Sets(64, 0xffff))
+		err := s.Sender.Recv(ip.Sets(64, 0xffff))
 		if err != nil {
 			if errorx.Temporary(err) {
 				if debug.Debug() && errors.Is(err, io.ErrShortBuffer) &&
@@ -217,6 +220,7 @@ func (s *Server) recvService(sender Sender) (_ error) {
 				return s.close(err)
 			}
 		}
+		old := ip.Head()
 
 		link, err := links.StripIP(ip)
 		if err != nil {
@@ -229,6 +233,16 @@ func (s *Server) recvService(sender Sender) (_ error) {
 			// s.Logger.Warn("links manager not record", slog.String("downlin", link.String()))
 			continue
 		}
+
+		if s.PcapSender != nil {
+			new := ip.Head()
+			err = s.PcapSender.WriteIP(ip.SetHead(old).Bytes())
+			if err != nil {
+				return s.close(err)
+			}
+			ip.SetHead(new)
+		}
+
 		peer.Reset(link.Proto, link.Server.Addr())
 		switch peer.Protocol() {
 		case header.TCPProtocolNumber:
