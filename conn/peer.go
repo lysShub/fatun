@@ -85,10 +85,10 @@ func (p *defaultSession) Encode(pkt *packet.Packet) error {
 		require.True(test.T(), p.dst.Is4())
 	}
 
-	pkt.Attach(p.dst.AsSlice())
+	pkt.Attach(p.dst.AsSlice()...)
 	switch p.proto {
 	case tcp.ProtocolNumber, udp.ProtocolNumber:
-		pkt.Attach([]byte{byte(p.proto)})
+		pkt.Attach(byte(p.proto))
 	default:
 		return errors.Errorf("not support protocol %d", p.proto)
 	}

@@ -97,7 +97,7 @@ func (l *List) outboundBy(ctx context.Context, dst netip.AddrPort, tcp *packet.P
 		require.GreaterOrEqual(test.T(), tcp.Tail(), pkb.Size())
 	}
 	for _, e := range pkb.AsSlices() {
-		tcp.Append(e)
+		tcp.Append(e...)
 	}
 	tcp.SetHead(tcp.Head() + len(pkb.NetworkHeader().Slice()))
 

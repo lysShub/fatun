@@ -27,7 +27,7 @@ func Test_Checksum(t *testing.T) {
 		link    = links.Downlink{Server: server, Proto: header.TCPProtocolNumber, Local: local}
 		raw     = BuildRawTCP(t, process, server, []byte("hello"))
 
-		pkt = packet.Make(20, 0, len(raw)).Append(raw)
+		pkt = packet.Make(20, 0, len(raw)).Append(raw...)
 		tcp = checksum.Client(pkt)
 		ip  = checksum.Server(tcp, link)
 	)
