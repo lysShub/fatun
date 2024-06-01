@@ -6,11 +6,13 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/netip"
 	"os"
 
 	"github.com/lysShub/fatun/checksum"
 	"github.com/lysShub/fatun/conn"
+	"github.com/lysShub/fatun/conn/udp"
 	"github.com/lysShub/rawsock/test"
 	"github.com/pkg/errors"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -59,7 +61,14 @@ func NewClient[P conn.Peer](opts ...func(*Client)) (*Client, error) {
 		c.Logger = slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	}
 	if c.Conn == nil {
-		return nil, errors.New("require conn.Conn")
+		u, err := udp.Dial(nil, &net.UDPAddr{Port: DefaultPort})
+		if err != nil {
+			return nil, c.close(err)
+		}
+		c.Conn, err = conn.NewConn[P](u, &conn.Config{MaxRecvBuff: c.MaxRecvBuff})
+		if err != nil {
+			return nil, c.close(err)
+		}
 	}
 
 	var err error
@@ -69,7 +78,6 @@ func NewClient[P conn.Peer](opts ...func(*Client)) (*Client, error) {
 			return nil, err
 		}
 	}
-
 	return c, nil
 }
 

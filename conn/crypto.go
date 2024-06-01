@@ -1,4 +1,4 @@
-package udp
+package conn
 
 import (
 	"crypto/aes"
@@ -8,19 +8,18 @@ import (
 	"github.com/pkg/errors"
 )
 
+type key = [16]byte
+
+const bytes = 16
+
 // 加密不包括peer头
-// 加密不包括builtin包
-// 加密在peer Encode 之后，解密在peer Decode 之后， peer部分数据作为nonce
-type Key = [16]byte
-
-const Bytes = 16
-
+// 加密不包括builtin包（其实可以包括）
 type crypto struct {
 	c          cipher.AEAD
 	headerSize int
 }
 
-func NewCrypto(key Key, headerSize int) (*crypto, error) {
+func newCrypto(key key, headerSize int) (*crypto, error) {
 	var c = &crypto{headerSize: headerSize}
 	if block, err := aes.NewCipher(key[:]); err != nil {
 		return nil, err
@@ -32,17 +31,17 @@ func NewCrypto(key Key, headerSize int) (*crypto, error) {
 	return c, nil
 }
 
-func (c *crypto) Encrypt(seg *packet.Packet) {
-	b := seg.AppendN(Bytes).ReduceN(Bytes).Bytes()
+func (c *crypto) encrypt(seg *packet.Packet) {
+	b := seg.AppendN(bytes).ReduceN(bytes).Bytes()
 
 	i := c.headerSize
 	c.c.Seal(b[i:i], b[:i], b[i:], nil)
-	seg.SetData(seg.Data() + Bytes)
+	seg.SetData(seg.Data() + bytes)
 }
 
-func (c *crypto) Decrypt(seg *packet.Packet) error {
+func (c *crypto) decrypt(seg *packet.Packet) error {
 	b := seg.Bytes()
-	if len(b) < c.headerSize+Bytes {
+	if len(b) < c.headerSize+bytes {
 		return errors.New("decrypt invalid packet")
 	}
 
@@ -51,7 +50,7 @@ func (c *crypto) Decrypt(seg *packet.Packet) error {
 	if err != nil {
 		return errors.WithStack(err)
 	}
-	seg.SetData(seg.Data() - Bytes)
+	seg.SetData(seg.Data() - bytes)
 
 	return nil
 }
