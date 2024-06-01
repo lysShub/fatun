@@ -73,6 +73,10 @@ func (c *capture) close(cause error) error {
 
 func (c *capture) Enable(process string) { c.process.Store(&process) }
 
+func init() {
+	fmt.Println("只代理udp")
+}
+
 func (c *capture) Capture(ip *packet.Packet) error {
 	var addr divert.Address
 
@@ -91,6 +95,9 @@ func (c *capture) Capture(ip *packet.Packet) error {
 			return err
 		}
 		pass := s.Dst.Addr().IsMulticast()
+		if s.Proto != header.UDPProtocolNumber {
+			pass = true
+		}
 		if !pass {
 			name, err := c.mapping.Name(s.Src, uint8(s.Proto))
 			if err != nil {

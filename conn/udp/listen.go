@@ -1,99 +1,138 @@
 package udp
 
+// acceptable udp conn
+
 import (
-	"context"
 	"net"
 	"net/netip"
+	"runtime"
+	"sync"
+	"time"
 
-	"github.com/lysShub/fatun/conn"
-	"github.com/lysShub/fatun/conn/udp/audp"
-	"github.com/lysShub/fatun/ustack"
-	"github.com/lysShub/fatun/ustack/gonet"
-	"github.com/lysShub/fatun/ustack/link"
+	"github.com/lysShub/netkit/debug"
 	"github.com/lysShub/netkit/errorx"
-	"github.com/pkg/errors"
-	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
-// todo: 这个和udp没啥关系啊, 传入底层的dgrm-conn就行
 type Listener struct {
-	addr   netip.AddrPort
-	config *Config
-	peer   conn.Peer
+	udp *net.UDPConn
 
-	l *audp.Listener
+	pool *sync.Pool
 
-	stack           ustack.Ustack
-	builtinListener *gonet.TCPListener
+	connsMu sync.RWMutex
+	conns   map[netip.AddrPort]*acceptConn
+
+	connCh chan net.Conn
 
 	closeErr errorx.CloseErr
 }
 
-var _ conn.Listener = (*Listener)(nil)
+var _ net.Listener = (*Listener)(nil)
 
-func Listen[P conn.Peer](server string, config *Config) (conn.Listener, error) {
-	var l = &Listener{config: config, peer: *new(P)}
+func Listen(addr *net.UDPAddr, maxRecvBuffSize int) (*Listener, error) {
+	var l = &Listener{
+		conns:  map[netip.AddrPort]*acceptConn{},
+		connCh: make(chan net.Conn, 32),
+	}
+
 	var err error
-
-	if l.addr, err = resolve(server, true); err != nil {
+	if l.udp, err = net.ListenUDP("udp", addr); err != nil {
 		return nil, l.close(err)
 	}
 
-	l.l, err = audp.Listen(
-		&net.UDPAddr{IP: l.addr.Addr().AsSlice(), Port: int(l.addr.Port())}, config.MaxRecvBuff,
-	)
-	if err != nil {
-		return nil, l.close(err)
+	l.pool = &sync.Pool{
+		New: func() any {
+			b := make([]byte, maxRecvBuffSize)
+			return segment(&b)
+		},
 	}
 
-	l.stack, err = ustack.NewUstack(link.NewList(128, 512), l.addr.Addr()) // todo: fix mtu
-	if err != nil {
-		return nil, l.close(err)
+	ncpu := runtime.NumCPU()
+	if debug.Debug() {
+		ncpu = 1
 	}
-	if config.PcapBuiltinPath != "" {
-		l.stack = ustack.MustWrapPcap(l.stack, config.PcapBuiltinPath)
+	for i := 0; i < max(1, ncpu); i++ {
+		go l.accpetService()
 	}
-	l.builtinListener, err = gonet.ListenTCP(l.stack, l.addr, header.IPv4ProtocolNumber)
-	if err != nil {
-		return nil, l.close(err)
-	}
-
 	return l, nil
 }
 
 func (l *Listener) close(cause error) error {
 	return l.closeErr.Close(func() (errs []error) {
-		errs = append(errs, cause)
-		if l.builtinListener != nil {
-			errs = append(errs, l.builtinListener.Close())
-		}
-		if l.stack != nil {
-			errs = append(errs, l.stack.Close())
-		}
-		if l.l != nil {
-			errs = append(errs, l.l.Close())
-		}
-		return errs
+		close(l.connCh)
+		return append(errs, cause)
 	})
 }
 
-func (l *Listener) Accept() (conn.Conn, error) {
-	conn, err := l.l.Accept()
-	if err != nil {
-		return nil, errors.WithStack(err)
+func (l *Listener) Accept() (net.Conn, error) {
+	conn, ok := <-l.connCh
+	if !ok {
+		return nil, l.close(nil)
 	}
-
-	raddr := netip.MustParseAddrPort(conn.RemoteAddr().String())
-	ep, err := l.stack.LinkEndpoint(l.Addr().Port(), raddr)
-	if err != nil {
-		return nil, err
-	}
-	return newConn(conn, l.peer, server, ep, l.serverFactory, l.config)
+	return conn, nil
 }
 
-func (l *Listener) Addr() netip.AddrPort { return l.addr }
-func (l *Listener) Close() error         { return l.close(nil) }
+func (l *Listener) accpetService() (_ error) {
+	for {
+		seg := l.pool.Get().(segment)
+		seg.full()
 
-func (l *Listener) serverFactory(ctx context.Context, remote netip.AddrPort) (*gonet.TCPConn, error) {
-	return l.builtinListener.AcceptBy(ctx, remote)
+		// todo: 应该设置较长的timeout，可能存在僵尸conn
+		n, addr, err := l.udp.ReadFromUDPAddrPort(*seg)
+		if err != nil {
+			return l.close(err)
+		}
+		seg.data(n)
+		// todo: 校验数据包
+
+		l.connsMu.RLock()
+		a, has := l.conns[addr]
+		l.connsMu.RUnlock()
+		if !has {
+			a = newAcceptConn(l, addr)
+			l.connsMu.Lock()
+			l.conns[addr] = a
+			l.connsMu.Unlock()
+		}
+		a.put(seg)
+		if !has && !l.closeErr.Closed() {
+			select {
+			case l.connCh <- a:
+			default:
+			}
+		}
+	}
+}
+func (l *Listener) Addr() net.Addr { return l.udp.LocalAddr() }
+func (l *Listener) AddrPort() netip.AddrPort {
+	return netip.MustParseAddrPort(l.udp.LocalAddr().String())
+}
+func (l *Listener) Close() error { return l.close(nil) }
+
+func (l *Listener) put(seg segment) {
+	if seg == nil {
+		return
+	}
+	l.pool.Put(seg)
+}
+func (l *Listener) del(raddr netip.AddrPort) {
+	l.connsMu.RLock()
+	n := len(l.conns)
+	l.connsMu.RUnlock()
+
+	if n == 1 {
+		l._del(raddr)
+	} else {
+		// tcp可以根据ISN进行判断, udp只能等待一段时间
+		time.AfterFunc(time.Second*5, func() { l._del(raddr) })
+	}
+}
+
+func (l *Listener) _del(raddr netip.AddrPort) {
+	l.connsMu.Lock()
+	defer l.connsMu.Unlock()
+
+	delete(l.conns, raddr)
+	if len(l.conns) == 0 && l.closeErr.Closed() {
+		l.udp.Close()
+	}
 }

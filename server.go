@@ -12,6 +12,7 @@ import (
 
 	"github.com/lysShub/fatun/checksum"
 	"github.com/lysShub/fatun/conn"
+	"github.com/lysShub/fatun/conn/udp"
 	"github.com/lysShub/fatun/links"
 	"github.com/lysShub/fatun/links/maps"
 	"github.com/lysShub/netkit/debug"
@@ -22,7 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
-const DefaultPort = 443
+const DefaultPort = 19986
 
 type Sender interface {
 	Recv(ip *packet.Packet) error
@@ -63,8 +64,11 @@ func NewServer[P conn.Peer](opts ...func(*Server)) (*Server, error) {
 	}
 	var err error
 	if s.Listener == nil {
-		// addr := net.JoinHostPort("", strconv.Itoa(DefaultPort))
-		// s.Listener, err = fatcp.Listen[P](addr, &fatcp.Config{}) // todo: 默认udp那个
+		l, err := udp.Listen(&net.UDPAddr{Port: DefaultPort}, s.MaxRecvBuff)
+		if err != nil {
+			return nil, s.close(err)
+		}
+		s.Listener, err = conn.NewListen[P](l, &conn.Config{MaxRecvBuff: s.MaxRecvBuff})
 		if err != nil {
 			return nil, s.close(err)
 		}
