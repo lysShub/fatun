@@ -28,12 +28,8 @@ github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 h1:6E+4a0GO5zZEnZ
 github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0/go.mod h1:zJYVVT2jmtg6P3p1VtQj7WsuWi/y4VnjVBn7F8KPB3I=
 github.com/lysShub/divert-go v0.0.0-20240525230502-6f79596abd61 h1:qqarPA8zZe+LnIGHaleqDikaQ3QzvlAfDigXYRrboHU=
 github.com/lysShub/divert-go v0.0.0-20240525230502-6f79596abd61/go.mod h1:OXuD4Q/Y84FyNiYy/sf9RVshvAC5/rvcHA6J7JvvtFM=
-github.com/lysShub/netkit v0.0.0-20240528182030-3007a2828d6a h1:NEvTQ2aTjpegYW8W+30CsPt2yTx6hNFgBzMSA51zRGI=
-github.com/lysShub/netkit v0.0.0-20240528182030-3007a2828d6a/go.mod h1:meJ+5h9/ek0ORSdEgtCx6NsvuAWQHITzkLuVDtL+2lc=
 github.com/lysShub/netkit v0.0.0-20240601172000-da71e39de8d5 h1:8luVz33OX8AUPbfu1OTyNcFKnroS1pXbMVw6w7TWfJ0=
 github.com/lysShub/netkit v0.0.0-20240601172000-da71e39de8d5/go.mod h1:meJ+5h9/ek0ORSdEgtCx6NsvuAWQHITzkLuVDtL+2lc=
-github.com/lysShub/rawsock v0.0.0-20240527161428-8849e5547531 h1:oNrvNTvaHcAtNdYOjOJtiq57hX+55hnAJ5LPkzvoIlg=
-github.com/lysShub/rawsock v0.0.0-20240527161428-8849e5547531/go.mod h1:5qgsV9nwLBui5RhVBBFhzq3vvd8n2NEmkEEVt79gElc=
 github.com/lysShub/rawsock v0.0.0-20240528071759-a024e73796bb h1:Lh1chS5iGdN2tBW65b89SRNqKMXgCZLUX4FcnLxl0wg=
 github.com/lysShub/rawsock v0.0.0-20240528071759-a024e73796bb/go.mod h1:5qgsV9nwLBui5RhVBBFhzq3vvd8n2NEmkEEVt79gElc=
 github.com/lysShub/wintun-go v0.0.0-20240410130619-383598c11ea1 h1:AV6Pt7nAFy3nvbRX9M8DOZ6gFSTEmq1DUNTIq2QoqeA=
