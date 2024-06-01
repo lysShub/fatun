@@ -11,7 +11,7 @@ import (
 )
 
 func Dial(laddr, raddr *net.UDPAddr) (*net.UDPConn, error) {
-	return net.DialUDP("udp4", laddr, raddr)
+	return net.DialUDP("udp", laddr, raddr)
 }
 
 type acceptConn struct {

@@ -20,9 +20,9 @@ type Listener interface {
 }
 
 type listener struct {
-	addr   netip.AddrPort
 	config *Config
 	peer   Peer
+	laddr  netip.AddrPort
 
 	l net.Listener
 
@@ -34,16 +34,17 @@ type listener struct {
 
 func NewListen[P Peer](dgramConnlistener net.Listener, config *Config) (Listener, error) {
 	var l = &listener{config: config, peer: *new(P), l: dgramConnlistener}
+	l.laddr = netip.MustParseAddrPort(dgramConnlistener.Addr().String())
 	var err error
 
-	l.stack, err = ustack.NewUstack(link.NewList(128, 512), l.addr.Addr()) // todo: fix mtu
+	l.stack, err = ustack.NewUstack(link.NewList(128, 512), l.laddr.Addr()) // todo: fix mtu
 	if err != nil {
 		return nil, l.close(err)
 	}
 	if config.PcapBuiltinPath != "" {
 		l.stack = ustack.MustWrapPcap(l.stack, config.PcapBuiltinPath)
 	}
-	l.builtinListener, err = gonet.ListenTCP(l.stack, l.addr, header.IPv4ProtocolNumber)
+	l.builtinListener, err = gonet.ListenTCP(l.stack, l.laddr, header.IPv4ProtocolNumber)
 	if err != nil {
 		return nil, l.close(err)
 	}
@@ -81,7 +82,7 @@ func (l *listener) Accept() (Conn, error) {
 	return newConn(conn, l.peer, server, ep, l.serverFactory, l.config)
 }
 
-func (l *listener) Addr() netip.AddrPort { return l.addr }
+func (l *listener) Addr() netip.AddrPort { return l.laddr }
 func (l *listener) Close() error         { return l.close(nil) }
 
 func (l *listener) serverFactory(ctx context.Context, remote netip.AddrPort) (*gonet.TCPConn, error) {
