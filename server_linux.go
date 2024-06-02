@@ -151,13 +151,13 @@ func bpfSkipPorts(proto uint8, ports []uint16) []bpf.Instruction {
 	ports = slices.Compact(ports)
 
 	const IPv4ProtocolOffset = 9
+	const DstPortOffset = header.TCPDstPortOffset
 
 	var skipIns = []bpf.Instruction{
 		// store IPv4HdrLen regX
 		bpf.LoadMemShift{Off: 0},
 	}
 
-	const DstPortOffset = header.TCPDstPortOffset
 	for _, e := range ports {
 		skipIns = append(skipIns,
 
